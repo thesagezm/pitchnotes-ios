@@ -20,8 +20,6 @@ on:
     paths-ignore:
       - 'Docs/**'
       - '**/*.md'
-      - 'Models/**'
-      - 'scripts/**'
   workflow_dispatch:
 
 jobs:
@@ -88,7 +86,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Stub
-        run: echo "swiftf0-spike: stub (allow-failure) — P-002 wires Tests/Spikes; model lands via HF repo (D-2)"
+        run: 'echo "swiftf0-spike: stub (allow-failure) — P-002 wires Tests/Spikes; model lands via HF repo (D-2)"'
 
   nanopitch-spike:
     name: NanoPitch spike (STUB — wired by P-002)
@@ -99,7 +97,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Stub
-        run: echo "nanopitch-spike: stub (allow-failure) — P-002 wires Tests/Spikes; license verdict due at P-102 (D-7)"
+        run: 'echo "nanopitch-spike: stub (allow-failure) — P-002 wires Tests/Spikes; license verdict due at P-102 (D-7)"'
 
   separation-spike:
     name: Separation spike (STUB — wired by P-002)
@@ -110,7 +108,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Stub
-        run: echo "separation-spike: stub (allow-failure) — demucs.cpp lands M2 (P-201)"
+        run: 'echo "separation-spike: stub (allow-failure) — demucs.cpp lands M2 (P-201)"'
 
   basicpitch-spike:
     name: BasicPitch spike (STUB — wired by P-002)
@@ -121,7 +119,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Stub
-        run: echo "basicpitch-spike: stub (allow-failure) — basicpitch.cpp lands M3 (P-301)"
+        run: 'echo "basicpitch-spike: stub (allow-failure) — basicpitch.cpp lands M3 (P-301)"'
 
   silero-vad-spike:
     name: Silero VAD spike (STUB — wired by P-002)
@@ -132,7 +130,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Stub
-        run: echo "silero-vad-spike: stub (allow-failure) — silero-vad lands M1 (P-103)"
+        run: 'echo "silero-vad-spike: stub (allow-failure) — silero-vad lands M1 (P-103)"'
 
   build-ipa:
     name: Build unsigned IPA
