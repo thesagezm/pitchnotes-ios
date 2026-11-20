@@ -1,0 +1,310 @@
+name: Build IPA
+
+# Clone of thesagezm/speechnotes-ios .github/workflows/build.yml (AGENTS §6),
+# renamed to PitchNotes and extended with the three-agent branch model:
+# push to main/paul/jess/leto (path-filtered) + workflow_dispatch on any ref.
+#
+# Spike jobs are STUBS in M0 (allow-failure until P-002 wires the real
+# Tests/Spikes harness and models land via the HF repo, D-2).
+
+concurrency:
+  # One run per branch: a push during an active build cancels the older run
+  # (they'd both finish with the same result). Branch-level key keeps
+  # main/paul/jess/leto runs parallel.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main, paul, jess, leto]
+    paths-ignore:
+      - 'Docs/**'
+      - '**/*.md'
+      - 'Models/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+jobs:
+  logic-tests:
+    name: Logic tests (PitchLogic + model manifest)
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate model manifest schema (L-005)
+        run: python3 -I scripts/models/download.py --manifest Models/manifest.json --validate-only
+
+      # D-2 placeholder until the human creates thesagezm/pitchnotes-models:
+      # exercise the download + SHA256-verify path against the committed 1 KB
+      # test blob, fetched from THIS commit's raw URL.
+      - name: Download + SHA256-verify test blob (D-2 placeholder)
+        run: |
+          python3 -I scripts/models/download.py \
+            --manifest Models/manifest.json \
+            --entry test-blob \
+            --url "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/Models/test-blob.bin" \
+            --cache-dir "$HOME/pitchnotes-model-cache"
+
+      - name: Run PitchLogic package tests
+        run: |
+          set -o pipefail
+          cd Tests/Logic
+          swift test 2>&1 | tee ../../logic-tests.log
+
+      - name: Show failure summary
+        if: failure()
+        run: |
+          grep -E "error:|failed|XCTAssert" logic-tests.log | tail -n 30 > summary.txt || true
+          echo "----- LOGIC TEST FAILURE SUMMARY (last 30 matching lines) -----"
+          cat summary.txt
+          echo "-------------------------------------------------------------------"
+          if [ -s summary.txt ]; then
+            python3 -c "import pathlib; t = pathlib.Path('summary.txt').read_text()[:5500]; print('::error title=Logic tests failure::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
+          fi
+
+      - name: Upload logic test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logic-tests-log
+          path: logic-tests.log
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------
+  # SPIKE STUBS (M0). Each becomes a REAL contract-test job when P-002 wires
+  # Tests/Spikes and its model lands in the HF repo (D-2). Naming is final —
+  # the M0+ merge gates reference these exact job names (AGENTS §3/§6).
+  # continue-on-error = allow-failure (non-blocking daily, still BLOCKING at
+  # milestone merges per AGENTS §3 once activated).
+  # ---------------------------------------------------------------------
+  swiftf0-spike:
+    name: SwiftF0 spike (STUB — wired by P-002)
+    runs-on: macos-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Stub
+        run: echo "swiftf0-spike: stub (allow-failure) — P-002 wires Tests/Spikes; model lands via HF repo (D-2)"
+
+  nanopitch-spike:
+    name: NanoPitch spike (STUB — wired by P-002)
+    runs-on: macos-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Stub
+        run: echo "nanopitch-spike: stub (allow-failure) — P-002 wires Tests/Spikes; license verdict due at P-102 (D-7)"
+
+  separation-spike:
+    name: Separation spike (STUB — wired by P-002)
+    runs-on: macos-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Stub
+        run: echo "separation-spike: stub (allow-failure) — demucs.cpp lands M2 (P-201)"
+
+  basicpitch-spike:
+    name: BasicPitch spike (STUB — wired by P-002)
+    runs-on: macos-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Stub
+        run: echo "basicpitch-spike: stub (allow-failure) — basicpitch.cpp lands M3 (P-301)"
+
+  silero-vad-spike:
+    name: Silero VAD spike (STUB — wired by P-002)
+    runs-on: macos-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Stub
+        run: echo "silero-vad-spike: stub (allow-failure) — silero-vad lands M1 (P-103)"
+
+  build-ipa:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 45
+    # Docs-only pushes burn a 45-minute macOS runner for an identical binary.
+    # workflow_dispatch is always accepted; paths-ignore handles most of it,
+    # [ci skip] covers the rest.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      !contains(github.event.head_commit.message, '[ci skip]')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Any SPM dependency declaring `type: .dynamic` would become an
+      # unembedded *.framework ref that crashes at launch inside LiveContainer
+      # ("Library not loaded: @rpath/…"). Strip that declaration from EVERY
+      # package checkout before building. Pins in Package.resolved untouched —
+      # same versions, static linkage. (OR mirror products are already static;
+      # this guards future deps. LiveContainer requirement, AGENTS §6.)
+      - name: Patch SPM packages to link statically
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project PitchNotesIOS.xcodeproj \
+            -scheme PitchNotesIOS \
+            -derivedDataPath build/DerivedData >/dev/null
+          CHECKOUTS=build/DerivedData/SourcePackages/checkouts
+          test -d "$CHECKOUTS" || { echo "::error::package checkouts not found at $CHECKOUTS"; exit 1; }
+          PATCHED=0
+          for MANIFEST in "$CHECKOUTS"/*/Package.swift; do
+            if grep -q "type: .dynamic" "$MANIFEST"; then
+              sed -i '' "/type: .dynamic/d" "$MANIFEST"
+              echo "Patched to static: $(basename "$(dirname "$MANIFEST")")"
+              PATCHED=$((PATCHED + 1))
+            fi
+          done
+          echo "$PATCHED package manifest(s) patched."
+          # The verify step after the archive enforces the outcome; a count of
+          # 0 here is fine (upstream may have fixed their manifests).
+
+      - name: Archive (unsigned, generic iOS device)
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project PitchNotesIOS.xcodeproj \
+            -scheme PitchNotesIOS \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/PitchNotesIOS.xcarchive \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            2>&1 | tee archive.log
+
+      # The ONLY thing that kills LiveContainer is the app binary carrying
+      # load commands for frameworks that aren't properly embedded/signed.
+      # otool -L of the main binary is authoritative — fail on any dependency
+      # outside /usr/lib and /System. SPM binaryTarget frameworks get copied
+      # into Frameworks/ even when static (ONNX Runtime's iOS slice is a static
+      # ar archive); unreferenced copies are dead weight — strip and log.
+      - name: Verify app links no external frameworks + strip dead Frameworks/ copies (LiveContainer requirement)
+        if: success()
+        run: |
+          APP=$(find build/PitchNotesIOS.xcarchive/Products/Applications -maxdepth 1 -name '*.app' | head -n 1)
+          echo "--- .app overview ---"
+          du -sh "$APP"
+          ls "$APP"
+          BIN="$APP/PitchNotes"
+          echo "--- otool -L (system deps only is OK) ---"
+          otool -L "$BIN"
+          DEPS=$(otool -L "$BIN" | tail -n +2 | grep -vE '^[[:space:]]*/usr/lib/|^[[:space:]]*/System/' || true)
+          if [ -n "$DEPS" ]; then
+            echo "$DEPS"
+            echo "::error::App binary references non-system frameworks/dylibs (see above) — LiveContainer will crash on launch (dyld Library not loaded). All SPM deps must link statically."
+            exit 1
+          fi
+          if [ -d "$APP/Frameworks" ]; then
+            echo "--- Frameworks/ contents ---"; ls -la "$APP/Frameworks"
+            shopt -s nullglob
+            for FW in "$APP/Frameworks"/*; do
+              NAME=$(basename "$FW")
+              if [ -d "$FW" ] && [[ "$NAME" == *.framework ]]; then
+                MACHO="$FW/${NAME%.framework}"
+              else
+                MACHO="$FW"
+              fi
+              if [ -f "$MACHO" ]; then
+                echo "--- $NAME: file(1) ---"; file "$MACHO"
+                echo "--- $NAME: otool -L ---"; otool -L "$MACHO" || true
+              fi
+              echo "Stripping unreferenced $NAME from Frameworks/ (no load command points at it)"
+              rm -rf "$FW"
+            done
+            rmdir "$APP/Frameworks" 2>/dev/null || true
+          fi
+          echo "OK: only system dependencies; Frameworks/ empty or removed"
+
+      - name: Show archive failure summary
+        if: failure()
+        run: |
+          grep -E "error:|fatal error|Assertion|Undefined symbol|Testing failed" archive.log \
+            | grep -vE "warning:" \
+            | tail -n 40 > build-summary.txt || true
+          echo "----- BUILD FAILURE SUMMARY (last 40 matching lines) -----"
+          cat build-summary.txt
+          echo "-----------------------------------------------------------"
+          if [ -s build-summary.txt ]; then
+            python3 -c "import pathlib; t = pathlib.Path('build-summary.txt').read_text()[:5500]; print('::error title=App build failure::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
+          fi
+
+      - name: Verify embedded version
+        run: |
+          APP_PATH="$(find build -path '*Products/Applications/*.app' -maxdepth 6 | head -n 1)"
+          test -n "$APP_PATH" || { echo "::error::archived .app not found"; exit 1; }
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Info.plist" 2>/dev/null || echo "")
+          echo "Archived CFBundleShortVersionString: '$VERSION'"
+          test -n "$VERSION" && test "$VERSION" != "1.0" || {
+            echo "::error::archived Info.plist has no real version (got '$VERSION') — CFBundleShortVersionString is missing from the generated Info.plist"
+            exit 1
+          }
+
+      - name: Verify background modes
+        run: |
+          # `audio` must be present and EXACT (background stem playback, J-203);
+          # any second mode (fetch, voip, location, processing) is review-bait
+          # and unused in v1. BGProcessingTask "quality mode" (§8) needs a
+          # documented Leto ruling before it touches this list.
+          APP_PATH="$(find build -path '*Products/Applications/*.app' -maxdepth 6 | head -n 1)"
+          test -n "$APP_PATH" || { echo "::error::archived .app not found"; exit 1; }
+          MODES=$(/usr/libexec/PlistBuddy -c 'Print :UIBackgroundModes' "$APP_PATH/Info.plist" 2>/dev/null | grep -vE '[{}]' | grep -E '^[[:space:]]*[^[:space:]]' | tr -d ' \t' | tr '\n' ',' | sed 's/,$//')
+          echo "Archived UIBackgroundModes: $MODES"
+          test "$MODES" = "audio" || {
+            echo "::error::UIBackgroundModes must be exactly [audio] (got: $MODES)."
+            exit 1
+          }
+
+      - name: Package unsigned IPA
+        if: success()
+        run: ./Scripts/package-ipa.sh build/PitchNotesIOS.xcarchive
+
+      - name: Upload dSYM artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dSYMs
+          path: build/PitchNotesIOS.xcarchive/dSYMs
+          if-no-files-found: error
+
+      - name: Upload IPA artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PitchNotesIOS
+          path: dist/PitchNotesIOS.ipa
+          if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: archive.log
+          if-no-files-found: warn
