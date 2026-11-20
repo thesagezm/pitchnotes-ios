@@ -1,0 +1,40 @@
+# Generated Xcode project — XcodeGen generates it from project.yml on CI.
+# Commit project.yml, NEVER the generated project (AGENTS.md §4/§6).
+*.xcodeproj
+*.xcworkspace
+
+# Build artifacts
+dist/
+build/
+DerivedData/
+*.ipa
+*.dSYM/
+*.xcresult
+xcuserdata/
+.DS_Store
+.swiftpm/
+
+# Model weights & converted artifacts — downloaded by scripts/CI or produced by
+# scripts/models/, hosted in the project Hugging Face repo, never in git (§4/§6).
+*.onnx
+*.ort
+*.mlmodel
+*.mlpackage
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.tflite
+Models/weights/
+Models/downloads/
+
+# Audio files are not committed (§4: real songs stay local; only tiny synthetic
+# fixtures <1 MB are allowed — force-add those explicitly with `git add -f`).
+*.mp3
+*.flac
+*.wav
+*.m4a
+*.aif
+*.aiff
+*.ogg
+*.opus
