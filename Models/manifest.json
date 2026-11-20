@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "_notes": "Model registry (L-005). Every entry carries exactly {name, version, url, sha256, size, license, runtime, io}. Weights NEVER live in git (AGENTS §4): real models are hosted in HF repo thesagezm/pitchnotes-models (D-2, BLOCKED(human)) and verified by scripts/models/download.py before use. The test-blob entry exercises the download+verify path in CI until the HF repo exists; CI overrides its URL with the committed Models/test-blob.bin at the current commit.",
+  "_notes": "Model registry (L-005). Every entry carries exactly {name, version, url, sha256, size, license, runtime, io}. Weights NEVER live in git (AGENTS §4): real models are hosted in HF repo thesagezm/pitchnotes-models (D-2, BLOCKED(human)) and verified by scripts/models/download.py before use. Placeholder probes until that repo exists: test-blob (committed 1 KB, verified via file:// in CI — raw.githubusercontent.com 404s for private repos without auth) and http-probe (immutable public file pinned by commit SHA, verifying the real HTTP+SHA256 path over the network).",
   "models": [
     {
       "name": "test-blob",
@@ -11,8 +11,21 @@
       "license": "MIT",
       "runtime": "none",
       "io": {
-        "role": "download-path validation blob for CI (L-005 / D-2 placeholder)",
+        "role": "committed download/verify-path validation blob for CI (L-005 / D-2 placeholder)",
         "format": "raw bytes, 1024 x (i mod 256)"
+      }
+    },
+    {
+      "name": "http-probe",
+      "version": "1.0.0",
+      "url": "https://raw.githubusercontent.com/thesagezm/speechnotes-ios/567f11d80dc7152ff0e6f115d2a7f67202ecad7f/README.md",
+      "sha256": "64bf1444aea29c19b4d11c9658021e81a28652dba49f67704f736ce05747e2a0",
+      "size": 15616,
+      "license": "MIT",
+      "runtime": "none",
+      "io": {
+        "role": "public-network HTTP+SHA256 validation (pinned immutable blob; swap to HF repo file when D-2 unblocks)",
+        "format": "markdown text"
       }
     }
   ]

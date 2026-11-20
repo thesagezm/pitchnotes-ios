@@ -34,15 +34,25 @@ jobs:
       - name: Validate model manifest schema (L-005)
         run: python3 -I scripts/models/download.py --manifest Models/manifest.json --validate-only
 
-      # D-2 placeholder until the human creates thesagezm/pitchnotes-models:
-      # exercise the download + SHA256-verify path against the committed 1 KB
-      # test blob, fetched from THIS commit's raw URL.
-      - name: Download + SHA256-verify test blob (D-2 placeholder)
+      # D-2 placeholder until the human creates thesagezm/pitchnotes-models.
+      # test-blob: committed 1 KB, verified via file:// — raw.githubusercontent.com
+      # 404s for private repos without auth (run 44840060323).
+      - name: Verify committed test blob (file://, D-2 placeholder)
         run: |
           python3 -I scripts/models/download.py \
             --manifest Models/manifest.json \
             --entry test-blob \
-            --url "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/Models/test-blob.bin" \
+            --url "file://${{ github.workspace }}/Models/test-blob.bin" \
+            --cache-dir "$HOME/pitchnotes-model-cache"
+
+      # Real HTTP + SHA256 over the network: immutable public file pinned by
+      # commit SHA (public speechnotes-ios). Proves download.py's fetch/verify
+      # path end-to-end until the public HF repo replaces the probes (D-2).
+      - name: Download + SHA256-verify public http-probe
+        run: |
+          python3 -I scripts/models/download.py \
+            --manifest Models/manifest.json \
+            --entry http-probe \
             --cache-dir "$HOME/pitchnotes-model-cache"
 
       - name: Run PitchLogic package tests
