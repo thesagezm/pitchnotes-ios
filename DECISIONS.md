@@ -16,6 +16,47 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-27 | 2026-11-21 UTC | Leto | RULED (human-confirmed)
+**Context:** GitHub Actions quota wall: the free plan's 2,000 included minutes/month are
+shared by all private repos on the account and bill macOS runners at 10×; pitchnotes-ios
+(~40 runs) + speechnotes-ios (~71 runs) since Nov 1 exhausted them, so all 7 jobs fail at
+0 s with the misleading "recent account payments have failed" boilerplate (no card on
+file, nothing owed — verified via check-run annotations + run billing data). Jess filed
+X-007 PROPOSED (CI minute diet) @c6aeb59. The human ruled: "solve this — I don't mind
+public repo."
+**Ruling:**
+1. **`pitchnotes-ios` is now PUBLIC** (flipped via API 2026-11-21 by Leto on the human's
+   explicit instruction). This SUPERSEDES the L-001 "private" call. Consequences: Actions
+   minutes free/unlimited (quota wall gone — proven: run 44881046959@cf9561e ALL 7 JOBS
+   GREEN incl. the D-2 HF-model download verification steps); source visible (no secrets
+   in git — HF token lives only in the human's ~/.bashrc, never committed; weights stay
+   in HF, never git).
+2. **Branch protection on `main` ENABLED** (possible on public repos — resolves the L-001
+   BLOCKED(human) residue): force-push and deletions blocked, admins not enforced,
+   NO required status checks — deliberate: our merge model is direct green-verified
+   pushes (milestone merges), and required-check protection would deadlock that flow.
+   Procedural rails (AGENTS §3/§11) + this soft protection now both apply.
+3. **X-007 (Jess, quota diet) SUPERSEDED by this ruling** — moot under free unlimited
+   minutes; macOS runners STAY (they validate the Apple toolchain). If the repo ever
+   goes private again, re-propose the diet.
+4. **X-007 (Paul's duplicate filing — build.yml YAML line-148 colon fix) ALREADY
+   RESOLVED** by f5d2a96 (on main since 953e105). Paul's red pushes were pre-rebase
+   artifacts; his rebase onto current origin/main resolves his branch CI. ID collision
+   noted: renumber any FUTURE quota-related proposal (not needed — superseded).
+5. **X-008 (Paul, PitchORT wiring) ACCEPTED — executes at L-103 gate time**, one commit
+   immediately after the paul→main merge and BEFORE tagging m1: (a) project.yml packages
+   += `PitchORT: {path: Engine/PitchORT}`; (b) app target deps += package PitchORT
+   (static); (c) logic-tests job += `cd Engine/PitchORT && swift test` after the swiftf0
+   download step (model cache warm; XCTSkip-safe locally); (d) spike venvs += onnxruntime
+   and, at the same commit, L-101 flips the real-spike env (`PITCHNOTES_SPIKE_REAL:
+   required`) and removes continue-on-error. Rationale for gate-time execution: PitchORT
+   exists only on paul's branch — landing (a)/(b) on main earlier would break
+   xcodegen/build-ipa.
+6. **speechnotes-ios flag (human's other private repo, same shared quota):** it will keep
+   draining until reset unless made public or dieted. Human's call; not this repo's lane.
+**Affects:** L-001 residue, X-007 (both), X-008, L-101/L-103 sequence, QUEUE BLOCKED,
+RESEARCH none.---
+
 ## D-20 | 2026-11-21 UTC | Leto | RULED (executes D-2)
 **Context:** The human authorized Leto to create the HF model repo ("you can create the
 repo: when the HF repo lands, swap URLs only — SHAs must not change"). No HF credential
