@@ -16,6 +16,69 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-16 | 2026-11-21 UTC | Leto | RULED
+**Context:** Jess (J-001/J-002/J-004 REVIEW) reported a CI reachability gap: `build.yml`
+exists only on `leto`, so pushes to `paul`/`jess` trigger nothing (workflow file must
+exist on the pushed ref) and `workflow_dispatch --ref <branch>` is refused (file must
+exist on the default branch). Result: J-001's AC ("app boots to tabs in CI build") is
+unsatisfiable until M0 close — a self-blocking gate. Jess requested an early
+`leto→main` merge; P-001 (paul) is DONE and blocked on the same gap for its CI run.
+**Ruling:**
+1. **CI bring-up merge:** Leto merges `leto→main` NOW. Scope is strictly Leto-owned
+   infrastructure (project.yml, .github, Tests/Logic package skeleton, Models/,
+   scripts/, vendor/, CONTRACTS, governance docs) — NO paul/jess lane content. This is
+   NOT the M0 gate: L-009 still merges `paul`/`jess`, reviews the gate, and tags `m0`.
+2. **Merge-announcement sync:** all agents rebase onto `origin/main` immediately
+   (AGENTS §3). Thereafter their pushes trigger branch CI, and
+   `gh workflow run build.yml --ref <branch>` works. Post-rebase, Jess's 53 logic
+   tests and shell build get their first CI evidence.
+3. **X-001 (part range presets) → ROUTED TO L-102 (contract v0.1, M1):** accepted as
+   an ADDITIVE C-1 block; `Docs/UX.md §3.6` (Jess) is the interim source of truth —
+   J-101 may implement against it before L-102 ratifies the same table into
+   CONTRACTS. Engine-side calibratable consumption is P-105's deliverable.
+4. **X-002 STRUCK:** satisfied by P-001's `MockScenario` (exact proposed set as init
+   parameter; no frozen surface touched). No contract change.
+5. **X-003 (EngineCore wiring) ACCEPTED, executes at L-009 by Leto:** after `paul→main`
+   lands `Engine/`, project.yml gains `EngineCore: {path: Engine}` + app-target dep
+   (product `EngineCore`), and the `logic-tests` job gains `cd Engine && swift test`
+   (Paul's 45 tests move from local-Linux to CI). Jess applies her `Tests/Logic`
+   Package.swift edit + swap sequence (delete PreviewStub/**, consume MockEngine, zero
+   view changes) on HER branch post-merge — `Engine/` resolves for her only then.
+6. **SmokeTests.swift deletion RE-ROUTED to Jess:** after this merge/rebase the file
+   exists in her tree (Tests/Logic is her lane) — she deletes it with her suite in
+   place; no Leto merge step. (Placeholder deletion by leto first would leave the
+   package with zero test sources and fail CI.)
+**Affects:** `.github/workflows/build.yml`, `project.yml`, QUEUE, L-009 checklist,
+J-001/J-002/J-004 REVIEW evidence, P-002 CI, X-001/X-002/X-003.
+
+## D-15 | 2026-11-20 UTC | Leto | RULED
+**Context:** L-007 license audit baseline (AGENTS §9). The AC requires zero
+unknown-license dependencies in `project.yml`/`vendor/`.
+**Ruling:** Baseline recorded as follows.
+- **SHIP-SAFE (MIT/Apache/BSD/Zlib) — may be vendored/linked:** SwiftF0, demucs.cpp,
+  basicpitch.cpp, windowed-roformer, MSST, python-audio-separator (prep tooling only,
+  never on device), spotify/basic-pitch, CREPE, silero-vad, signalsmith-stretch,
+  TinySoundFont, tonaljs, VexFlow, OSMD, mir_eval, museval, libfmp, partitura,
+  pyroomacoustics, pedalboard, ONNX Runtime (+ our SPM mirror of it, MIT).
+- **STUDY-ONLY — never linked/shipped (copyleft):** Nightingale, Performous, USDX,
+  Vocaluxe, UltraStar Play, aubio (GPL), essentia (AGPL), TarsosDSP (GPL), PESTO
+  (LGPL), Verovio (LGPL), FluidSynth (LGPL), Rubber Band (GPL), GNU Solfege (GPL).
+  Reimplement ideas, never copy code; static linking makes LGPL especially dangerous
+  for our IPA.
+- **VERIFY-BEFORE-USE (no integration until verdict recorded here):** NanoPitch
+  LICENSE → P-102 (fallback: sevagh/pitch-detection MPM/YIN, MIT); soundfont →
+  L-501 (D-6); RMVPE/FCPE weights → X-601; jaCappella models, UVR/MDX community
+  checkpoints, SepACap → M3+ X-tasks before any use. Unknown license = not shipped.
+- **TRAINING DATA:** GTSinger (CC BY-NC-SA) and M4Singer (CC BY-NC) are BANNED from
+  commercial weight training. Commercial-safe path = synthetic SATB (PD hymn MIDI +
+  permissive voicebanks + church IRs) + CC-BY corpora (VocalSet, SingStyle111) + PD
+  hymn scores. User audio is processed locally; stems never redistributed.
+- **AUDIT RESULT (M0):** `project.yml` deps = ONNX Runtime mirror (MIT, D-13) +
+  PitchLogic (in-house). `vendor/` empty at M0 (intake process = L-008). **Zero
+  unknown-license dependencies.** New deps enter ONLY via a queue task with
+  {url, license, purpose, ship/study verdict} + a Leto ruling here.
+**Affects:** AGENTS §9, `project.yml`, `vendor/**`, P-102, L-501, X-601, X-301/X-302.
+
 ## D-14 | 2026-11-20 UTC | Leto | RULED
 **Context:** AGENTS §3/§11 forbid direct commits to `main`, but L-001/L-002 (repo init +
 governance seeding) need a first push to create the repo baseline; no milestone merge

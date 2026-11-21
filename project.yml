@@ -1,0 +1,86 @@
+name: PitchNotesIOS
+options:
+  bundleIdPrefix: com.thesagezm
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+packages:
+  OnnxRuntime:
+    # Mirror of microsoft/onnxruntime-swift-package-manager (pulled from GitHub
+    # 2026-11-17) — the ONE inference runtime (D-13, AGENTS §6). Tag 1.24.2 =
+    # rev b7fb7f7; the xcframework binary downloads from download.onnxruntime.ai
+    # (the manifest's own URL). The iOS slice is a STATIC ar archive, so the app
+    # binary must carry no @rpath framework load commands (LiveContainer
+    # requirement — enforced by the build-ipa verify step).
+    url: https://github.com/thesagezm/onnxruntime-swift-package-manager
+    exactVersion: "1.24.2"
+  PitchLogic:
+    # Pure-Swift logic core (scoring, note-track parsing, schema validation).
+    # Package lives at Tests/Logic/ per the AGENTS §12 file map; the app links
+    # it statically so UI and CI share one implementation.
+    path: Tests/Logic
+targets:
+  PitchNotesIOS:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+    dependencies:
+      - package: OnnxRuntime
+        product: onnxruntime
+      - package: PitchLogic
+    info:
+      path: App/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: PitchNotes
+        # Literal version in the GENERATED plist (speechnotes precedent: without
+        # these keys iOS reported 1.0). Keep MARKETING_VERSION /
+        # CURRENT_PROJECT_VERSION below in sync on every bump.
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        # Only runtime permission: live pitch matching. No network entitlements
+        # (100% offline at runtime; models download once, AGENTS §0/§11).
+        NSMicrophoneUsageDescription: "PitchNotes listens to your singing to show live pitch feedback and grade your takes. Audio is processed on this device only and never leaves your iPhone."
+        ITSAppUsesNonExemptEncryption: false
+        # Stem playback continues with the screen locked (J-203 mixer). Exactly
+        # [audio] — the build-ipa verify step guards against drift in both
+        # directions (speechnotes precedent).
+        UIBackgroundModes:
+          - audio
+        # Import sources for the document picker (M2). LSHandlerRank Alternate:
+        # we open these files, we are not their default player.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: MP3 audio
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.mp3]
+          - CFBundleTypeName: FLAC audio
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [org.xiph.flac]
+          - CFBundleTypeName: WAV audio
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.microsoft.waveform-audio]
+          - CFBundleTypeName: M4A audio
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.mpeg-4-audio]
+    settings:
+      base:
+        PRODUCT_NAME: PitchNotes
+        PRODUCT_BUNDLE_IDENTIFIER: com.thesagezm.pitchnotes
+        # Keep CFBundleShortVersionString / CFBundleVersion in info.properties
+        # above in sync — a release bump touches all three.
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+schemes:
+  PitchNotesIOS:
+    build:
+      targets:
+        PitchNotesIOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
