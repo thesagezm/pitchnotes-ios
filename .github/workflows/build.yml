@@ -168,6 +168,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Runner image python is 3.15 (run 44951410853 red) — onnxruntime ships
+      # no cp315 wheels yet. Pin 3.13 for the ORT venv.
+      - name: Set up Python 3.13 (onnxruntime wheels)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Set up harness deps (numpy + onnxruntime in venv — real-model mode)
         run: |
           python3 -m venv "$HOME/spike-venv"
@@ -190,10 +196,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up harness deps (numpy + onnxruntime in venv)
+      # The ribbon runner is the vendored C++ MPM/YIN (clang++, present on
+      # macOS) — numpy only; NO onnxruntime dependency here (immune to the
+      # runner-python wheel gap, run 44951410853).
+      - name: Set up harness deps (numpy in venv)
         run: |
           python3 -m venv "$HOME/spike-venv"
-          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+          "$HOME/spike-venv/bin/pip" install --quiet numpy
       - name: Run spike harness (real vendored MPM/YIN runner vs committed fixtures)
         run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike ribbon'
 
@@ -236,6 +245,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Runner image python is 3.15 (run 44951410853 red) — onnxruntime ships
+      # no cp315 wheels yet. Pin 3.13 for the ORT venv.
+      - name: Set up Python 3.13 (onnxruntime wheels)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Set up harness deps (numpy + onnxruntime in venv — real-model mode)
         run: |
           python3 -m venv "$HOME/spike-venv"
@@ -257,6 +272,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Pin 3.13 for onnxruntime wheels (deterministic across runner-image
+      # python bumps — cp315 gap, run 44951410853).
+      - name: Set up Python 3.13 (onnxruntime wheels)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Set up bench deps (numpy + onnxruntime in venv)
         run: |
           python3 -m venv "$HOME/spike-venv"
