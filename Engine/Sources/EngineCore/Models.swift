@@ -61,12 +61,21 @@ public struct PitchFrame: Codable, Equatable, Sendable {
     public var confidence: Double
     /// dBFS.
     public var loudness_db: Double
+    /// v0.1 ADDITIVE (C-6.0): emitting engine's `PitchEngineID` rawValue;
+    /// `""` legal only in v0.0-era persisted data. Decodes as nil for old files.
+    public var engine_id: String?
+    /// v0.1 ADDITIVE (C-6.0): source lookahead in ms (SWIFTF0 = 176,
+    /// RIBBON_MPM_YIN = 0). Decodes as nil for old files.
+    public var lookahead_ms: Int?
 
-    public init(t: Double, hz: Double, confidence: Double, loudness_db: Double) {
+    public init(t: Double, hz: Double, confidence: Double, loudness_db: Double,
+                engine_id: String? = nil, lookahead_ms: Int? = nil) {
         self.t = t
         self.hz = hz
         self.confidence = confidence
         self.loudness_db = loudness_db
+        self.engine_id = engine_id
+        self.lookahead_ms = lookahead_ms
     }
 }
 
