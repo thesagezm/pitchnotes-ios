@@ -16,6 +16,75 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-19 | 2026-11-21 UTC | Leto | RULED (executes D-7/D-17; closes M0 X-task residue)
+**Context:** M1 open. The session plan orders three Leto actions before lane work:
+(a) execute D-17 — independently verify the `sevagh/pitch-detection` license (do not
+trust the dossier), perform the vendor intake per L-008, and resolve the spike-job
+naming; (b) close the leftover M0 X-task accounting (part presets, MockEngine
+scenario surface, logic-tests wiring, portable Foundation-only test package, HF repo
+status); (c) ratify CONTRACTS v0.1 early so P-105 is unblocked (separate commit, L-102).
+**Ruling:**
+1. **`sevagh/pitch-detection` LICENSE VERIFIED by Leto, independent of the dossier:**
+   upstream `LICENSE` read verbatim at pinned tag **v2023.12 = `faa04bb262476bdc0490f4bb3ffd7c6cdeeb3052`**
+   — standard MIT text (© 2018 Sevag Hanssian), no non-standard terms. SHIP-SAFE.
+2. **VENDOR INTAKE COMPLETE per L-008** (@47410e6): `vendor/pitch-detection/` —
+   LICENSE verbatim, intake-record README, patches.log, and a SUBSET of upstream:
+   `include/pitch_detection.h` + `src/{mpm,yin,autocorrelation,parabolic_interpolation}.cpp`
+   (deterministic MPM/YIN only). Two deliberate exclusions, logged in patches.log:
+   (a) the mlpack-backed probabilistic HMM variants (`pmpm`/`pyin`/`hmm.cpp`) —
+   mlpack is Apache-2.0 (permissive) but a huge dependency we do not need; re-intake
+   + new ruling required before any probabilistic use; (b) upstream FFTS hard
+   dependency replaced by a PitchNotes-local C-ABI seam (`include/pd_fft.h` +
+   `src/pd_fft_backend.cpp`) backed by **kissfft v131 (`0bfa4d5…`, BSD-3-Clause —
+   per-file SPDX headers verified)** vendored under `third_party/kissfft/`. FFTS
+   itself was ALSO verified BSD-3-Clause (upstream COPYRIGHT read at HEAD `b22d839`)
+   but is NOT vendored — the seam keeps the third-party surface minimal and lets
+   P-102 bind vDSP/Accelerate on iOS later. Intake verification: **13/13 checks**
+   (mpm/yin recover integer-period sines < 0.01 Hz, E2 82.4 Hz + 440 Hz on the
+   complex path, silence → −1, float+double, allocation reuse; `kiss_fftri`
+   natural-order output probed vs a complex-IDFT reference, rms 2.5e-05). The
+   upstream CIRCULAR-autocorrelation leakage artifact (non-integer periods bias
+   the estimate) is documented in the intake README as an engineering note for
+   P-102 — it is upstream-faithful behavior, not an intake defect.
+3. **SPIKE JOB RENAME: `nanopitch-spike` → `ribbon-spike`.** Rationale: D-17 bans
+   NanoPitch pretrained weights (GTSinger NC data); the M1 gate spike now tests the
+   D-17 ribbon default (vendored MPM/YIN), so the frozen name would misreport WHAT
+   was tested at the merge gate. Leto updates `.github/workflows/build.yml`,
+   PLAN.md (M1 CI jobs + gate + P-102 row context via this ruling), AGENTS.md §6 job
+   list, and the QUEUE M1 gate text. P-102's deliverable is unchanged (D-17
+   fallback-becomes-default ribbon); its spike reference is `ribbon-spike`. The
+   ribbon-spike job runs the P-002 mock harness until Paul's P-102 delivers the
+   real C++ runner (compiled vendored MPM/YIN against the synthetic fixtures). If a
+   clean NanoPitch retrain ever lands (D-17.2), it gets its OWN future job
+   (`nanopitch-retrain-spike`) — never the ribbon name.
+4. **M0 X-task residue, ruled:**
+   - **Part range presets (X-001)** → ratified into CONTRACTS **v0.1** as C-6.1
+     (verbatim UX.md §3.6 table, calibratable per UX §3.6 calibration spec).
+     Ratified in the L-102 commit of this session; UX §3.6 remains the
+     human-facing spec, CONTRACTS C-6.1 the single interface source of truth.
+   - **MockEngine scenario surface** → remained STRUCK by D-16.4 (P-001
+     `MockScenario` init parameter satisfies it; no frozen surface).
+   - **logic-tests wiring to the real test targets** → DONE (D-16.5 wired
+     EngineCore into logic-tests at L-009; Jess's X-006 swap adds her
+     `Tests/Logic` package dependency on her branch).
+   - **Portable Foundation-only test package** → SATISFIED by `EngineCore`
+     (Engine/ SPM package is Foundation-only, compiles + tests green on Linux
+     swift 6.0.3 and the macOS CI runner). No separate package; no action.
+   - **HF repo (D-2)** → still BLOCKED(human). INTERIM RULE for L-101/M1:
+     `Models/manifest.json` gains real-model entries pinned to UPSTREAM public
+     URLs + Leto-verified SHA256 (swiftf0 from `aaatmy/swift-f0-onnx`, silero-vad
+     from the official snakers4 release) so CI exercises the REAL
+     download→verify→spike path before the HF repo exists; when the human creates
+     `thesagezm/pitchnotes-models`, the URL fields swap to HF re-hosts (SHA256
+     values MUST NOT change — byte-identity is the trust anchor). Human
+     re-escalated in LOG; M1 does not stall on this.
+5. **P-102 AC note:** the ribbon RTF target (< 0.1 native) and spike expectations
+   apply to the vendored MPM/YIN path; RTF/RSS numbers logged in
+   Docs/BENCHMARKS.md per the honesty rule.
+**Affects:** `vendor/pitch-detection/**`, P-102, P-105, L-101, L-102, L-103,
+`.github/workflows/build.yml`, `Models/manifest.json`, PLAN.md M1, AGENTS.md §6,
+CONTRACTS v0.1, X-001, D-7/D-17/D-15.
+
 ## D-18 | 2026-11-21 UTC | Leto | RULED
 **Context:** L-009 M0 gate wrap-up. Sub-rulings made while completing the merge.
 **Ruling:**
