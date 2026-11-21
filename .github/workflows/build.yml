@@ -4,8 +4,9 @@ name: Build IPA
 # renamed to PitchNotes and extended with the three-agent branch model:
 # push to main/paul/jess/leto (path-filtered) + workflow_dispatch on any ref.
 #
-# Spike jobs are STUBS in M0 (allow-failure until P-002 wires the real
-# Tests/Spikes harness and models land via the HF repo, D-2).
+# M1 gate state (L-101 ACTIVATED): swiftf0/ribbon/silero spikes run the REAL
+# pinned models and are BLOCKING (no continue-on-error); separation/basicpitch
+# remain mock + allow-failure until their real runners land (M2/M3).
 
 concurrency:
   # One run per branch: a push during an active build cancels the older run
@@ -74,6 +75,24 @@ jobs:
             --entry silero-vad \
             --cache-dir "$HOME/pitchnotes-model-cache"
 
+      # X-008c (D-27.5): Paul's PitchORT package tests (P-101 ORT seam) — the
+      # real-model tests locate the cache the download steps above just filled
+      # ($HOME/pitchnotes-model-cache, then <ws>/Models/downloads fallback);
+      # XCTSkip when no cached model (local runs without the cache).
+      - name: Run PitchORT package tests (real model via cache, X-008c)
+        run: |
+          set -o pipefail
+          cd Engine/PitchORT
+          swift test 2>&1 | tee ../pitchort-tests.log
+
+      # X-011b (P-104): MicCapture wrapper smoke tests — config math +
+      # interruption-hook state machine. NO mic needed, no capture started.
+      - name: Run MicCapture package tests (X-011b)
+        run: |
+          set -o pipefail
+          cd Engine/MicCapture
+          swift test 2>&1 | tee ../miccapture-tests.log
+
       - name: Run PitchLogic package tests
         run: |
           set -o pipefail
@@ -97,6 +116,22 @@ jobs:
           path: engine-tests.log
           if-no-files-found: warn
 
+      - name: Upload PitchORT test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitchort-tests-log
+          path: pitchort-tests.log
+          if-no-files-found: warn
+
+      - name: Upload MicCapture test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miccapture-tests-log
+          path: miccapture-tests.log
+          if-no-files-found: warn
+
       - name: Show failure summary
         if: failure()
         run: |
@@ -117,47 +152,50 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------
-  # SPIKE JOBS (wired to Paul's P-002 harness: deterministic MOCK model, no
-  # weights downloaded in M0 — D-18.5). Naming is final — the M0+ merge gates
-  # reference these exact job names (AGENTS §3/§6).
-  # continue-on-error = allow-failure (non-blocking daily, still BLOCKING at
-  # milestone merges per AGENTS §3 once activated).
+  # SPIKE JOBS. M1 ACTIVATION (L-101, gate): swiftf0/ribbon/silero run the
+  # REAL pinned models — venv carries numpy+onnxruntime, PITCHNOTES_SPIKE_REAL
+  # =required makes the silent mock fallback a HARD failure (no mock at merge
+  # time), and continue-on-error is REMOVED (blocking). separation/basicpitch
+  # stay mock + allow-failure until their real runners land (M2/M3).
+  # Job NAMES are final — merge gates reference these exact IDs (AGENTS §3/§6).
   # ---------------------------------------------------------------------
   swiftf0-spike:
-    name: SwiftF0 spike (P-002 mock harness)
+    name: SwiftF0 spike (real pinned ONNX, L-101 BLOCKING)
     runs-on: macos-latest
     timeout-minutes: 10
-    continue-on-error: true
+    env:
+      PITCHNOTES_SPIKE_REAL: required
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+      - name: Set up harness deps (numpy + onnxruntime in venv — real-model mode)
         run: |
           python3 -m venv "$HOME/spike-venv"
-          "$HOME/spike-venv/bin/pip" install --quiet numpy
-      - name: Run spike harness (mock model, no weights in M0)
+          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+      - name: Run spike harness (real D-19/D-20 pinned model, SHA-verified)
         run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike swiftf0'
 
   # D-19 rename: nanopitch-spike -> ribbon-spike. The M1 gate spike tests the
   # D-17 ribbon default (vendored sevagh MPM/YIN, MIT — vendor/pitch-detection),
-  # NOT NanoPitch (pretrained weights banned, GTSinger NC data). Until Paul's
-  # P-102 lands the real C++ runner, this job keeps the P-002 mock harness
-  # (harness spike name stays `nanopitch` until P-102 renames it + adds the
-  # ribbon runner). continue-on-error stays until L-101 ACTIVATION at the gate.
+  # NOT NanoPitch (pretrained weights banned, GTSinger NC data). P-102 landed
+  # the REAL C++ runner (Tests/Spikes/ribbon_real.py compiles vendor/ + kissfft
+  # with clang++/g++ — present on macOS runners); X-009 flips the job line to
+  # `--spike ribbon` and L-101 makes it BLOCKING (no mock fallback).
   ribbon-spike:
-    name: "Causal ribbon spike (D-19 MPM/YIN, P-102 mock harness)"
+    name: "Causal ribbon spike (D-19 MPM/YIN real vendored runner, L-101 BLOCKING)"
     runs-on: macos-latest
     timeout-minutes: 10
-    continue-on-error: true
+    env:
+      PITCHNOTES_SPIKE_REAL: required
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+      - name: Set up harness deps (numpy + onnxruntime in venv)
         run: |
           python3 -m venv "$HOME/spike-venv"
-          "$HOME/spike-venv/bin/pip" install --quiet numpy
-      - name: Run spike harness (mock model until P-102 real ribbon runner)
-        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike nanopitch'
+          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+      - name: Run spike harness (real vendored MPM/YIN runner vs committed fixtures)
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike ribbon'
 
   separation-spike:
     name: Separation spike (P-002 mock harness)
@@ -190,19 +228,48 @@ jobs:
         run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike basicpitch'
 
   silero-vad-spike:
-    name: Silero VAD spike (P-002 mock harness)
+    name: Silero VAD spike (real pinned ONNX, L-101 BLOCKING)
     runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      PITCHNOTES_SPIKE_REAL: required
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up harness deps (numpy + onnxruntime in venv — real-model mode)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+      - name: Run spike harness (real D-19/D-20 pinned model, SHA-verified)
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike silero-vad'
+
+  # X-012 (P-106): NON-BLOCKING informational pitch bench — F1@50c/RPA/RCA per
+  # Docs/BENCHMARKS §1 on the pinned swiftf0 (ONNX) + vendored ribbon-cpp
+  # (sevagh compiles from vendor/ — g++ present on ubuntu); ribbon-swift rows
+  # AUTO-SKIP without swiftc (loud skip note, never silent). `--assert` fails
+  # the job only if a row that RAN misses the §2 F1 ≥ 0.75 target. Gate
+  # candidate for M2 at Leto's discretion; never blocks an M1 merge.
+  pitch-bench:
+    name: Pitch bench v1 (P-106, informational)
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+      - name: Set up bench deps (numpy + onnxruntime in venv)
         run: |
           python3 -m venv "$HOME/spike-venv"
-          "$HOME/spike-venv/bin/pip" install --quiet numpy
-      - name: Run spike harness (mock model, no weights in M0)
-        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike silero-vad'
+          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+      - name: Run bench harness (assert §2 targets on every row that ran)
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/bench_f1.py --assert'
+      - name: Upload bench report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report-v1
+          path: Tests/Spikes/bench_report_v1.json
+          if-no-files-found: warn
 
   build-ipa:
     name: Build unsigned IPA
