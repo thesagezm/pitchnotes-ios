@@ -88,7 +88,7 @@ final class AudioSessionController: ObservableObject {
             Task { @MainActor in self.flow.requestResult(granted) }
         }
         if #available(iOS 17.0, *) {
-            AVAudioApplication.requestRecordPermission(completion)
+            AVAudioApplication.requestRecordPermission(completionHandler: completion)
         } else {
             AVAudioSession.sharedInstance().requestRecordPermission(completion)
         }

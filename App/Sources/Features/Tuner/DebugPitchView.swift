@@ -35,7 +35,7 @@ struct DebugPitchView: View {
     // MARK: - Engine (C-6.0 facade selector — activates at P-105)
 
     private var engineSection: some View {
-        Section("Engine") {
+        Section {
             Picker("Source", selection: .constant(DebugPitchModel.Source.ribbon)) {
                 Text("Ribbon (causal)").tag(DebugPitchModel.Source.ribbon)
                 Text("Grading (SwiftF0)").tag(DebugPitchModel.Source.grading)

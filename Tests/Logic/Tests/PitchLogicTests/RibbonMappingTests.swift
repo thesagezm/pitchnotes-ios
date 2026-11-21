@@ -145,10 +145,10 @@ final class RibbonMappingTests: XCTestCase {
     func testTolerancePresetsChangeTheBoundary() {
         let hz30 = hz(52, cents: -30)
         XCTAssertEqual(reading(hz: hz30, tolerance: .wide).state, .inTune)
-        XCTAssertEqual(reading(hz: hz30, tolerance: .medium).state, .inTune)
+        XCTAssertEqual(reading(hz: hz30, tolerance: .medium).state, .flat, "|−30| > 25")
         XCTAssertEqual(reading(hz: hz30, tolerance: .narrow).state, .flat, "−30 outside ±10")
-        let hz12 = hz(52, cents: -12)
-        XCTAssertEqual(reading(hz: hz12, tolerance: .narrow).state, .inTune)
+        let hz9 = hz(52, cents: -9)
+        XCTAssertEqual(reading(hz: hz9, tolerance: .narrow).state, .inTune, "|−9| ≤ 10")
         let hz35 = hz(52, cents: 35)
         XCTAssertEqual(reading(hz: hz35, tolerance: .medium).state, .sharp, "+35 outside ±25")
     }
@@ -171,7 +171,8 @@ final class RibbonMappingTests: XCTestCase {
         XCTAssertEqual(reading(hz: hz(52, cents: 41), reference: ref, tolerance: .narrow).spokenSummary,
                        "E3, 41 cents sharp, sing lower")
         let oct = reading(hz: hz(60, cents: 1200), reference: RibbonReference(midi: 60), octave: true)
-        XCTAssertEqual(oct.spokenSummary, "C4, in tune, one octave up")
+        XCTAssertEqual(oct.spokenSummary, "C5, in tune, one octave up",
+                       "summary announces the SUNG note (nearest) + the octave fact")
     }
 
     // MARK: - PartRangePresets (CONTRACTS v0.1 C-6.1 verbatim)
