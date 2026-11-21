@@ -1,13 +1,16 @@
 import SwiftUI
 
-// Bootstrap app so CI can produce an unsigned IPA before Jess's shell lands
-// (L-003/L-004). J-001 REPLACES this file with the real SwiftUI TabView shell
-// (Learn / Library / Theory / Ear / Settings) — no other file depends on it.
+// PitchNotes app entry — J-001 app shell v0. Replaces Leto's bootstrap stub
+// (same path; at the M0 merge this file is the surviving version).
+// Five-tab shell per Docs/UX.md §2: Learn, Library, Theory, Ear, Settings.
 @main
 struct PitchNotesApp: App {
     var body: some Scene {
         WindowGroup {
-            Text("PitchNotes — bootstrap build")
+            RootTabView()
+                // VoiceOver: announce the shell as a coherent whole, tabs are
+                // individually labeled in RootTabView.
+                .accessibilityLabel("PitchNotes")
         }
     }
 }
