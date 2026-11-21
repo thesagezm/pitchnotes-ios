@@ -181,7 +181,11 @@ public final class RibbonEngine: @unchecked Sendable {
         history.append(contentsOf: samples)
         samplesConsumed += samples.count
         var frames: [RibbonFrame] = []
-        let emitCount = (history.count - window) / hop + 1
+        // Guard the negative-numerator case: Int division truncates toward
+        // zero, so (896-1024)/256 = 0 (not -1) — without the guard a partial
+        // window would emit one frame and slice past the end (caught red on
+        // CI arm64 + Linux in testTimestampsOnContractGridAndCausal).
+        let emitCount = history.count >= window ? (history.count - window) / hop + 1 : 0
         if emitCount > 0 {
             for k in 0..<emitCount {
                 let start = k * hop
