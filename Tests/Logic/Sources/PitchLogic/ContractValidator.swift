@@ -166,17 +166,13 @@ public enum ContractValidator {
         var previousStart = -Double.infinity
         var previousEnd = -Double.infinity
         for (index, note) in notes.enumerated() {
-            let start = note["start_s"] as? Double
-            let end = note["end_s"] as? Double
-
-            // V7: start_s < end_s.
-            if let start, let end {
-                if start >= end {
-                    violations.append(ContractViolation(rule: "V7", message: "notes[\(index)] start_s \(start) >= end_s \(end)"))
-                }
-            } else {
+            // V7: start_s < end_s (also covers missing/non-numeric fields).
+            guard let start = note["start_s"] as? Double, let end = note["end_s"] as? Double else {
                 violations.append(ContractViolation(rule: "V7", message: "notes[\(index)] start_s/end_s missing or not numbers"))
                 continue
+            }
+            if start >= end {
+                violations.append(ContractViolation(rule: "V7", message: "notes[\(index)] start_s \(start) >= end_s \(end)"))
             }
 
             // V8: sorted by start_s and non-overlapping within the part.

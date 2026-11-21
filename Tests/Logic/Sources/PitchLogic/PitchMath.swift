@@ -37,8 +37,9 @@ public enum PitchMath {
     /// Deviation of a frequency from the equal-tempered center of `midi`,
     /// in cents (+ = sharper). Matches C-2.3 `cents_ref` semantics before
     /// clamping; callers writing NoteTracks clamp to [-50, +50] per V9.
+    /// (`Self.hz` — the `hz` parameter shadows the function name.)
     public static func centsRef(hz: Double, midi: Int) -> Double {
-        cents(from: hz(forMidi: midi), to: hz)
+        cents(from: Self.hz(forMidi: midi), to: hz)
     }
 
     // MARK: - Octave-equivalence folding (C-5 default ON; UX §3.5)
