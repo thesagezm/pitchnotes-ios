@@ -42,10 +42,34 @@ PYEOF
 python3 -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" install --quiet "huggingface_hub>=0.26"
 
-for ENTRY in "$@"; do
+# Bootstrap special case: an entry whose manifest URL already points at $REPO
+# (test-blob.bin) 404s until the first upload — pass its committed source via
+# --from anywhere in the args:
+#   bash scripts/models/hf_upload.sh test-blob --from Models/test-blob.bin
+FROM=""
+ENTRIES=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --from) FROM="$2"; shift 2 ;;
+    *) ENTRIES+=("$1"); shift ;;
+  esac
+done
+
+for ENTRY in ${ENTRIES[@]+"${ENTRIES[@]}"}; do
   echo "=== $ENTRY ==="
   # Same download+verify path CI uses; cached file is the trust anchor.
-  LOCAL=$(python3 -I scripts/models/download.py --manifest "$MANIFEST" --entry "$ENTRY" --cache-dir "$HOME/pitchnotes-model-cache")
+  # download.py prints "cached: <path>" (hit) or "downloaded + verified: <path> (<size> bytes)" (fresh).
+  # A bootstrap entry (manifest URL points at $REPO before its first upload) 404s
+  # here on purpose — fall back to --from. dl.log is per-entry scratch.
+  DLOG="$WORK/dl.log"
+  LOCAL=""
+  if python3 -I scripts/models/download.py --manifest "$MANIFEST" --entry "$ENTRY" --cache-dir "$HOME/pitchnotes-model-cache" >"$DLOG" 2>&1; then
+    LOCAL=$(sed -n -E 's/^(cached|downloaded \+ verified): ([^ ]+).*/\2/p' "$DLOG")
+  elif [ -n "$FROM" ] && [ -f "$FROM" ]; then
+    echo "bootstrap override: uploading committed $FROM"
+    LOCAL="$FROM"
+  fi
+  [ -f "$LOCAL" ] || { echo "error: no source for $ENTRY (download log: $(tail -c 200 "$DLOG"))"; exit 3; }
   REMOTE="$ENTRY/$(python3 -c "import json;m=json.load(open('$MANIFEST'));u=[x['url'] for x in m['models'] if x['name']=='$ENTRY'][0];print(u.rsplit('/',1)[-1].split('?')[0])")"
   echo "upload -> $REPO/$REMOTE"
   HF_TOKEN="$HF_TOKEN" "$WORK/venv/bin/python" - "$LOCAL" "$REPO" "$REMOTE" << 'PYEOF'
