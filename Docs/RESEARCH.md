@@ -3,6 +3,9 @@ You're right to push back. The earlier report had real errors — it misread **S
 
 First, what I found in **your** stack, because it changes the recommendation: `thesagezm/speechnotes-ios` is Swift, generated via **XcodeGen** on GitHub Actions macOS runners, sideloaded unsigned via SideStore/LiveContainer (so **static linking is mandatory**), and it already runs **four ONNX TTS engines on CPU through ONNX Runtime via your SPM mirror `onnxruntime-swift-package-manager` tag 1.24.2** — Kokoro (~341 MB fp32 / ~92 MB int8), Nano Edge (~157 MB), Phonon (~192 MB), Supertonic (~399 MB), with CI "spike" contract tests per model. You also have `speechnotes-android` (Kotlin) and `speechnotes-linux` (Rust). **That is exactly the pattern this music app should reuse: one ORT runtime, many models, CPU‑first, int8/fp16, CI spike tests, static link, cross‑platform core.** A 80–230 MB separation model is *smaller* than Kokoro fp32 you already ship. Feasibility is not the question; accuracy on close male harmony is.
 
+> **Changelog:** 2026-11-21 — Addendum A appended (dettato & Muskey, verified by Leto against primary sources; §1–10 below are the original M0 source pack, unchanged).
+> **Ownership:** Docs/RESEARCH.md is now maintained by Leto (AGENTS §12 file map, D-26).
+
 ---
 
 ## 1. The honest feasibility map (read this before anything else)
@@ -223,3 +226,136 @@ You have a huge advantage most apps don't: **SDA hymns have known SATB scores.**
 This is the verified, source‑rich foundation. The two papers to hand your agent **first** are [ACappellaSet/ACAMate](https://openreview.net/pdf?id=rAPN9Ir7jt) (your exact app, with real SDR numbers and a fine‑tuning recipe) and [PawCT](https://arxiv.org/abs/2610.09861) (per‑voice notes, the hardest part). The two repos to fork **first** are [swift-f0](https://github.com/lars76/swift-f0) (live pitch, MIT, ONNX, notes built‑in) and [demucs.cpp](https://github.com/sevagh/demucs.cpp) (on‑device separation, MIT, 81 MB). Everything else builds around those.
 
 If you want, I can next produce (a) a concrete `project.yml` + CI spike‑job spec for the music module mirroring your speechnotes-ios setup, (b) a Swift/ORT integration sketch for SwiftF0 streaming + the grading engine, or (c) the synthetic SATB data‑generation pipeline (hymn MIDI → OpenUtau/DiffSinger → IR augmentation → MSST fine‑tune config). Tell me which and I'll go deep on it.
+
+---
+
+# Addendum A — dettato & Muskey (Nov 2026)
+
+> **Verification (Leto, 2026-11-21):** every load-bearing fact below was checked against
+> primary sources — GitHub repos + LICENSE/NOTICE files, HF model cards, and
+> dettato's `retune.py` source. Benchmarks are **author-self-reported** but
+> reproducible via the public HF dataset `kobimusic/dettato-benchmark`. Items I could
+> not find in primary sources are marked **VERIFICATION PENDING**.
+
+## A.1 · kobimusic/dettato — audio→MIDI, 4 stages, 28.1M params (Apache-2.0)
+
+**Repo (verified):** https://github.com/kobimusic/dettato — LICENSE Apache-2.0 (verbatim),
+NOTICE: "Dettato, Copyright 2026 KobiMusic. This product includes software and model
+weights developed by KobiMusic." Python; active (pushed 2026-11-20); 174 stars observed
+(fact sheet said ~127 — it is growing). Models (HF, all Apache-2.0 metadata):
+transcriber 15.3M [`kobimusic/dettato`] · evidence repairer 4.9M [`kobimusic/dettato-evidence`]
+· grouper 2.9M [`kobimusic/dettato-grouper`] · drums 5.0M [`kobimusic/dettato-drums`]
+(drums needs ≥40 kHz audio — irrelevant for a cappella).
+
+**Transcriber architecture (verified vs card):** pitch-equivariant lane network; harmonic
+log-frequency spectrogram of 16 kHz mono audio, 3 bins/semitone from A0, one channel per
+harmonic 0.5..7 plus a short-window channel; stem 2× 3×3 conv + strided conv → 20 ms
+frames; trunk 368 ch, 15 ConvNeXt-style lane blocks at 40 ms with dilated time conv +
+sparse pitch mixing at 1/2/12/19/24/28/31 semitones; axial attention on pitch and time
+after blocks 5/10/15 plus a bidirectional GRU per lane; 2 refine blocks → 20 ms; heads =
+onset/frame/offset for 88 keys × **2 voices per key**; windows 8 s every 2 s,
+Hann-weighted average; thresholds onset 0.25 (voice2 0.30), offset 0.30, frame 0.40;
+**confidence = onset probability**.
+
+**Benchmarks (author-run; mir_eval + MuScriptor-paper rules, 50-cent tolerance;
+reproducible via HF dataset `kobimusic/dettato-benchmark`):** composite **59.2** (9 sets:
+8 MuScriptor-paper sets + Slakh2100 test) vs MuScriptor 1.3B **45.1** — at ~65× fewer
+params. **CHORAL ROWS (verified verbatim from the card):** Dagstuhl ChoirSet dettato
+**onset 55.9 / frame 82.0 / offset 44.4** vs MuScriptor **14.4 / 80.7 / 11.5**; Bach10
+**91.9 / 94.2 / 87.7**. These are **PART-AGNOSTIC note scores** (instrument does not
+count) — NOT part-aware; our PawCT ceiling (0.225 macro part-aware) still governs
+assignment honesty (§3). Evidence repairer measured alone: +0.30 composite.
+
+**Training data / license split (verified):**
+- **Transcriber: COMMERCIALLY CLEAN.** Synthetic instruments + CC URMP solos + ~20
+  morphed soundfonts (the published ["soundfont babies"](https://kobi.music/research/making-soundfont-babies)
+  technique) + CC vocals; "no copyrighted recordings"; no benchmark leakage; in-house
+  audio not released. (Residual: the ~20 soundfonts' own file licenses → X-310.)
+- **Evidence repairer: COMMERCIALLY CLEAN (verified 2026-11-21 — upgrades the fact
+  sheet's "card not yet verified").** Apache-2.0; trained ONLY on in-house synthetic
+  audio generated from an earlier transcriber checkpoint where exact notes are known.
+- **Grouper: NC-ENCUMBERED — NEVER SHIP.** CC BY 4.0 sets (Slakh2100, MusicNet,
+  GuitarSet, Medley-solos-DB; OpenMIC-2018 CC-BY labels + FMA CC audio) PLUS
+  **MUSDB18 (academic use, tracks CC BY-NC-SA) and IRMAS (CC BY-NC-SA 3.0)**. Card's
+  own words: "You should check if these terms matter for how you use the weights."
+- **Drums: NC-ENCUMBERED — NEVER SHIP.** README: "Some of the grouper's and the drum
+  model's training datasets carry non-commercial terms."
+
+**Grouper decode (verified — reusable as an ALGORITHM, reimplement + retrain on clean
+synthetic SATB per X-301):** per-note token = pitch embedding + 12 note numbers + 3
+transcriber taps (368 each); 24 s windows starting 12 s apart; 7 transformer blocks with
+rotary positions on onset time; predicts 73 GM instrument classes + a 32-dim track
+embedding; "distinct-tracks decode": cluster per window by embedding+class → chain
+clusters across windows → merge song-wide → fold tracks <30 notes into the most similar
+big track → keep a short track (<¼ of notes) only if clearly a different instrument →
+merge same-named tracks → merge same-pitch notes within 30 ms. Author states grouping is
+the WEAKEST stage (jazz: ~25% of sax notes land in piano).
+
+**Tuning (verified in `src/dettato/grouper/retune.py`):** `MIN_CENTS = 10.0` — if the
+estimate sits ≥10 cents off A440 (circular mean of refined spectral maxima, ±50c), the
+audio is resampled onto A440 (pitch and time move together), processed, and times are
+mapped back. **VERIFICATION PENDING:** the fact sheet's "detuned +35c test: F1 0.81 →
+0.96" figure (not present in README, cards, or source — treat as human-reported until
+reproduced by us).
+
+**Limits (verified):** 88 keys A0–C8; **at most 2 notes on the same key** (3+ singers in
+unison drop voices); **NO metre/downbeat**; performance MIDI (unquantized).
+
+**Cost (verified):** RTX 5060: 4-min song ≈15 s, 6-min ≈25 s, <4 GB GPU. Laptop CPU:
+15 s clip → 87 s INCLUDING model load (~5.8× RT). **A14 CPU cost unknown → P-307 must
+measure** (D-21 adoption threshold). Offline weights supported (`DETTATO_WEIGHTS`
+folder). Python/PyTorch; **no ONNX export shipped — we port.** Apache-2.0 requires the
+NOTICE attribution in our repo NOTICE + in-app licenses screen (D-26).
+
+## A.2 · FuzzyIdeas/Muskey — AGPL-3.0, macOS — STUDY-ONLY
+
+**Repo (verified):** https://github.com/FuzzyIdeas/Muskey — AGPL-3.0, Swift 91.4%,
+macOS 26 (Tahoe)+ Apple silicon, v1.1.1 (2026-11-19), active. Static deps: **Essentia
+AGPL-3.0 (static)**, **Rubber Band GPL-2.0-or-later**, **PitchTap GPL-3.0**; private
+APIs (MediaRemote via helper signed `com.apple.controlcenter.Muskey`; Core Audio process
+taps) — not iOS-portable. **STUDY-ONLY: never link or copy code; never hotlink the
+lowtechguys.com model CDN — convert from upstream weights ourselves (D-26).**
+
+**Verified techniques worth reimplementing (DEVELOPMENT.md):**
+1. **Dettato transcriber ported to Swift + Core ML, "cut at its three GRUs into four
+   models, because Core ML runs those GRUs much slower than Accelerate does. The GRUs
+   run with Accelerate between the four models."** Spectrogram front end + peak picking
+   ported from dettato's Python. Downloaded model = 33 MB. Hears 8 s @16 kHz, window
+   every 2 s, Hann-weighted mean per 20 ms frame.
+2. Separation = BS-RoFormer, **BS-Roformer-SW checkpoint converted to Core ML, run on
+   GPU**, 6 stems, windows **4.5 s overlapping by 1 s, crossfaded**. Winds stem from a
+   second model: woodwind/brass heads of **MVSep's 53-stem BS-RoFormer**, taken out of
+   Other. (Both checkpoint licenses UNVERIFIED → X-310.)
+3. Live windows first → whole-song stem cache in background → takeover with 10 ms
+   crossfade; stems cached 16-bit ≈1.2 MB/s of song, 2 GB LRU (our ALAC choice is
+   smaller — D-8).
+4. Notes UX: tab / sheet music / piano roll as **STATIC PAGES with a line moving
+   through**; page split into top/bottom halves — the top turns to the next page when
+   the line reaches the bottom half, the bottom turns when the line reaches the top
+   again; click a note → seek to that beat; drag across notes → region loop; arrows
+   transpose; portrait/landscape page shapes; notes follow the pitch change.
+5. Notes placed on Essentia beats; dettato finds no metre → every bar 4 beats, first
+   beat starts bar 1, each note rounded to a sixteenth; bass/guitar get string+fret
+   heuristics; staff written an octave above sounding pitch.
+6. Key = Essentia KeyExtractor `shaath` profile run once per second; tempo =
+   RhythmExtractor2013; chords placed on beats fitted to key. (Essentia is AGPL → we
+   reimplement symbolically from note tracks per D-5.)
+7. Lyrics: whisper.cpp large-v3-turbo, **ONE VOCAL PHRASE AT A TIME cut at pauses**;
+   heard words matched to known lyrics IN ORDER so a repeated chorus maps to the right
+   verse; Apple SpeechTranscriber/DictationTranscriber fallback.
+8. Varispeed changes pitch, so pitch compensation = **−12 × log2(speed) semitones** on
+   top of any key change (confirms our P-402 math).
+9. **`--dettato-check DIR` compares the spectrogram and the network's maps against
+   reference tensors saved by `make dettato-model`** → numerical-PARITY testing
+   methodology for Python→Apple ports (adopted as D-24).
+
+## A.3 · THE CRITICAL INSIGHT (adopted as D-22 — tuning reference)
+
+Neither repo states it; it follows from dettato's retune step. **Our grader assumes
+A440 equal temperament. If an SDA recording sits +35 cents sharp (old tape, varispeed,
+group tuning by ear), a user singing CORRECTLY relative to the recording is marked
+~35 cents flat on EVERY note — a systematic, invisible failure.** We must estimate the
+recording's tuning reference at IMPORT, store it (`tuning_cents`, C-2.1), and consume it
+in transcription (engine-side retune when |tuning| ≥ 10c, dettato-style) and in grading
+(offset the reference — audio stays byte-true). UI indicator required. Default behavior
+ruled in D-22.
