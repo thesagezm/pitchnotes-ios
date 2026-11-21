@@ -1,0 +1,14 @@
+# patches.log — local changes against upstream sevagh/pitch-detection @ v2023.12 (faa04bb)
+# Format: date | sha-of-our-commit | what/why
+# Intake commit sha is appended by Leto at intake commit time (initial entries
+# carry the intake commit; see git log for the exact sha).
+2026-11-21 | (intake) | include/pitch_detection.h: removed #include <ffts/ffts.h> and #include <mlpack/*>; removed detail:: pitch-bin/HMM declarations; removed BaseAlloc::hmm member + detail::init_pitch_bins()/build_hmm() ctor calls (mlpack-backed probabilistic machinery); removed pitch::pyin/pmpm, Mpm/Yin::probabilistic_pitch, util::pitch_from_hmm declarations; replaced ffts_plan_t members/plan-creation/free calls with the local pd_fft seam (pd_fft_init_1d_real / pd_fft_init_1d / pd_fft_execute / pd_fft_free) + added plan-null guard. Deterministic MPM/YIN API surface unchanged.
+2026-11-21 | (intake) | src/autocorrelation.cpp: ffts_execute -> pd_fft_execute (4 call sites); include updated. Algorithm (frequency-domain 1/nfft power scaling, REAL_TO_COMPLEX vs COMPLEX_TO_COMPLEX split) untouched.
+2026-11-21 | (intake) | src/mpm.cpp: removed PMPM_* constants, probabilistic_pitch(), pitch::pmpm() and their template instantiations (mlpack-dependent). peak_picking, cutoff constants, and pitch() untouched.
+2026-11-21 | (intake) | src/yin.cpp: removed PYIN_* constants, Beta_Distribution_0 table, probabilistic_threshold(), Yin::probabilistic_pitch(), pitch::pyin() and templates (mlpack-dependent). absolute_threshold, difference, CMNDF, pitch() untouched.
+2026-11-21 | (intake) | src/parabolic_interpolation.cpp: upstream byte-identical (no changes).
+2026-11-21 | (intake) | NEW (ours, not upstream): include/pd_fft.h — C ABI FFT seam replacing the FFTS hard dependency; semantics = raw/unnormalized transforms (see header for why normalization must not "help").
+2026-11-21 | (intake) | NEW (ours, not upstream): src/pd_fft_backend.cpp — kissfft-backed implementation of the seam.
+2026-11-21 | (intake) | third_party/kissfft/: kissfft v131 (0bfa4d5) subset {kiss_fft.{h,c}, _kiss_fft_guts.h, tools/kiss_fftr.{h,c}} flattened from root+tools layout into one dir — includes resolve unmodified; COPYING renamed LICENSE (verbatim). No source edits.
+2026-11-21 | (intake) | NOT vendored (upstream omissions, deliberate): hmm.cpp (mlpack), test/, misc/, wav_analyzer/, CMakeLists.txt, cmake/, Dockerfile, README.md (replaced by this intake record). Re-intake required before any probabilistic pmpm/pyin use (needs mlpack Apache-2.0 audit + Leto ruling).
+2026-11-21 | (intake) | VERIFICATION: 13/13 checks pass (Linux g++ 13.3.0): mpm/yin recover integer-period sines (437.5/93.75 Hz @1024, <0.01 Hz error), E2 82.4 Hz + 440 Hz on non-power-of-two buffers, silence → −1, float+double, allocation reuse. kiss_fftri natural-order output probed element-wise vs complex-IDFT reference: rms 2.5e-05. Circular-acorr leakage artifact documented in README (upstream-faithful behavior, NOT a patch).
