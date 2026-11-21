@@ -103,6 +103,18 @@ def check_vad_probs(probs: np.ndarray, report: CheckReport, context: str) -> Non
         report.ok("S3", f"{context} finite")
 
 
+def check_confidence_bounds(conf: np.ndarray, report: CheckReport, context: str) -> None:
+    """conf: float array [N] per-frame confidences. S2/S3 (V12)."""
+    if np.any((conf < 0.0) | (conf > 1.0)):
+        report.bad("S2", f"{context}: confidence outside [0,1]")
+    else:
+        report.ok("S2", f"{context}: confidence in [0,1]")
+    if not np.all(np.isfinite(conf)):
+        report.bad("S3", f"{context}: non-finite confidence")
+    else:
+        report.ok("S3", f"{context}: confidence finite")
+
+
 def check_note_events(notes: list[dict], report: CheckReport, context: str,
                       expect_some: bool = True) -> None:
     """notes: [{start_s, end_s, midi, confidence}]. S8."""

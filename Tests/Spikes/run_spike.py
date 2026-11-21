@@ -9,15 +9,25 @@ CI invocation (Leto's five frozen job names each call exactly this):
     python3 Tests/Spikes/run_spike.py --spike silero-vad
     python3 Tests/Spikes/run_spike.py --spike all
 
-M0: runs the DETERMINISTIC MOCK model (no weights downloaded) against the
-P-001 fixtures and asserts the full spike contract (S1–S8 in spike_checks.py).
-Real-model wiring points are documented in mock_model.py + README.md.
+M0: ran the DETERMINISTIC MOCK model (no weights downloaded) against the
+P-001 fixtures and asserted the full spike contract (S1–S8 in spike_checks.py).
+
+M1 (P-101/P-103): `swiftf0` and `silero-vad` upgrade themselves to the REAL
+pinned models when the environment allows: if `onnxruntime` is importable, the
+spike downloads + SHA256-verifies the D-19-pinned ONNX via
+scripts/models/download.py and asserts the real-model contract
+(±20 c accuracy on synthetic truth, gating, RTF/threads). Otherwise it prints
+a loud fallback banner and runs the mock, so CI stays green until the spike
+venv gains `onnxruntime` (Leto one-liner per Tests/Spikes/README.md).
+Set PITCHNOTES_SPIKE_REAL=required to make "real unavailable" a hard failure
+(L-101 flips this at the M1 gate — no silent mock at merge time).
 
 Exit codes: 0 = all checks green, 1 = contract violations / missing fixtures.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -48,6 +58,8 @@ def preflight_fixtures() -> None:
 
 
 def run_swiftf0(report: sc.CheckReport) -> None:
+    if _try_real("swiftf0", report) is True:
+        return
     out = mm.mock_swiftf0()
     report2 = sc.CheckReport()
     sc.check_pitch_frames(out["frames"], report2, "swiftf0/sweep")
@@ -79,6 +91,8 @@ def run_nanopitch(report: sc.CheckReport) -> None:
 
 
 def run_silero(report: sc.CheckReport) -> None:
+    if _try_real("silero-vad", report) is True:
+        return
     out = mm.mock_silero_vad()
     r2 = sc.CheckReport()
     probs = out["speech_probs"]
@@ -139,6 +153,62 @@ def determinism(report: sc.CheckReport, context: str, fn) -> None:
     sc.check_determinism(a, b, report, context)
 
 
+LAST_MODE: dict[str, str] = {}
+
+
+def mode_env() -> str:
+    return os.environ.get("PITCHNOTES_SPIKE_REAL", "auto").strip().lower()
+
+
+def _try_real(name: str, report: sc.CheckReport) -> bool | None:
+    """Attempt the real-model path for a spike. Returns True when the real run
+    completed (checks recorded on the report), None when the real path is
+    unavailable (mock fallback), and raises never — availability problems are
+    hard failures only in PITCHNOTES_SPIKE_REAL=required mode."""
+    # Per-spike real runner module: (module_name, function_name). The module
+    # must expose real_available() + the runner; a missing module = real path
+    # not landed yet → mock fallback (loud banner).
+    real_runners = {"swiftf0": ("swiftf0_real", "run_real"),
+                    "silero-vad": ("silero_real", "run_silero")}
+    if name not in real_runners:
+        return None
+    mod_name, fn_name = real_runners[name]
+    try:
+        sreal = __import__(mod_name)
+    except ImportError as e:
+        if mode_env() == "required":
+            raise sc.SpikeFailure(
+                f"{name}: real mode required but runner module {mod_name}.py is missing ({e})") from e
+        LAST_MODE[name] = "mock"
+        print(f"  [{name}] real runner module {mod_name}.py not landed yet → mock fallback")
+        return None
+
+    mode = mode_env()
+    if sreal.real_available() is None:
+        if mode == "required":
+            raise sc.SpikeFailure(
+                f"{name}: real mode required (PITCHNOTES_SPIKE_REAL=required) but "
+                "onnxruntime is not importable — add it to the spike venv")
+        LAST_MODE[name] = "mock"
+        print(f"  [{name}] onnxruntime unavailable → deterministic mock fallback "
+              "(Tests/Spikes/README.md: add `onnxruntime` to the spike venv for the real model)")
+        return None
+    try:
+        getattr(sreal, fn_name)(report)
+        LAST_MODE[name] = "real"
+        return True
+    except sc.SpikeFailure:
+        raise
+    except Exception as e:
+        if mode == "required":
+            raise sc.SpikeFailure(f"{name}: real-model run failed in required mode: {e}") from e
+        LAST_MODE[name] = "mock"
+        print(f"  [{name}] real-model run FAILED ({e}) → mock fallback "
+              "(PITCHNOTES_SPIKE_REAL=required makes this a hard failure)")
+        return None
+    return None
+
+
 RUNNERS = {
     "swiftf0": run_swiftf0,
     "nanopitch": run_nanopitch,
@@ -174,10 +244,11 @@ def main() -> int:
         try:
             RUNNERS[name](report)
             if len(report.failed) > before:
-                print(f"FAILED: {name}-spike (mock) — {len(report.failed) - before} violation(s)")
+                print(f"FAILED: {name}-spike ({LAST_MODE.get(name, 'mock')}) — {len(report.failed) - before} violation(s)")
                 rc = 1
             else:
-                print(f"PASSED: {name}-spike (mock) — {len(report.passed)} checks green")
+                mode = LAST_MODE.get(name, "mock")
+                print(f"PASSED: {name}-spike ({mode}) — {len(report.passed)} checks green")
         except sc.SpikeFailure as e:
             print(f"FAILED: {name}-spike: {e}")
             rc = 1
@@ -186,7 +257,7 @@ def main() -> int:
     if rc == 0:
         for line in report.passed:
             print(f"  ok {line}")
-        print("ALL SPIKE CHECKS GREEN (mock; real models wire in at M1/M2/M3)")
+        print("ALL SPIKE CHECKS GREEN")
     return rc
 
 
