@@ -16,6 +16,63 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-18 | 2026-11-21 UTC | Leto | RULED
+**Context:** L-009 M0 gate wrap-up. Sub-rulings made while completing the merge.
+**Ruling:**
+1. **L-009 wrap-up commits on `main` are sanctioned** as part of the milestone-merge
+   process (scoped D-14 exception): gate-completion edits (rulings, CONTRACTS v0.0.1,
+   .gitignore, X-003 wiring, M1 seed, tag LOG) are executed by Leto on `main` during
+   L-009 and logged here. Routine lane work still NEVER touches `main` directly.
+2. **ORT mirror re-host RATIFIED (amends D-13).** Microsoft's takedown killed
+   download.onnxruntime.ai (parked domain, invalid TLS — root cause of Jess's 2× red
+   build-ipa, runs 44848300515/44848572134). Per the HUMAN's instruction, Jess
+   re-hosted the pod archives as release `1.24.2-binaries` on
+   `thesagezm/onnxruntime-swift-package-manager` and re-pointed tag 1.24.2
+   (b7fb7f7 → **7dbd851**). Trust evidence: SHA256 of both zips matches the
+   pre-takedown manifest exactly (onnxruntime-c `f7100a99…00b54`, 52,138,597 B;
+   extensions `346522d1…6b5`, 19,359,053 B) — byte-identity to genuine Microsoft
+   artifacts regardless of re-host path. `project.yml` unchanged (same URL/tag). D-13
+   recorded rev is now 7dbd851. Note for the human: speechnotes-ios pins the same
+   mirror and will hit the same wall at its next session — apply the same fix.
+3. **Paul's OPEN filings renumbered (ID collision with Jess's struck X-002/X-003):**
+   his "X-002" (NanoPitch provenance) → **X-004**, ruled in D-17; his "X-003"
+   (jaCappella MRDLA/XUMX + SepACap memo) → **X-005, consolidated into PLAN X-302**
+   with EARLY START allowed (non-gating; research-only until a DECISIONS verdict;
+   verdict due before any M3 per-singer integration).
+4. **CONTRACTS C-1 clarification adopted as v0.0.1 (doc-only, no raw-value change):**
+   numeric `sortOrder` is the canonical UI/display ordering; the prose "bass <
+   baritone < …" is VOICE RANK (lowest→highest singable) = descending sortOrder among
+   the seven singable voices; P-303's no-crossing constraint uses voice rank. Paul's
+   engine implements the switch verbatim; tests cover both readings (his LOG 00:43Z).
+5. **P-002 AC completion wiring:** the five frozen spike-stub jobs now invoke
+   `python3 Tests/Spikes/run_spike.py --spike <name>` (mock model, no weights) —
+   P-002's "runs on CI" AC completes with the wrap-up run. `continue-on-error` stays
+   until L-101 makes the real-model spikes blocking at M1.
+6. **Device Demo M0 (human, 2026-11-21):** owner reports the sideloaded IPA **installs
+   and the app UI boots** on the iPhone 12 Pro Max. Logged as partial demo evidence;
+   full UX.md §10 checklist (5-tab inventory, airplane-mode relaunch, inspector) may
+   be completed at leisure.
+**Affects:** D-13, D-17, X-004/X-005/X-302, CONTRACTS v0.0.1, project.yml, build.yml,
+.gitignore, P-002, QUEUE, m0 tag.
+
+## D-17 | 2026-11-21 UTC | Leto | RULED (extends D-7; resolves X-004)
+**Context:** Paul's provenance research (P-003): NanoPitch's PRE-TRAINED weights were
+trained on GTSinger (CC BY-NC-SA) and FSDNoisy18k — NC-licensed training data. AGENTS
+§9 / D-15 ban NC data from commercial weights, so even a permissive CODE license
+cannot make the shipped pretrained weights safe.
+**Ruling:** Adopted as the M1 plan of record:
+1. **v1 DEFAULT causal ribbon = `sevagh/pitch-detection` (MIT, pure-DSP MPM/YIN,
+   zero-lag, no training data).** P-102's fallback becomes the default deliverable.
+2. **NanoPitch integration is blocked** until BOTH: (a) code LICENSE verified
+   ship-safe (D-7), AND (b) weights provenance clean — either a clean retrain on
+   permissive data (the small-model retrain in P-102, contingent on verifying the
+   license of `smulelabs/NanoPitch-PreExtract` first) or an explicit human ruling.
+   GTSinger-trained weights are NEVER shipped (§9/D-15).
+3. SwiftF0 (MIT, no encumbered data) remains the grading-grade pitch source
+   (P-101/P-105) — unaffected.
+4. P-102's AC is amended accordingly: verdict-first, fallback-first.
+**Affects:** P-102, P-105, M1 gate, D-7, X-004, Docs/ENGINE.md.
+
 ## D-16 | 2026-11-21 UTC | Leto | RULED
 **Context:** Jess (J-001/J-002/J-004 REVIEW) reported a CI reachability gap: `build.yml`
 exists only on `leto`, so pushes to `paul`/`jess` trigger nothing (workflow file must

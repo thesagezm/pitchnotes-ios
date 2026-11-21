@@ -11,10 +11,12 @@ packages:
   OnnxRuntime:
     # Mirror of microsoft/onnxruntime-swift-package-manager (pulled from GitHub
     # 2026-11-17) — the ONE inference runtime (D-13, AGENTS §6). Tag 1.24.2 =
-    # rev b7fb7f7; the xcframework binary downloads from download.onnxruntime.ai
-    # (the manifest's own URL). The iOS slice is a STATIC ar archive, so the app
-    # binary must carry no @rpath framework load commands (LiveContainer
-    # requirement — enforced by the build-ipa verify step).
+    # Tag 1.24.2 = rev 7dbd851 (D-18.2: Microsoft's takedown killed
+    # download.onnxruntime.ai; the pod archives are re-hosted as release
+    # 1.24.2-binaries ON this mirror repo, SHA256-identical to the pre-takedown
+    # manifest — f7100a99…00b54 / 346522d1…6b5). The iOS slice is a STATIC ar
+    # archive, so the app binary must carry no @rpath framework load commands
+    # (LiveContainer requirement — enforced by the build-ipa verify step).
     url: https://github.com/thesagezm/onnxruntime-swift-package-manager
     exactVersion: "1.24.2"
   PitchLogic:
@@ -22,6 +24,12 @@ packages:
     # Package lives at Tests/Logic/ per the AGENTS §12 file map; the app links
     # it statically so UI and CI share one implementation.
     path: Tests/Logic
+  EngineCore:
+    # Paul's engine core (P-001): C-1/C-2/C-3 contract types + V1–V13 validators +
+    # EngineAPI + MockEngine. Foundation-only, no ORT — real model engines arrive
+    # in M1+ behind the same package. Static linkage (no type: .dynamic); the
+    # build-ipa patch/verify steps guard this.
+    path: Engine
 targets:
   PitchNotesIOS:
     type: application
@@ -32,6 +40,8 @@ targets:
       - package: OnnxRuntime
         product: onnxruntime
       - package: PitchLogic
+      - package: EngineCore
+        product: EngineCore
     info:
       path: App/Resources/Info.plist
       properties:

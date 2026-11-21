@@ -61,6 +61,23 @@ jobs:
           cd Tests/Logic
           swift test 2>&1 | tee ../../logic-tests.log
 
+      # Paul's EngineCore (P-001): contract types + validators + MockEngine.
+      # Foundation-only — compiles and tests on the macOS runner (first macOS
+      # compile of this package happens here; Linux-verified until X-003 wiring).
+      - name: Run EngineCore package tests
+        run: |
+          set -o pipefail
+          cd Engine
+          swift test 2>&1 | tee ../engine-tests.log
+
+      - name: Upload engine test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-tests-log
+          path: engine-tests.log
+          if-no-files-found: warn
+
       - name: Show failure summary
         if: failure()
         run: |
@@ -81,66 +98,66 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------
-  # SPIKE STUBS (M0). Each becomes a REAL contract-test job when P-002 wires
-  # Tests/Spikes and its model lands in the HF repo (D-2). Naming is final —
-  # the M0+ merge gates reference these exact job names (AGENTS §3/§6).
+  # SPIKE JOBS (wired to Paul's P-002 harness: deterministic MOCK model, no
+  # weights downloaded in M0 — D-18.5). Naming is final — the M0+ merge gates
+  # reference these exact job names (AGENTS §3/§6).
   # continue-on-error = allow-failure (non-blocking daily, still BLOCKING at
   # milestone merges per AGENTS §3 once activated).
   # ---------------------------------------------------------------------
   swiftf0-spike:
-    name: SwiftF0 spike (STUB — wired by P-002)
+    name: SwiftF0 spike (P-002 mock harness)
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Stub
-        run: 'echo "swiftf0-spike: stub (allow-failure) — P-002 wires Tests/Spikes; model lands via HF repo (D-2)"'
+      - name: Run spike harness (mock model, no weights in M0)
+        run: python3 Tests/Spikes/run_spike.py --spike swiftf0
 
   nanopitch-spike:
-    name: NanoPitch spike (STUB — wired by P-002)
+    name: NanoPitch spike (P-002 mock harness)
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Stub
-        run: 'echo "nanopitch-spike: stub (allow-failure) — P-002 wires Tests/Spikes; license verdict due at P-102 (D-7)"'
+      - name: Run spike harness (mock model, no weights in M0)
+        run: python3 Tests/Spikes/run_spike.py --spike nanopitch
 
   separation-spike:
-    name: Separation spike (STUB — wired by P-002)
+    name: Separation spike (P-002 mock harness)
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Stub
-        run: 'echo "separation-spike: stub (allow-failure) — demucs.cpp lands M2 (P-201)"'
+      - name: Run spike harness (mock model, no weights in M0)
+        run: python3 Tests/Spikes/run_spike.py --spike separation
 
   basicpitch-spike:
-    name: BasicPitch spike (STUB — wired by P-002)
+    name: BasicPitch spike (P-002 mock harness)
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Stub
-        run: 'echo "basicpitch-spike: stub (allow-failure) — basicpitch.cpp lands M3 (P-301)"'
+      - name: Run spike harness (mock model, no weights in M0)
+        run: python3 Tests/Spikes/run_spike.py --spike basicpitch
 
   silero-vad-spike:
-    name: Silero VAD spike (STUB — wired by P-002)
+    name: Silero VAD spike (P-002 mock harness)
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Stub
-        run: 'echo "silero-vad-spike: stub (allow-failure) — silero-vad lands M1 (P-103)"'
+      - name: Run spike harness (mock model, no weights in M0)
+        run: python3 Tests/Spikes/run_spike.py --spike silero-vad
 
   build-ipa:
     name: Build unsigned IPA

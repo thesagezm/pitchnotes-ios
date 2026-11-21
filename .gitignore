@@ -14,6 +14,8 @@ xcuserdata/
 .DS_Store
 .swiftpm/
 .build/
+__pycache__/
+*.pyc
 
 # Model weights & converted artifacts — downloaded by scripts/CI or produced by
 # scripts/models/, hosted in the project Hugging Face repo, never in git (§4/§6).

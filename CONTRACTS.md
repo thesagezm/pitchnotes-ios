@@ -55,6 +55,14 @@ public enum Part: String, Codable, CaseIterable, Sendable, Comparable {
     }
     public static func < (l: Part, r: Part) -> Bool { l.sortOrder < r.sortOrder }
 
+    // v0.0.1 CLARIFICATION (Leto, D-18.4): there are TWO contractual orderings.
+    // 1. NUMERIC `sortOrder` — canonical for UI/display sorting (soprano first …
+    //    instrumental last). `Comparable` uses it, so `Part.bass < Part.t1` is FALSE.
+    // 2. VOICE RANK — the prose "bass < baritone < baritenor < T2 < T1" (lowest→
+    //    highest singable voice) = DESCENDING sortOrder restricted to the seven
+    //    singable voices. P-303's no-crossing constraint and any "pitch order"
+    //    logic use VOICE RANK, not Comparable.
+
     /// Voice parts that get note tracks + grading (instrumental/VP handled separately).
     public var isSingableVoice: Bool {
         switch self {
@@ -281,3 +289,4 @@ module with unit tests, J-303; Paul aligns engine outputs):
 |---|---|---|---|
 | v0 | — | skeleton created at repo scaffold | pending Leto ratification in M0 |
 | **v0.0** | 2026-11-20 | **RATIFIED (L-006):** C-1 Part enum finalized (rawValues + sortOrder + isSingableVoice); C-2 SongBundle + song.json/NoteTrack/PitchFrames JSON schemas + V1–V13 validator rules (D-8 44.1k mono/stereo, D-9 hasInstrumental baked in); C-3 EngineAPI exact Swift signatures + threading model + MockEngine requirement; C-4 UltraStar semantics (pitch = MIDI−60, GAP/BPM mapping, round-trip rule); C-5 IO fixed, formulas deferred to v1.2. Additive-only from here until M0 gate. | Leto |
+| v0.0.1 | 2026-11-21 | C-1 doc-only clarification (D-18.4): numeric `sortOrder` (UI/display, Comparable) vs VOICE RANK (assignment/no-crossing = descending sortOrder among singable voices). No raw values, fields, or signatures changed. | Leto |
