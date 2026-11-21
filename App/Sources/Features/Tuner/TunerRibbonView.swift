@@ -17,6 +17,7 @@ import PitchLogic
 
 struct TunerRibbonView: View {
     @StateObject private var model = RibbonModel()
+    @StateObject private var audio = AudioSessionController()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
@@ -26,10 +27,13 @@ struct TunerRibbonView: View {
 
     var body: some View {
         VStack(spacing: Token.Spacing.s3) {
+            MicAccessBanners(audio: audio) // J-102: prompt / denied / interruption / headphones
             partChips
             ribbon
             controls
-            Text("Preview: MockEngine singer (P-001). Live mic + the real causal ribbon engine land with P-104/P-105 in M1 — this view will not change.")
+            MicMeterRow(audio: audio)
+            LatencyStubRow()
+            Text("Preview: MockEngine singer (P-001) and mock input level (P-104 wires the real mic tap). This view will not change at the swap.")
                 .font(Token.Fonts.caption)
                 .foregroundStyle(Color.pnTextSecondary)
                 .multilineTextAlignment(.center)
@@ -38,9 +42,22 @@ struct TunerRibbonView: View {
         .onAppear {
             model.reduceMotion = reduceMotion
             model.start()
+            audio.startObserving()
+            if audio.flow.gate == .ready { audio.startLevelMeter() }
         }
-        .onDisappear { model.stop() }
+        .onDisappear {
+            model.stop()
+            audio.stopObserving()
+            audio.stopLevelMeter()
+        }
         .onChange(of: reduceMotion) { newValue in model.reduceMotion = newValue }
+        .onChange(of: audio.flow.gate) { gate in
+            // Level meter follows permission/interruption state (J-102).
+            switch gate {
+            case .ready: audio.startLevelMeter()
+            default: audio.stopLevelMeter()
+            }
+        }
     }
 
     // MARK: - Ribbon canvas (§3.3 vertical mapping, §3.2 time model)
