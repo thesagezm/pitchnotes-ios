@@ -4,9 +4,9 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v0.1 — RATIFIED 2026-11-21 UTC by Leto** (M1, L-102; additive over v0.0).
+> Status: **v0.1.1 — RATIFIED 2026-11-21 UTC by Leto** (M1; additive over v0.1/v0.0).
 > Paul + Jess: ack in QUEUE LOG when you first implement against it. Change log at
-> the bottom. v0.0 ratified 2026-11-20 (M0, L-006).
+> the bottom. v0.0 ratified 2026-11-20 (L-006); v0.1 ratified 2026-11-21 (L-102).
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -113,6 +113,7 @@ so a cancelled job never leaves a partial bundle (P-202).
   "sourceHash": { "algo": "blake3", "hex": "<64 lowercase hex>" },
   "duration_s": 213.4,
   "sampleRate": 44100,
+  "tuning_cents": 32,
   "hasInstrumental": true,
   "parts": [
     {
@@ -134,6 +135,14 @@ Field rules:
 - `id` — ULID (26 chars, Crockford base32, uppercase) generated at import.
 - `sourceHash` — BLAKE3 of the ORIGINAL imported file bytes (pre-decode).
 - `duration_s`, `sampleRate` — of the decoded mix at 44.1 kHz.
+- **v0.1.1 (additive, D-22):** `tuning_cents` — OPTIONAL int, estimated offset of the
+  recording's tuning reference from A440 equal temperament, clamped **[−50, +50]**
+  (+ = sharp); `0` when absent, weak-salience, or <10c (dettato `MIN_CENTS` practice).
+  Produced at import (P-207), REQUIRED at the v1.0 manifest freeze (L-203). Consumers:
+  transcription engine-side retune (P-308: retune in memory when |tuning| ≥ 10, never
+  mutate stored audio) and grading reference offset (J-401: reference + tuning_cents
+  before deviation math). No V-rule in v0.1.1 (validators must ACCEPT bundles without
+  the key; a range V-rule arrives with the v1.0 freeze).
 - `parts[].part` — C-1 rawValue.
 - `parts[].channels` — 1 or 2; must match D-8 policy (voice=1, INSTRUMENTAL=2).
 - `parts[].pitchFile` — key may be OMITTED (contract v0.0: pitch tracks optional).
@@ -385,6 +394,32 @@ C4 = 60); Hz rounded to 0.1.
   outside their preset range still produces frames — the UI shows the honest
   deviation; D-12 honesty rule).
 
+## C-7 · Spike-fixture parity metadata — NEW v0.1.1 (D-24, optional)
+
+Reference tensors captured from a Python export during an engine port are stored
+NEXT TO the fixture (Tests/Spikes/, never in a SongBundle) with a sidecar manifest so
+parity assertions (P-208) are reproducible:
+
+```json
+{
+  "referenceVersion": 1,
+  "engine": "SWIFTF0",
+  "fixture": "sweep_46_2100Hz_16k.wav",
+  "fixture_sha256": "<64 lowercase hex>",
+  "export": { "source": "lars76/swift-f0 @ <pin>", "script": "scripts/models/…", "date": "2026-11-21" },
+  "tensors": [
+    { "name": "frames_hz", "file": "sweep.frames_hz.f32.bin", "shape": [N], "dtype": "float32" }
+  ],
+  "tolerance": { "abs": 1e-3, "rel": 1e-4 }
+}
+```
+
+- OPTIONAL sidecar; nothing in C-2 consumes it. `fixture_sha256` binds tensors to the
+  exact fixture bytes; a mismatch fails the spike BEFORE comparison (V-rule style).
+- Parity pass criterion = every tensor within `tolerance` (abs OR rel) of the Swift/ORT
+  output. Tolerances are documented per engine, never tightened silently.
+- Same shape reserved for P-307 dettato maps (`engine: "DETTATO_TRANSCRIBER"`).
+
 ---
 
 ## Change log
@@ -394,4 +429,5 @@ C4 = 60); Hz rounded to 0.1.
 | v0 | — | skeleton created at repo scaffold | pending Leto ratification in M0 |
 | **v0.0** | 2026-11-20 | **RATIFIED (L-006):** C-1 Part enum finalized (rawValues + sortOrder + isSingableVoice); C-2 SongBundle + song.json/NoteTrack/PitchFrames JSON schemas + V1–V13 validator rules (D-8 44.1k mono/stereo, D-9 hasInstrumental baked in); C-3 EngineAPI exact Swift signatures + threading model + MockEngine requirement; C-4 UltraStar semantics (pitch = MIDI−60, GAP/BPM mapping, round-trip rule); C-5 IO fixed, formulas deferred to v1.2. Additive-only from here until M0 gate. | Leto |
 | v0.0.1 | 2026-11-21 | C-1 doc-only clarification (D-18.4): numeric `sortOrder` (UI/display, Comparable) vs VOICE RANK (assignment/no-crossing = descending sortOrder among singable voices). No raw values, fields, or signatures changed. | Leto |
+| v0.1.1 | 2026-11-21 | ADDITIVE (D-22/D-24): C-2.1 song.json gains OPTIONAL `tuning_cents` (int, [−50,+50], default 0; REQUIRED at the v1.0 freeze per L-203 pre-staging) — no V-rule yet, validators accept v0.0 bundles unchanged; NEW C-7 optional spike-fixture parity/reference metadata (sidecar, never in SongBundles; P-208). LivePitchEngine facade + PitchFrame semantics UNTOUCHED. | Leto |
 | **v0.1** | 2026-11-21 | **RATIFIED (L-102, additive over v0.0/v0.0.1):** C-3 PitchFrame gains `engine_id` (String) + `lookahead_ms` (Int) with decoding defaults ("", 0) — v0.0 JSON stays valid, no new V-rule; C-2.4 schema documents the optional keys; NEW C-6: `PitchEngineID` enum (RIBBON_MPM_YIN / SWIFTF0, rawValues stable forever) + `LivePitchEngine` facade (ribbonSource causal zero-lookahead vs gradingSource post-hoc 176 ms) + C-6.1 part range presets (X-001/UX §3.6 table verbatim, calibratable). EngineAPI signatures unchanged. | Leto |
