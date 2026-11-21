@@ -4,8 +4,9 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v0.0 — RATIFIED 2026-11-20 UTC by Leto** (M0, L-006). Paul + Jess: ack in
-> QUEUE LOG when you first implement against it. Change log at the bottom.
+> Status: **v0.1 — RATIFIED 2026-11-21 UTC by Leto** (M1, L-102; additive over v0.0).
+> Paul + Jess: ack in QUEUE LOG when you first implement against it. Change log at
+> the bottom. v0.0 ratified 2026-11-20 (M0, L-006).
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -172,7 +173,8 @@ Field rules:
   "part": "BASS",
   "hopMs": 16,
   "frames": [
-    { "t": 0.016, "hz": 0.0, "confidence": 0.02, "loudness_db": -92.1 }
+    { "t": 0.016, "hz": 0.0, "confidence": 0.02, "loudness_db": -92.1,
+      "engine_id": "SWIFTF0", "lookahead_ms": 176 }
   ]
 }
 ```
@@ -180,6 +182,10 @@ Field rules:
 - Fixed 16 ms grid (`hopMs == 16` in v0.0); `frames[i].t == i * 0.016`.
 - `hz` — `0.0` = UNVOICED. Voiced range: **46.9–2093.75 Hz** (V11).
 - `confidence`, `loudness_db` — [0,1] and dBFS respectively.
+- **v0.1 (additive):** per-frame `engine_id` (OPTIONAL string, a C-6
+  `PitchEngineID` rawValue or absent/"" = unknown) and `lookahead_ms` (OPTIONAL
+  int ≥ 0, 0 = causal). v0.0 bundles without these keys REMAIN VALID — V11–V13
+  ignore them; validators must not require them (no new V-rule in v0.1).
 - **V-rules:** V11 as above; V12 confidence in [0,1]; V13 `t` strictly increasing,
   uniform 16 ms grid within 1 ms tolerance.
 
@@ -207,6 +213,22 @@ public struct PitchFrame: Sendable, Codable {
     public let hz: Double
     public let confidence: Double
     public let loudness_db: Double
+    // v0.1 (L-102, additive): provenance + timing. Decoders MUST accept frames
+    // missing these keys (v0.0 bundles) and treat them as ("", 0).
+    public var engine_id: String       // PitchEngineID rawValue or "" (unknown)
+    public var lookahead_ms: Int       // 0 = causal; >0 = post-hoc lookahead
+}
+
+public extension PitchFrame {
+    init(t: Double, hz: Double, confidence: Double, loudness_db: Double,
+         engine_id: String = "", lookahead_ms: Int = 0) {
+        self.t = t
+        self.hz = hz
+        self.confidence = confidence
+        self.loudness_db = loudness_db
+        self.engine_id = engine_id
+        self.lookahead_ms = lookahead_ms
+    }
 }
 
 public struct MicChunk: Sendable {
@@ -281,6 +303,88 @@ module with unit tests, J-303; Paul aligns engine outputs):
 - Exact scoring formulas, weights, and `GradingConfig`/`SessionResult` schema:
   contract **v1.2 (L-401)** — deferred by design (M4), per PLAN M0 scope.
 
+## C-6 · Live pitch engine facade + part range presets — NEW v0.1 (L-102)
+
+### C-6.0 · PitchEngineID + LivePitchEngine facade
+
+Two streaming pitch sources exist by design (D-17/D-19, PLAN R2): a CAUSAL
+zero-lookahead ribbon for instant feedback, and an ACCURATE post-hoc stream for
+grading. The facade makes both explicit and labeled; frames from either source
+are C-2.4 `PitchFrame`s with `engine_id`/`lookahead_ms` set.
+
+```swift
+/// RawValues STABLE FOREVER (additive only). Persisted in PitchFrame JSON
+/// (C-2.4) — renaming an engine's rawValue would orphan stored frames.
+public enum PitchEngineID: String, Sendable, Codable, CaseIterable {
+    case ribbonMpmYin = "RIBBON_MPM_YIN"  // D-17/D-19 v1 causal ribbon
+                                          // (vendored sevagh MPM/YIN; no
+                                          // training data, zero lookahead)
+    case swiftf0      = "SWIFTF0"         // SwiftF0 ONNX grading-grade stream
+                                          // (176 ms streaming lookahead)
+    // future (additive): a clean-weights NanoPitch retrain (D-17.2) would add
+    // e.g. "NANOPITCH_RETRAIN"; optional reference engines (X-601) likewise.
+}
+
+/// Additive composition over EngineAPI (C-3): an engine that exposes BOTH
+/// sources with explicit identity. Implemented by Paul (P-105); Jess consumes
+/// via MockEngine conforming to the same protocol. Threading semantics of
+/// ribbonFrame mirror EngineAPI.livePitch (synchronous, audio-safe).
+public protocol LivePitchEngine: EngineAPI {
+    /// The causal ribbon source: engine_id == RIBBON_MPM_YIN, lookahead_ms == 0.
+    var ribbonSource: PitchEngineID { get }
+    /// The accurate grading source: engine_id == SWIFTF0, lookahead_ms == 176.
+    var gradingSource: PitchEngineID { get }
+
+    /// One live frame from the ribbon source (causal, zero-lookahead).
+    /// Returned frame MUST carry engine_id == ribbonSource, lookahead_ms == 0.
+    func ribbonFrame(_ chunk: MicChunk) -> PitchFrame
+
+    /// Grading-grade frames over a decoded buffer (post-hoc, band-limited).
+    /// Same frame semantics as EngineAPI.pitchFrames; returned frames MUST
+    /// carry engine_id == gradingSource and that source's lookahead_ms.
+    func gradingFrames(_ audio: DecodedAudio, fmin_hz: Double, fmax_hz: Double)
+        async throws -> PitchFrameStream
+}
+```
+
+- **Who drives what:** J-101's live ribbon cursor consumes ONLY `ribbonFrame`
+  output (< 100 ms feedback budget, §8). Session grading (M4) and
+  reference-accurate NoteTrack work consume ONLY `gradingFrames` output; P-401
+  time-aligns its late frames using `lookahead_ms`.
+- **engine_id discipline:** every frame an engine emits in live mode MUST carry
+  its `PitchEngineID` rawValue; `""` is legal only in v0.0-era persisted data.
+- MockEngine (EngineCore) implements the same facade with mock engine IDs
+  (`RIBBON_MPM_YIN`/`SWIFTF0`) so J-101/J-103 build against the real shape.
+
+### C-6.1 · Part range presets (single source of truth; calibratable)
+
+From UX.md §3.6 (X-001), ratified verbatim. Both lanes consume THIS table for
+part selection UI, `fmin/fmax` band filtering (`pitchFrames`/`gradingFrames`),
+and ribbon follow-window centering. Values are equal-tempered MIDI (A440,
+C4 = 60); Hz rounded to 0.1.
+
+| Part | Preset | MIDI low–high | Hz low–high |
+|---|---|---|---|
+| BASS | E2–G3 | 40–55 | 82.4–196.0 |
+| BARITONE | A2–D4 | 45–62 | 110.0–293.7 |
+| BARITENOR | C3–F4 | 48–65 | 130.8–349.2 |
+| T2 | E3–A4 | 52–69 | 164.8–440.0 |
+| T1 | G3–E5 | 55–76 | 196.0–659.3 |
+| SOPRANO | C4–G5 | 60–79 | 261.6–784.0 |
+| ALTO | G3–D5 | 55–74 | 196.0–587.3 |
+
+- Keys are C-1 rawValues (uppercase). SOPRANO/ALTO appear only for female
+  chorale bundles; male ensembles use the five default presets.
+- **Calibration (user-local, never in the bundle):** per-part integer semitone
+  nudge −2…+2 (default 0) and a mic-profile offset (cents), applied to the
+  preset before use: `fmin/fmax` = preset shifted by the nudge. Stored per
+  device (Jess lane, UX §3.6); presets themselves are fixed contract data —
+  per-song custom ranges arrive with the M3 calibration task (J-302) and extend
+  this table additively.
+- Range presets constrain FILTERING only; they are not hard gates (a singer
+  outside their preset range still produces frames — the UI shows the honest
+  deviation; D-12 honesty rule).
+
 ---
 
 ## Change log
@@ -290,3 +394,4 @@ module with unit tests, J-303; Paul aligns engine outputs):
 | v0 | — | skeleton created at repo scaffold | pending Leto ratification in M0 |
 | **v0.0** | 2026-11-20 | **RATIFIED (L-006):** C-1 Part enum finalized (rawValues + sortOrder + isSingableVoice); C-2 SongBundle + song.json/NoteTrack/PitchFrames JSON schemas + V1–V13 validator rules (D-8 44.1k mono/stereo, D-9 hasInstrumental baked in); C-3 EngineAPI exact Swift signatures + threading model + MockEngine requirement; C-4 UltraStar semantics (pitch = MIDI−60, GAP/BPM mapping, round-trip rule); C-5 IO fixed, formulas deferred to v1.2. Additive-only from here until M0 gate. | Leto |
 | v0.0.1 | 2026-11-21 | C-1 doc-only clarification (D-18.4): numeric `sortOrder` (UI/display, Comparable) vs VOICE RANK (assignment/no-crossing = descending sortOrder among singable voices). No raw values, fields, or signatures changed. | Leto |
+| **v0.1** | 2026-11-21 | **RATIFIED (L-102, additive over v0.0/v0.0.1):** C-3 PitchFrame gains `engine_id` (String) + `lookahead_ms` (Int) with decoding defaults ("", 0) — v0.0 JSON stays valid, no new V-rule; C-2.4 schema documents the optional keys; NEW C-6: `PitchEngineID` enum (RIBBON_MPM_YIN / SWIFTF0, rawValues stable forever) + `LivePitchEngine` facade (ribbonSource causal zero-lookahead vs gradingSource post-hoc 176 ms) + C-6.1 part range presets (X-001/UX §3.6 table verbatim, calibratable). EngineAPI signatures unchanged. | Leto |
