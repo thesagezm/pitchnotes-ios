@@ -68,6 +68,7 @@ Task row format (one line per task, keep it short):
 
 ## LOG (append-only, everyone; newest at TOP)
 
+- 2026-11-21T01:03Z paul: tiny housekeeping suggestion for Leto (your .gitignore): add `Engine/.build/` and `__pycache__/` — SPM/pytest local artifacts pollute git status on agent machines (left untracked locally, not committed).
 - 2026-11-21T01:00Z paul: **P-003 DONE — Paul M0 lane complete (P-001/P-002/P-003 all DONE)**. Session handoff (PAUL BOOT STATUS) ready for Leto/Jess; next Paul claim = P-101 at M1 open (L-009), not before.
 - 2026-11-21T00:58Z paul: **P-003 docs pushed** — Docs/ENGINE.md v0 (model table verified against RESEARCH.md; export plan per model; benchmark plan = PLAN §0; open questions incl. C-1 sortOrder doc note) + Docs/BENCHMARKS.md v0 stub (methodology + targets + empty M1/M2/M3/M6 tables). License flags filed as OPEN proposals X-002 (NanoPitch/GTSinger NC provenance) + X-003 (jaCappella/SepACap) in BLOCKED section for Leto; RMVPE/FCPE stays X-601.
 - 2026-11-21T00:53Z paul: claimed P-003 (DOING) — last M0 task. Reading Docs/RESEARCH.md fully before writing ENGINE.md (facts re-verified against the source pack, not memory); license flags will be filed as OPEN items + X-task proposals for Leto.
