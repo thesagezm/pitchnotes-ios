@@ -48,7 +48,22 @@ RSS | env {runner/device, sha}.*
 
 | Engine | Fixture | F1@50c | RPA | RTF | RSS | Env |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — |
+| swiftf0 (pinned 6385e8c2…, 1 thread) | sweep_46_2100Hz_16k | n/a — pitch acc: \|cents\| med 7.39 / p95 17.41 (< 20 AC) | — | 0.0156 (4 s audio, med-5) | n/m (dev box) | Linux x86_64, Pop!_OS 24.04, py3.12 + ort 1.32.0, paul @291b084, 2026-11-21 |
+| swiftf0 (2 threads) | sweep | n/a | — | 0.0098 | n/m | same env |
+| swiftf0 (4 threads) | sweep | n/a | — | 0.0089 | n/m | same env |
+| swiftf0 | synthetic_voice_16k (±15c vibrato melody) | pitch acc: med 3.06 / p95 9.35 | — | — | — | same env |
+| swiftf0 | silence_16k | 125/125 frames gated (conf→0, hz→0) | — | — | — | same env |
+| silero-vad (pinned 1a153a22…, 1 thread) | silence_16k | gated: max prob 0.009 | — | 0.23 ms / 32 ms chunk (med-500, p95 0.90 ms; budget <1 ms) | n/m | same env |
+| silero-vad | synthetic_voice_16k | detected: max 0.961 (margin 0.952 over silence) | — | — | — | same env |
+| silero-vad | noise_burst / click_track | correctly NON-speech: max 0.125 / 0.015 (speech-VAD semantics — M0 mock asserted energy-VAD) | — | — | — | same env |
+
+**CI-runner + A14 numbers: PENDING** — parked on the X-008/X-007-healed CI (first
+green run on the fixed build.yml will add the macOS runner row via the swiftf0/
+silero spike logs; A14 device numbers via Jess's debug screen J-103 at the M1
+device demo). RTF method per §1 (median of 5; pitch bench pinned to 1 core
+on-device via ORT session `intra_op_num_threads`, thread scaling 1→2→4 logged).
+RSS measurement arrives with P-104 (device) — dev-box RSS not meaningful for the
+A14 budget and is not faked.
 
 ## 4. Results — separation (M2: P-201/P-202/P-206)
 
@@ -79,3 +94,4 @@ the PawCT 0.225 ceiling.*
 | Version | Date (UTC) | Change |
 |---|---|---|
 | v0 | 2026-11-21 | P-003 stub: methodology, targets (PLAN §0), empty result tables M1/M2/M3/M6. |
+| v1 | 2026-11-21 | P-101/P-103 M1 table filled (local Linux evidence, env-labeled): SwiftF0 accuracy/gating/RTF-threads + silero timing/semantics. CI-runner + A14 rows pending (device numbers via J-103 debug screen). F1@50c proper (P-106 harness v1) fills the column at P-106. |
