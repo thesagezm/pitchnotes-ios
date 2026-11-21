@@ -209,7 +209,8 @@ final class EngineCoreIntegrationTests: XCTestCase {
         // the honesty affordance stays visible in the X-006 UI.
         let (engine, _) = try makeMockBundle(scenario: .perfect, seed: 0x5027)
         var tracks: [Part: NoteTrack] = [:]
-        for part in [.bass, .baritone, .baritenor, .t2, .t1] { // mock ensemble (C-1 raws)
+        let ensemble: [Part] = [.bass, .baritone, .baritenor, .t2, .t1] // mock ensemble (C-1 raws)
+        for part in ensemble {
             tracks[part] = engine.noteTrack(for: part)
         }
         XCTAssertFalse(UnisonDetector.pairs(in: tracks).isEmpty,

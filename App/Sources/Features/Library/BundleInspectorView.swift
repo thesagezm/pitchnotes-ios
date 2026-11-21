@@ -49,7 +49,10 @@ struct BundleInspectorView: View {
                             .font(Token.Fonts.caption)
                             .foregroundStyle(Color.inTune)
                     } else {
-                        ForEach(report.violations, id: \.self) { violation in
+                        // ContractViolation is Equatable-only in EngineCore —
+                        // iterate by index, not id: \.self.
+                        ForEach(report.violations.indices, id: \.self) { index in
+                            let violation = report.violations[index]
                             VStack(alignment: .leading, spacing: Token.Spacing.s1) {
                                 Text("[\(violation.rule)]")
                                     .font(Token.Fonts.caption)
