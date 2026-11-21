@@ -145,7 +145,7 @@ jobs:
   # (harness spike name stays `nanopitch` until P-102 renames it + adds the
   # ribbon runner). continue-on-error stays until L-101 ACTIVATION at the gate.
   ribbon-spike:
-    name: Causal ribbon spike (D-19: MPM/YIN, P-102 mock harness)
+    name: "Causal ribbon spike (D-19 MPM/YIN, P-102 mock harness)"
     runs-on: macos-latest
     timeout-minutes: 10
     continue-on-error: true
