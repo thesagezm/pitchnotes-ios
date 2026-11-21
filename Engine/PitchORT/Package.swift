@@ -16,7 +16,13 @@ let package = Package(
         // D-13 pin: mirror tag 1.24.2 (rev 7dbd851, re-hosted binaries D-18.2).
         .package(url: "https://github.com/thesagezm/onnxruntime-swift-package-manager", exact: "1.24.2"),
         // Portable core: SwiftF0Inference protocol + engine orchestration.
-        .package(path: "../Engine"),
+        // Path fix (Leto, X-008 gate wiring): this package lives at
+        // Engine/PitchORT — the EngineCore package is its PARENT directory
+        // (`..`, path identity "Engine" — SPM keys local path deps by path
+        // basename, not declared name; see J-FIX-101 note in Jess's
+        // Tests/Logic/Package.swift). "../Engine" resolved to Engine/Engine
+        // (run 44951410853 red).
+        .package(path: ".."),
     ],
     targets: [
         .target(

@@ -17,7 +17,11 @@ let package = Package(
     ],
     dependencies: [
         // Portable core: MicChunk + CapturePipeline + CaptureSpec.
-        .package(path: "../Engine"),
+        // Path fix (Leto, X-011 gate wiring): this package lives at
+        // Engine/MicCapture — the EngineCore package is its PARENT directory
+        // (`..`, path identity "Engine"; "../Engine" resolved to Engine/Engine,
+        // run 44951410853 red). Same rationale as the PitchORT fix.
+        .package(path: ".."),
     ],
     targets: [
         .target(
