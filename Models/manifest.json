@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "_notes": "Model registry (L-005). Every entry carries exactly {name, version, url, sha256, size, license, runtime, io}. Weights NEVER live in git (AGENTS §4): real models are hosted in HF repo thesagezm/pitchnotes-models (D-2, BLOCKED(human)) and verified by scripts/models/download.py before use. Placeholder probes until that repo exists: test-blob (committed 1 KB, verified via file:// in CI — raw.githubusercontent.com 404s for private repos without auth) and http-probe (immutable public file pinned by commit SHA, verifying the real HTTP+SHA256 path over the network).",
+  "_notes": "Model registry (L-005). Every entry carries exactly {name, version, url, sha256, size, license, runtime, io}. Weights NEVER live in git (AGENTS \u00a74): real models are hosted in HF repo thesagezm/pitchnotes-models (D-2, BLOCKED(human)) and verified by scripts/models/download.py before use. D-2 LIVE (2026-11-21): thesagezm/pitchnotes-models created (public) by Leto per human authorization; test-blob/swiftf0/silero-vad uploaded byte-identical (hf_upload.sh verifies re-hosted bytes against manifest sha256). http-probe remains as the independent generic network-path check (pinned third-party blob). CI file:// test-blob override retained to exercise the override path.",
   "models": [
     {
       "name": "test-blob",
       "version": "1.0.0",
-      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/test-blob.bin",
+      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/test-blob/test-blob.bin",
       "sha256": "785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9",
       "size": 1024,
       "license": "MIT",
@@ -31,26 +31,26 @@
     {
       "name": "swiftf0",
       "version": "1.0.0+hf7877fba",
-      "url": "https://huggingface.co/aaatmy/swift-f0-onnx/resolve/7877fbaad8ea5dbe0fac0edc4b2703cbea381c14/model.onnx",
+      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/swiftf0/model.onnx",
       "sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22",
       "size": 135090,
       "license": "MIT",
       "runtime": "onnx-cpu",
       "io": {
-        "role": "grading-grade pitch engine (C-6 SWIFTF0; P-101/P-105). URL pinned to HF revision 7877fba (immutable) per D-19 interim rule — swap to thesagezm/pitchnotes-models when D-2 unblocks, sha256 MUST NOT change. Leto verified 2026-11-21: computed == upstream SHA256SUMS == HF LFS oid.",
+        "role": "grading-grade pitch engine (C-6 SWIFTF0; P-101/P-105). D-2 LIVE: hosted on thesagezm/pitchnotes-models (public, created 2026-11-21 by Leto per human authorization); uploaded byte-identical from HF rev 7877fba \u2014 sha256 is the trust anchor and MUST NOT change. Leto verified 2026-11-21: computed == upstream SHA256SUMS == HF LFS oid.",
         "format": "ONNX; 16 kHz mono in, per-16ms-frame hz/confidence out, streaming lookahead 176 ms; fmin/fmax band filter per C-6.1"
       }
     },
     {
       "name": "silero-vad",
       "version": "data@bfdc019",
-      "url": "https://raw.githubusercontent.com/snakers4/silero-vad/bfdc0193023f121ea5b3cc7b176dbed570a68a59/src/silero_vad/data/silero_vad.onnx",
+      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/silero-vad/silero_vad.onnx",
       "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
       "size": 2327524,
       "license": "MIT",
       "runtime": "onnx-cpu",
       "io": {
-        "role": "mic VAD gating (P-103/P-104). URL pinned to upstream commit bfdc019 (immutable) per D-19 interim rule — swap to thesagezm/pitchnotes-models when D-2 unblocks, sha256 MUST NOT change. Leto verified 2026-11-21 (downloaded + hashed at pin time).",
+        "role": "mic VAD gating (P-103/P-104). D-2 LIVE: hosted on thesagezm/pitchnotes-models (public, created 2026-11-21 by Leto per human authorization); uploaded byte-identical from upstream snakers4 commit bfdc019 \u2014 sha256 is the trust anchor and MUST NOT change. Leto verified 2026-11-21 (downloaded + hashed at pin time).",
         "format": "ONNX; 16 kHz mono in, 30 ms chunks, speech-probability out, <1 ms/chunk target"
       }
     }
