@@ -239,10 +239,63 @@ def run_real(report: sc.CheckReport) -> None:
     report.ok("S8", f"swiftf0/sweep voiced {int(voiced.sum())}/{n} frames on in-band sweep")
 
 
+def export_reference_tensors(sess) -> Path:
+    """D-24 (CONTRACTS C-7) sidecar: capture the pinned model's outputs on the
+    committed fixtures + the fixture SHA256s, so P-208 parity tests (Python
+    reference vs Swift/ORT outputs) are cheap later. Non-gating; regenerable."""
+    import hashlib
+    out_dir = REPO_ROOT / "Tests" / "Spikes" / "ReferenceTensors"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fx = REPO_ROOT / "Tests" / "Spikes" / "Fixtures"
+    ref_dir = Path.home() / ".cache/pitchnotes-models"
+    entry = [m for m in __import__("json").loads((REPO_ROOT / "Models" / "manifest.json").read_text())["models"] if m["name"] == "swiftf0"][0]
+    model_sha = entry["sha256"]
+    arrays = {}
+    sha_rows = []
+    for name, truth_fn in (("sweep_46_2100Hz_16k.wav", fixtures.sweep_f0),
+                           ("synthetic_voice_16k.wav", fixtures.synthetic_voice_f0),
+                           ("silence_16k.wav", None)):
+        audio = read_wav_mono(fx / name)
+        pitch, conf_raw = run_session(sess, audio)
+        conf, loud = postprocess(audio, conf_raw)
+        stem = name.removesuffix(".wav")
+        arrays[f"{stem}_pitch_hz"] = pitch
+        arrays[f"{stem}_confidence_raw"] = conf_raw
+        arrays[f"{stem}_confidence_gated"] = conf
+        arrays[f"{stem}_loudness_db"] = loud
+        if truth_fn is not None:
+            n = conf.shape[0]
+            arrays[f"{stem}_truth_hz"] = frame_truth((np.arange(n) * HOP + HOP // 2) / SR, truth_fn)
+        sha_rows.append(f"{hashlib.sha256((fx / name).read_bytes()).hexdigest()}  {name}")
+    arrays["_model_sha256"] = np.array([model_sha])
+    out = out_dir / "swiftf0_reference.npz"
+    np.savez_compressed(out, **arrays)
+    (out_dir / "fixtures.sha256").write_text("\n".join(sha_rows) + "\n")
+    (out_dir / "README.md").write_text(
+        "# ReferenceTensors (D-24 / CONTRACTS C-7 spike-parity sidecars)\n\n"
+        "Captured model outputs of the PINNED manifest entries on the committed "
+        "fixtures (regenerable: `python3 Tests/Spikes/swiftf0_real.py --export-ref` "
+        "and `... silero_real.py --export-ref`). Consumed by P-208 parity tests "
+        "(Python reference vs Swift/ORT outputs, tolerance-based). The model SHA "
+        "travels INSIDE the npz (`_model_sha256`) — parity asserts it matches the "
+        "manifest entry, so a model bump without regeneration fails loudly.\n")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--threads-only", action="store_true", help="only run the RTF/threads table")
+    ap.add_argument("--export-ref", action="store_true",
+                    help="write the D-24/C-7 reference-tensor sidecar and exit")
     args = ap.parse_args()
+    if args.export_ref:
+        if real_available() is None:
+            print("FAILED: onnxruntime required for --export-ref")
+            return 1
+        sess = load_session(ensure_model(), threads=1)
+        out = export_reference_tensors(sess)
+        print(f"reference sidecar written: {out}")
+        return 0
 
     if real_available() is None:
         print("FAILED: onnxruntime not importable — real-model spike needs the venv "

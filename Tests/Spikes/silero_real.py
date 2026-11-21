@@ -199,9 +199,41 @@ def run_silero(report: sc.CheckReport) -> None:
         report.ok("S8", f"silero: median {med_ms:.3f} ms per 32 ms chunk (< 1 ms budget, PLAN M1)")
 
 
+def export_reference_tensors(sess) -> Path:
+    """D-24 (CONTRACTS C-7) sidecar: pinned silero outputs on committed fixtures."""
+    import hashlib
+    out_dir = REPO_ROOT / "Tests" / "Spikes" / "ReferenceTensors"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    fx = REPO_ROOT / "Tests" / "Spikes" / "Fixtures"
+    entry = [m for m in __import__("json").loads((REPO_ROOT / "Models" / "manifest.json").read_text())["models"] if m["name"] == "silero-vad"][0]
+    arrays = {}
+    sha_rows = []
+    for name in ("silence_16k.wav", "noise_burst_16k.wav", "click_track_16k.wav", "synthetic_voice_16k.wav"):
+        audio = read_wav_mono(fx / name)
+        probs = probs_for(sess, audio)
+        stem = name.removesuffix(".wav")
+        arrays[f"{stem}_speech_prob"] = probs
+        sha_rows.append(f"{hashlib.sha256((fx / name).read_bytes()).hexdigest()}  {name}")
+    arrays["_model_sha256"] = np.array([entry["sha256"]])
+    out = out_dir / "silero_vad_reference.npz"
+    np.savez_compressed(out, **arrays)
+    (out_dir / "fixtures.sha256").write_text("\n".join(sha_rows) + "\n")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--export-ref", action="store_true",
+                    help="write the D-24/C-7 reference-tensor sidecar and exit")
     args = ap.parse_args()
+    if args.export_ref:
+        if real_available() is None:
+            print("FAILED: onnxruntime required for --export-ref")
+            return 1
+        sess = load_session(ensure_model())
+        out = export_reference_tensors(sess)
+        print(f"reference sidecar written: {out}")
+        return 0
     if real_available() is None:
         print("FAILED: onnxruntime not importable — real-model spike needs the venv "
               "`pip install onnxruntime` (see Tests/Spikes/README.md)")
