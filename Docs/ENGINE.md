@@ -98,6 +98,22 @@ today.
   never a hard gate (D-12).
 - **Reset:** `reset()` clears ribbon history/context, VAD gate, sticky frame —
   call on interruptions (P-104 hooks).
+### 1.2 Capture → feedback latency budget (P-104, §8 < 100 ms)
+
+| Stage | Cost | Note |
+|---|---|---|
+| AVAudioEngine input tap | 21.33 ms | 1024 frames @48 kHz (`CaptureSpec.frameSamples`) |
+| AVAudioConverter 48k→16k | < 1 ms | stateful, Apple-side; portable twin = StreamingResampler (carry-tail, continuity-tested) |
+| Ring submit/drain | < 0.1 ms | memcpy-bounded critical sections (CapturePipeline) |
+| Drain cadence | ≤ 16 ms | one 16 ms hop before the facade sees samples |
+| Ribbon estimate | ~4 ms | Swift MPM measured (BENCHMARKS.md); ~0.1 ms via vendored C++ (X-009) |
+| First-frame warm-up | 64 ms | ribbon window of PAST audio — once per session, not per frame |
+
+Steady-state ≈ 40–45 ms typical → budget met on paper with ~2× margin. TRUE
+end-to-end loopback is measured on device via the J-403 hook (P-104 row):
+capture → PitchFrame.t delta. Ring = newest-wins (1 s): a consumer stall degrades
+to counted drops + contiguous recent audio, never stale feedback.
+
 - Tests: `LivePitchFacadeTests` (9) — synthetic-stream AC (provenance,
   220 Hz ±10 c accuracy, 16 ms grid, loudness), gate closed/open/fail-open,
   sticky + reset, defensive rate, grading tagging/grid/errors, C-6.1 table
