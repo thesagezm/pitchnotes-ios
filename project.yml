@@ -30,6 +30,19 @@ packages:
     # in M1+ behind the same package. Static linkage (no type: .dynamic); the
     # build-ipa patch/verify steps guard this.
     path: Engine
+  PitchORT:
+    # Paul's Apple-only ORT seam (P-101, wired per X-008/D-27.5): OnnxSwiftF0Inference
+    # + SwiftF0ModelStore over the SAME OnnxRuntime mirror pin (D-13 tag 1.24.2) and
+    # EngineCore. Sits outside EngineCore so the portable core stays Linux-clean
+    # (ORT ObjC bindings are Apple-only). Pure Swift over the STATIC ORT ar archive —
+    # no new @rpath surface (build-ipa verify step guards).
+    path: Engine/PitchORT
+  MicCapture:
+    # Paul's Apple-only mic-capture wrapper (P-104, wired per X-011): AVAudioEngine
+    # input tap → AVAudioConverter (16 kHz) → EngineCore CapturePipeline. No new
+    # remote deps (path-dep on Engine only); static by default. Mic permission
+    # string already in the Info.plist above.
+    path: Engine/MicCapture
 targets:
   PitchNotesIOS:
     type: application
@@ -42,6 +55,10 @@ targets:
       - package: PitchLogic
       - package: EngineCore
         product: EngineCore
+      - package: PitchORT
+        product: PitchORT
+      - package: MicCapture
+        product: MicCapture
     info:
       path: App/Resources/Info.plist
       properties:
