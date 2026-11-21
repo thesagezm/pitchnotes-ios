@@ -112,8 +112,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy
       - name: Run spike harness (mock model, no weights in M0)
-        run: python3 Tests/Spikes/run_spike.py --spike swiftf0
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike swiftf0'
 
   nanopitch-spike:
     name: NanoPitch spike (P-002 mock harness)
@@ -123,8 +127,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy
       - name: Run spike harness (mock model, no weights in M0)
-        run: python3 Tests/Spikes/run_spike.py --spike nanopitch
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike nanopitch'
 
   separation-spike:
     name: Separation spike (P-002 mock harness)
@@ -134,8 +142,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy
       - name: Run spike harness (mock model, no weights in M0)
-        run: python3 Tests/Spikes/run_spike.py --spike separation
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike separation'
 
   basicpitch-spike:
     name: BasicPitch spike (P-002 mock harness)
@@ -145,8 +157,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy
       - name: Run spike harness (mock model, no weights in M0)
-        run: python3 Tests/Spikes/run_spike.py --spike basicpitch
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike basicpitch'
 
   silero-vad-spike:
     name: Silero VAD spike (P-002 mock harness)
@@ -156,8 +172,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy
       - name: Run spike harness (mock model, no weights in M0)
-        run: python3 Tests/Spikes/run_spike.py --spike silero-vad
+        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike silero-vad'
 
   build-ipa:
     name: Build unsigned IPA
