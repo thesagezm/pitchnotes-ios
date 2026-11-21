@@ -16,6 +16,148 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-20 | 2026-11-21 UTC | Leto | RULED (executes D-2)
+**Context:** The human authorized Leto to create the HF model repo ("you can create the
+repo: when the HF repo lands, swap URLs only — SHAs must not change"). No HF credential
+existed in the environment; the human created a fine-grained Write token and made it
+available via `~/.bashrc` (`HF_TOKEN`).
+**Ruling:**
+1. **D-2 is EXECUTED.** `thesagezm/pitchnotes-models` created **public** (id
+   `6b013fbf71c703296dc90e79`, 2026-11-21). Uploaded via `scripts/models/hf_upload.sh`
+   (runbook committed @4c23177, fixed @05af094) and verified **byte-identical**:
+   `swiftf0/model.onnx` (135090 B, sha256 6385e8c2…b0a22), `silero-vad/silero_vad.onnx`
+   (2327524 B, sha256 1a153a22…88e3), `test-blob/test-blob.bin` (1024 B, sha256
+   785b0751…c26c9) — each re-downloaded from HF and hashed back to the manifest values.
+2. **`Models/manifest.json` URLs swapped to the HF re-hosts @543cc4f; `sha256`/`size`
+   fields UNCHANGED** (byte-identity is the trust anchor). `http-probe` retained as the
+   independent generic network check; the CI `file://` test-blob override is retained to
+   exercise the override path. Local download+verify proven for all three entries; CI
+   proves it on the next run.
+3. Public repo ⇒ CI and devices download WITHOUT a token. Future model uploads (M2+)
+   use `hf_upload.sh`; URL swaps never change sha256.
+**Affects:** D-2, D-19.4, `Models/manifest.json`, `scripts/models/hf_upload.sh`,
+L-005/L-101 follow-ups, all future model tasks.
+
+## D-21 | 2026-11-21 UTC | Leto | RULED (adopted from amendment proposal "D13"; M3 note engine)
+**Context:** RESEARCH Addendum A (dettato). The transcriber's DCS choral row (onset
+55.9/frame 82.0/offset 44.4 vs MuScriptor 14.4/80.7/11.5) dwarfs the polyphonic-note
+status quo; code+weights Apache-2.0, transcriber/evidence training data commercially
+clean. But it is a 15.3M-param PyTorch model with no ONNX export; CPU cost on A14
+unknown; scores are PART-AGNOSTIC and author-self-reported (reproducible via
+`kobimusic/dettato-benchmark`).
+**Ruling:** dettato transcriber becomes a CANDIDATE to replace `basicpitch.cpp` as the
+M3 primary note engine.
+1. **Benchmark head-to-head** (P-307): dettato port vs basicpitch.cpp on Dagstuhl
+   ChoirSet / CSD + synthetic SATB + local real SDA songs; parity-tested per D-24.
+2. **Adoption threshold: A14 import RTF ≤ ~3× song length** → dettato PRIMARY; else
+   basicpitch.cpp stays the fast path and dettato ships as an OPTIONAL quality-mode
+   download (user-selectable, P-604 pattern). Levers to hit the threshold:
+   transcriber-only (no grouper), fp16, hop 2 s → 4 s.
+3. **NEVER ship grouper or drums weights** (NC training data: MUSDB18/IRMAS — Addendum
+   A.1; confirmed verbatim on the grouper card). Grouper ARCHITECTURE + distinct-tracks
+   decode heuristics MAY be reimplemented and retrained on our clean synthetic SATB
+   (X-301) — the algorithm is not encumbered, the weights are.
+4. Evidence-repairer weights are clean (verified) but optional — see P-309 (gated on
+   X-310 completing the license bundle).
+5. Any dettato-derived port/weights carry the Apache-2.0 NOTICE attribution (D-26).
+**Affects:** P-301/P-303/P-306/P-307/P-308/P-309, X-301/X-310, M3 gate, AGENTS §9 (D-26),
+RESEARCH Addendum A.1.
+
+## D-22 | 2026-11-21 UTC | Leto | RULED (adopted from amendment proposal "D14" + insight C; tuning reference)
+**Context:** Grading assumes A440 equal temperament. Old SDA recordings often sit
+systematically sharp/flat (tape, varispeed, group tuning by ear) — a singer reproducing
+the RECORDING faithfully would be marked ~tens-of-cents off on every note. Invisible,
+systematic grading failure. dettato already solves the detection side (`retune.py`,
+`MIN_CENTS = 10.0`, estimate ±50c via circular mean of refined spectral maxima).
+**Ruling:** ADOPT.
+1. **Estimate `tuning_cents` at IMPORT (M2, P-207)** — same estimator family as dettato
+   (circular-mean of spectral-peak deviations, ±50c clamp), stored in `song.json`
+   (CONTRACTS v0.1.1, optional now / required at the v1.0 freeze per L-203 pre-staging).
+   Default 0 when the estimate is weak (low salience or <10c).
+2. **Default behavior = OFFSET THE REFERENCE, never mutate stored audio.** Grading adds
+   `tuning_cents` to the reference pitch before deviation math (J-401); the UI shows an
+   indicator ("this recording is +32c sharp — reference adjusted") with a user override
+   (J-205). Audio/stems stay byte-true — no resample of the user's library.
+3. **Transcription consumes it as an ENGINE-SIDE retune** (P-308, dettato approach):
+   when |tuning_cents| ≥ 10, retune IN MEMORY before transcription and map times back —
+   never touching the stored files.
+4. Live ribbon unaffected in M1 (mic path is relative to the selected part's reference;
+   tuning_cents enters at grading, M4).
+**Affects:** P-207/P-308/J-205/J-401, CONTRACTS v0.1.1 + v1.0 pre-stage (L-203),
+RESEARCH Addendum A.3.
+
+## D-23 | 2026-11-21 UTC | Leto | RULED (adopted from amendment proposal "D15"; M6 CoreML strategy)
+**Context:** Muskey's shipping Swift port found Core ML runs dettato's GRUs far slower
+than Accelerate, and ships the transcriber as FOUR models cut at the three GRUs with
+Accelerate between them (Addendum A.2.1).
+**Ruling:** ADOPT for the M6 CoreML phase: split the graph at GRUs — conv/attention
+blocks on CoreML (ANE), GRUs via Accelerate/BNNS. **IMPORTANT NUANCE recorded
+explicitly: this is CoreML-SPECIFIC. ONNX Runtime's CPU GRU is fine, so the M1–M5 CPU
+path stays a SINGLE ONNX graph** (D-13: no second runtime; CoreML EP remains a later
+acceleration on the same models). P-601's AC amended accordingly.
+**Affects:** P-601, M6 gate, D-13, RESEARCH Addendum A.2.
+
+## D-24 | 2026-11-21 UTC | Leto | RULED (adopted from amendment proposal "D16"; spike methodology)
+**Context:** Muskey's `--dettato-check DIR` pattern: port-vs-Python numerical PARITY
+against saved reference tensors — strictly stronger than our current shape/range spike
+assertions.
+**Ruling:** ADOPT. Spike harness gains numerical-parity assertions (Python reference
+tensors vs Swift/ORT outputs, tolerance-based) — effective M2 via P-208. **M1 exports
+(SwiftF0/silero) should CAPTURE reference tensors NOW** (cheap, avoids rework): the
+non-gating ask to Paul folded into P-101/P-103 or deferred to P-208 — never blocking
+the M1 merge.
+**Affects:** P-208, Tests/Spikes harness, P-101/P-103 note, CONTRACTS v0.1.1 (C-7).
+
+## D-25 | 2026-11-21 UTC | Leto | RULED (adopted from amendment proposal "D17"; M2 chunking)
+**Context:** Muskey ships separation in 4.5 s windows / 1 s overlap / crossfade; our M2
+plan says 5–10 s windows (§8).
+**Ruling:** Benchmark BOTH at P-202 (measured SDR + RTF + RSS on the CI runner, logged
+in BENCHMARKS.md); pick by measurement, not preference. The §8 5–10 s text stays until
+the benchmark rules.
+**Affects:** P-202 AC (amended), Docs/BENCHMARKS.md, RESEARCH Addendum A.2.3.
+
+## D-26 | 2026-11-21 UTC | Leto | RULED (adopted from amendment proposal "D18"; sourcing boundary + AGENTS §9 amendment)
+**Context:** Muskey is an excellent engineering reference with a toxic-for-us license
+stack; dettato's license requires NOTICE attribution; two third-party checkpoints are
+unverified.
+**Ruling:**
+1. **Muskey = STUDY-ONLY, forever:** never link or copy code; never hotlink
+   lowtechguys.com models; convert from upstream weights ourselves. Techniques
+   reimplemented AGPL-clean (ideas only, per AGENTS §9 study-only discipline).
+2. **Apache-2.0 NOTICE obligation:** any dettato-derived port or weights MUST carry the
+   upstream NOTICE text ("Dettato, Copyright 2026 KobiMusic. This product includes
+   software and model weights developed by KobiMusic.") in our repo NOTICE file and the
+   in-app licenses screen (J-204 reads vendor/ + NOTICE).
+3. **Verify-before-use additions:** dettato-evidence model card terms (now verified
+   clean — see X-310 residual), BS-Roformer-SW checkpoint, MVSep 53-stem checkpoint.
+4. **AGENTS.md §9 amendment (via this ruling, per AGENTS' change rule):** ship-safe list
+   += dettato transcriber (Apache-2.0, clean training data) with the NOTICE note;
+   verify-before-use += dettato-evidence (verification largely done — record verdict),
+   BS-Roformer-SW, MVSep 53-stem; study-only += FuzzyIdeas/Muskey (AGPL + static
+   GPL/Essentia deps); NC list += dettato-grouper and dettato-drums weights
+   (MUSDB18/IRMAS). File map: Docs/RESEARCH.md owner = Leto. Edits committed separately.
+**Affects:** AGENTS.md §9/§12, P-309/P-605, X-310, NOTICE file (M6), J-204 licenses screen.
+
+## X-310 | 2026-11-21 UTC | Leto | OPEN (Leto owns)
+**Question:** LICENSE VERIFICATION BUNDLE (verify-before-use, per D-15/D-26): (a) confirm
+dettato transcriber + evidence Apache-2.0 + exact NOTICE text — **transcriber DONE
+(verified 2026-11-21), evidence DONE (card verified: Apache-2.0, synthetic-only training)
+— residual: the ~20 "soundfont babies" soundfonts' file licenses**; (b) confirm grouper
+NC terms — **DONE (MUSDB18 academic/CC BY-NC-SA + IRMAS CC BY-NC-SA confirmed verbatim;
+weights NEVER ship)**; (c) BS-Roformer-SW checkpoint license — PENDING (needed before any
+P-605 quality-mode ship); (d) MVSep 53-stem checkpoint license — PENDING (same gate);
+(e) drums NC — **DONE (README confirms)**. Record each verdict here.
+**Affects:** D-21.4, P-309, P-605, M6.
+
+## X-311 | 2026-11-21 UTC | Leto | OPEN (Paul owns; M3 prep, NON-GATING)
+**Question:** Read dettato's published "soundfont babies" soundfont-morphing technique
+(kobi.music/research/making-soundfont-babies) and the `kobimusic/dettato-benchmark` HF
+dataset; apply both to X-301 synthetic SATB generation and to our M3 evaluation harness
+(per-set mir_eval reporting). No integration before X-310 soundfont verdicts.
+**Affects:** X-301, P-106/P-306, X-310(a-residual).
+
+---
+
 ## D-19 | 2026-11-21 UTC | Leto | RULED (executes D-7/D-17; closes M0 X-task residue)
 **Context:** M1 open. The session plan orders three Leto actions before lane work:
 (a) execute D-17 — independently verify the `sevagh/pitch-detection` license (do not
