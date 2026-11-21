@@ -56,6 +56,8 @@ RSS | env {runner/device, sha}.*
 | silero-vad (pinned 1a153a22…, 1 thread) | silence_16k | gated: max prob 0.009 | — | 0.23 ms / 32 ms chunk (med-500, p95 0.90 ms; budget <1 ms) | n/m | same env |
 | silero-vad | synthetic_voice_16k | detected: max 0.961 (margin 0.952 over silence) | — | — | — | same env |
 | silero-vad | noise_burst / click_track | correctly NON-speech: max 0.125 / 0.015 (speech-VAD semantics — M0 mock asserted energy-VAD) | — | — | — | same env |
+| ribbon Swift MPM (RibbonEngine, P-102/P-105 live source) | 220 Hz sine 20 s, 640-sample (40 ms) pushes | n/a — tone acc ±10 c mid-frames (LivePitchFacadeTests) | — | **0.093 best-of-3 −O** (per-40 ms-chunk 3.7–4.0 ms; budget < 0.1 PLAN M1; est. 0.02–0.03 was optimistic — direct-NSDF Swift inner loop is scalar, no SIMD) | n/m (dev box) | Linux x86_64, Pop!_OS 24.04, swiftc 6.0.3 -O, paul @b2868ce+facade, 2026-11-21 |
+| ribbon vendored C++ sevagh (CI spike, app bind via X-009) | synthetic_voice / sweep / clicks | voice \|cents\| med 1.32 / p95 5.80; sweep@2048 p95 19.4 | — | 0.0014 (≪ 0.1; ~66× faster than the Swift MPM — validates X-009 app-side vendor compile as the shipping hot path; Swift path = portable tests + facade semantics) | n/m | same env (Tests/Spikes/ribbon_real.py) |
 
 **CI-runner + A14 numbers: PENDING** — parked on the X-008/X-007-healed CI (first
 green run on the fixed build.yml will add the macOS runner row via the swiftf0/
@@ -95,3 +97,4 @@ the PawCT 0.225 ceiling.*
 |---|---|---|
 | v0 | 2026-11-21 | P-003 stub: methodology, targets (PLAN §0), empty result tables M1/M2/M3/M6. |
 | v1 | 2026-11-21 | P-101/P-103 M1 table filled (local Linux evidence, env-labeled): SwiftF0 accuracy/gating/RTF-threads + silero timing/semantics. CI-runner + A14 rows pending (device numbers via J-103 debug screen). F1@50c proper (P-106 harness v1) fills the column at P-106. |
+| v1.1 | 2026-11-21 | P-105: Swift MPM ribbon RTF measured (0.093 best-of-3, −O, Linux x86_64 — under the 0.1 budget, 3× over the optimistic estimate; honest note recorded + X-009 vendor path validated as the shipping hot path at 0.0014). Latency-relevant: facade ribbon answer ≈ 4 ms per 40 ms chunk on dev box (≪ 100 ms feedback budget; A14 number via J-103/P-603 pending). |

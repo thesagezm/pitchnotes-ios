@@ -23,6 +23,8 @@
 │ M1 pitch layer (P-101/P-103 SHIPPED — portable Foundation-only)  │
 │  SwiftF0Core · SileroVADCore · VADGate · kaiser-sinc Resampler   │
 │  PCMWaveReader · inference SEAMS (SwiftF0/SileroVAD protocols)   │
+│  RibbonEngine (Swift MPM, P-102) · LivePitchFacade (P-105)       │
+│  PartRangePresets (C-6.1) · PitchEngineID (C-6.0)                │
 ├──────────────────────────────────────────────────────────────────┤
 │ Apple/ORT layer                                                  │
 │  Engine/PitchORT pkg (X-008): OnnxSwiftF0 + OnnxSileroVAD        │
@@ -56,6 +58,51 @@
   deterministic mock models, fixture-integrity preflight. Leto's five frozen CI jobs
   call it one line each (Tests/Spikes/README.md). Real-model wiring points documented
   in `mock_model.py`.
+
+### 1.1 Live pitch facade (P-105, CONTRACTS v0.1 C-6)
+
+`LivePitchFacade` (EngineCore/Pitch/LivePitchFacade.swift) implements C-6.0
+verbatim: `PitchEngineID` (rawValues `RIBBON_MPM_YIN` / `SWIFTF0`, STABLE
+FOREVER) + `LivePitchEngine: EngineAPI` (`ribbonFrame` causal vs
+`gradingFrames` post-hoc). Both inferences are INJECTED seams — ORT-backed
+construction lands with X-008 (PitchORT); MockEngine conforms additively with
+the same real engine IDs (C-6.0), so J-101/J-103 build against the true shape
+today.
+
+- **Ribbon path** (`RIBBON_MPM_YIN`, lookahead 0): EngineCore `RibbonEngine`
+  (Swift MPM, direct NSDF — P-102). One `PitchFrame` per `ribbonFrame` call =
+  LAST frame emitted for that push; sub-hop pushes return the previous frame
+  unchanged (sticky — the UI cursor holds between hops) or an unvoiced
+  placeholder before the first window fill. Frame `t` is on the ribbon's own
+  16 ms hop grid (seconds from session start); `confidence` = NSDF clarity
+  clamped to [0,1] at the contract surface (parabolic interpolation can
+  overshoot a flat peak by ~1e-3 — V12), `loudness_db` = chunk RMS dBFS.
+- **VAD fusion** (optional injected `SileroVADInference`): SileroVADStream +
+  `VADGate` hysteresis (on 0.5 / off 0.35 / 5-chunk hang, P-103). Gate CLOSED
+  forces `hz = 0` while confidence keeps the clarity (the deviation UI can
+  still show certainty). VAD inference errors FAIL OPEN — a broken gate must
+  never kill the ribbon. Non-16 kHz chunks are answered defensively unvoiced
+  and never reach the state machine (C-3 declares MicChunk 16 kHz mono).
+- **Grading path** (`SWIFTF0`, lookahead 176 ms contract constant):
+  `SwiftF0PitchEngine.detect` over the decoded mix (portable RIFF-WAV decode
+  via PCMWaveReader incl. stereo downmix; compressed decodes arrive with the
+  Apple layer P-203), band-limited by fmin/fmax, every frame tagged
+  `engine_id = SWIFTF0`, `lookahead_ms = 176`. `EngineAPI.pitchFrames`
+  delegates here; `livePitch` delegates to the ribbon.
+- **M2 stubs:** `importAudio`/`separate`/`noteTrack` throw honest EngineErrors
+  until P-203/P-204 — MockEngine covers those UI flows (C-3 rule).
+- **C-6.1 presets** (LivePitchPresets.swift): the seven-part table VERBATIM
+  (Hz via `EngineContract.hzForMidi`, rounded 0.1); `calibratedBand(for
+  part, nudgeSemitones, micOffsetCents)` shifts the band by the clamped
+  −2…+2 nudge + mic cents WITHOUT mutating the fixed table. Filtering only —
+  never a hard gate (D-12).
+- **Reset:** `reset()` clears ribbon history/context, VAD gate, sticky frame —
+  call on interruptions (P-104 hooks).
+- Tests: `LivePitchFacadeTests` (9) — synthetic-stream AC (provenance,
+  220 Hz ±10 c accuracy, 16 ms grid, loudness), gate closed/open/fail-open,
+  sticky + reset, defensive rate, grading tagging/grid/errors, C-6.1 table
+  verbatim + calibration immutability, MockEngine facade surface, PitchFrame
+  v0.0/v0.1 JSON round-trip. EngineCore 79/79 Linux green.
 
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
@@ -109,3 +156,4 @@ Matches PLAN §0 targets exactly (live F1@50c ≥ 0.75 synthetic clean; RTF < 0.
 |---|---|---|
 | v0 | 2026-11-21 | P-003: model table + export plan + benchmark plan + open questions + license flags (X-002/X-003 proposed, X-601 referenced). M0 engine state documented (EngineCore + MockEngine + spike harness). |
 | v1 | 2026-11-21 | P-101/P-103: SwiftF0 + silero-vad SHIPPED (portable cores, PitchORT seam, self-upgrading real spikes). Architecture M1 layer + Engine/PitchORT split rationale; SwiftF0 I/O + streaming semantics (176 ms lookahead); silero 512/64/state + speech-VAD semantics; X-002 resolved (D-17/D-19); open questions 2–4 closed by CONTRACTS v0.1. |
+| v1.1 | 2026-11-21 | P-105: LivePitchFacade (C-6.0 verbatim) + C-6.1 presets + MockEngine additive conformance — §1.1 facade semantics (sticky sub-hop, VAD fail-open fusion, V12 clarity clamp, M2 stubs, reset); P-102 Swift MPM noted in the M1 layer diagram. RibbonEngine partial-window crash fixed (Int-division truncation; testTimestampsOnContractGridAndCausal red on CI arm64 + Linux, emitCount guard). |
