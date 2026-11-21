@@ -13,9 +13,12 @@ import PackageDescription
 //
 // Path: Engine/ is at the repo ROOT — two levels up from Tests/Logic (X-006
 // correction of the original ../Engine quote; ruled by Leto in LOG).
-// NOTE (J-FIX-101): reference the dependency by PRODUCT name only — SPM
-// resolves local path deps by PATH identity ('Engine'), not the declared
-// package name ('EngineCore'), so a `package:` qualifier here fails to resolve.
+// NOTE (J-FIX-101): for PATH dependencies SPM keys the package by its PATH
+// identity (directory name 'Engine'), NOT the declared package name
+// ('EngineCore') — and tools ≥5.2 makes the `package:` argument MANDATORY on
+// .product(name:package:). So the correct reference is
+// .product(name: "EngineCore", package: "Engine"): product name from
+// Engine/Package.swift, package identity from the folder path.
 let package = Package(
     name: "PitchLogic",
     platforms: [.iOS(.v16), .macOS(.v13)],
@@ -28,14 +31,14 @@ let package = Package(
     targets: [
         .target(
             name: "PitchLogic",
-            dependencies: [.product(name: "EngineCore")],
+            dependencies: [.product(name: "EngineCore", package: "Engine")],
             path: "Sources/PitchLogic"
         ),
         .testTarget(
             name: "PitchLogicTests",
             dependencies: [
                 "PitchLogic",
-                .product(name: "EngineCore"),
+                .product(name: "EngineCore", package: "Engine"),
             ],
             path: "Tests/PitchLogicTests"
         ),
