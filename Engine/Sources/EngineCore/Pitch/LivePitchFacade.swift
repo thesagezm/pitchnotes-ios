@@ -127,7 +127,11 @@ public final class LivePitchFacade: LivePitchEngine, @unchecked Sendable {
         let loudness = Self.dbfs(chunk.samples)
         let frames = ribbon.push(chunk.samples)
         if let rf = frames.last {
-            var f = PitchFrame(t: rf.t, hz: rf.hz, confidence: rf.clarity,
+            // V12: contract confidence ∈ [0,1]. Parabolic interpolation can
+            // overshoot a flat NSDF peak by ~1e-3 above 1.0; clamp at the
+            // contract surface (RibbonFrame.clarity stays raw for diagnostics).
+            var f = PitchFrame(t: rf.t, hz: rf.hz,
+                               confidence: min(1.0, max(0.0, rf.clarity)),
                                loudness_db: loudness,
                                engine_id: ribbonID, lookahead_ms: 0)
             if !gateOpen { f.hz = 0 } // gate closed ⇒ hz=0, confidence=clarity
