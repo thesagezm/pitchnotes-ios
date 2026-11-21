@@ -40,13 +40,13 @@ import spike_checks as sc  # noqa: E402
 import mock_model as mm  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SPIKE_NAMES = ("swiftf0", "nanopitch", "silero-vad", "separation", "basicpitch")
+SPIKE_NAMES = ("swiftf0", "ribbon", "nanopitch", "silero-vad", "separation", "basicpitch")
 
 
 def normalize(name: str) -> str:
     """Accept CI job names (swiftf0-spike) and bare names (swiftf0)."""
     name = {"silero-vad-spike": "silero-vad"}.get(name, name)
-    return name.removesuffix("-spike")
+    return name.removesuffix("-spike")  # ribbon-spike → ribbon (D-19 rename)
 
 
 def preflight_fixtures() -> None:
@@ -88,6 +88,16 @@ def run_nanopitch(report: sc.CheckReport) -> None:
     determinism(r2, "nanopitch", mm.mock_nanopitch)
     report.passed += r2.passed
     report.failed += r2.failed
+
+
+def run_ribbon(report: sc.CheckReport) -> None:
+    """P-102 causal ribbon (vendored sevagh MPM/YIN per D-17/D-19). The old
+    `nanopitch` mock (NanoPitch-shaped) is the structural fallback until the
+    CI job flips to `--spike ribbon`; nanopitch stays registered for one
+    transition release."""
+    if _try_real("ribbon", report) is True:
+        return
+    run_nanopitch(report)
 
 
 def run_silero(report: sc.CheckReport) -> None:
@@ -169,6 +179,7 @@ def _try_real(name: str, report: sc.CheckReport) -> bool | None:
     # must expose real_available() + the runner; a missing module = real path
     # not landed yet → mock fallback (loud banner).
     real_runners = {"swiftf0": ("swiftf0_real", "run_real"),
+                    "ribbon": ("ribbon_real", "run_ribbon"),
                     "silero-vad": ("silero_real", "run_silero")}
     if name not in real_runners:
         return None
@@ -211,6 +222,7 @@ def _try_real(name: str, report: sc.CheckReport) -> bool | None:
 
 RUNNERS = {
     "swiftf0": run_swiftf0,
+    "ribbon": run_ribbon,
     "nanopitch": run_nanopitch,
     "silero-vad": run_silero,
     "separation": run_separation,

@@ -41,3 +41,4 @@ Models/downloads/
 *.aiff
 *.ogg
 *.opus
+Tests/Spikes/.ribbon-build/
