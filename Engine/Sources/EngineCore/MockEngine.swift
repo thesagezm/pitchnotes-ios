@@ -473,3 +473,45 @@ public final class MockEngine: EngineAPI, @unchecked Sendable {
         return Data(pcm)
     }
 }
+
+// MARK: - C-6.0 LivePitchEngine conformance (v0.1, additive — P-105)
+
+// MockEngine implements the same facade as LivePitchFacade so J-101/J-103
+// build against the real shape (C-6.0: mock tagging with the REAL engine IDs
+// RIBBON_MPM_YIN/SWIFTF0). Additive only: EngineAPI methods above are
+// untouched; tagging happens at the facade boundary so persisted v0.0 mock
+// bundles and existing frame tests stay byte-compatible.
+extension MockEngine: LivePitchEngine {
+
+    public var ribbonSource: PitchEngineID { .ribbonMpmYin }
+    public var gradingSource: PitchEngineID { .swiftf0 }
+
+    public func ribbonFrame(_ chunk: MicChunk) -> PitchFrame {
+        // Deterministic mock ribbon = the scripted live frame, re-tagged as
+        // the causal source (mock has no lookahead by construction).
+        var f = livePitch(chunk)
+        f.engine_id = PitchEngineID.ribbonMpmYin.rawValue
+        f.lookahead_ms = 0
+        return f
+    }
+
+    public func gradingFrames(_ audio: DecodedAudio, fmin_hz: Double, fmax_hz: Double) async throws -> PitchFrameStream {
+        guard fmin_hz >= 0, fmin_hz < fmax_hz else {
+            throw EngineError.contractViolation(
+                "gradingFrames: require 0 <= fmin_hz < fmax_hz (got \(fmin_hz), \(fmax_hz))")
+        }
+        let tagged = frames(for: referencePart, fmin: fmin_hz, fmax: fmax_hz).map { frame -> PitchFrame in
+            var f = frame
+            f.engine_id = PitchEngineID.swiftf0.rawValue
+            f.lookahead_ms = LivePitchFacade.gradingLookaheadMs
+            return f
+        }
+        return PitchFrameStream(AsyncStream<PitchFrame>(bufferingPolicy: .unbounded) { continuation in
+            for frame in tagged {
+                if Task.isCancelled { break }
+                continuation.yield(frame)
+            }
+            continuation.finish()
+        })
+    }
+}
