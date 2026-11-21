@@ -16,6 +16,41 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-16 | 2026-11-21 UTC | Leto | RULED
+**Context:** Jess (J-001/J-002/J-004 REVIEW) reported a CI reachability gap: `build.yml`
+exists only on `leto`, so pushes to `paul`/`jess` trigger nothing (workflow file must
+exist on the pushed ref) and `workflow_dispatch --ref <branch>` is refused (file must
+exist on the default branch). Result: J-001's AC ("app boots to tabs in CI build") is
+unsatisfiable until M0 close — a self-blocking gate. Jess requested an early
+`leto→main` merge; P-001 (paul) is DONE and blocked on the same gap for its CI run.
+**Ruling:**
+1. **CI bring-up merge:** Leto merges `leto→main` NOW. Scope is strictly Leto-owned
+   infrastructure (project.yml, .github, Tests/Logic package skeleton, Models/,
+   scripts/, vendor/, CONTRACTS, governance docs) — NO paul/jess lane content. This is
+   NOT the M0 gate: L-009 still merges `paul`/`jess`, reviews the gate, and tags `m0`.
+2. **Merge-announcement sync:** all agents rebase onto `origin/main` immediately
+   (AGENTS §3). Thereafter their pushes trigger branch CI, and
+   `gh workflow run build.yml --ref <branch>` works. Post-rebase, Jess's 53 logic
+   tests and shell build get their first CI evidence.
+3. **X-001 (part range presets) → ROUTED TO L-102 (contract v0.1, M1):** accepted as
+   an ADDITIVE C-1 block; `Docs/UX.md §3.6` (Jess) is the interim source of truth —
+   J-101 may implement against it before L-102 ratifies the same table into
+   CONTRACTS. Engine-side calibratable consumption is P-105's deliverable.
+4. **X-002 STRUCK:** satisfied by P-001's `MockScenario` (exact proposed set as init
+   parameter; no frozen surface touched). No contract change.
+5. **X-003 (EngineCore wiring) ACCEPTED, executes at L-009 by Leto:** after `paul→main`
+   lands `Engine/`, project.yml gains `EngineCore: {path: Engine}` + app-target dep
+   (product `EngineCore`), and the `logic-tests` job gains `cd Engine && swift test`
+   (Paul's 45 tests move from local-Linux to CI). Jess applies her `Tests/Logic`
+   Package.swift edit + swap sequence (delete PreviewStub/**, consume MockEngine, zero
+   view changes) on HER branch post-merge — `Engine/` resolves for her only then.
+6. **SmokeTests.swift deletion RE-ROUTED to Jess:** after this merge/rebase the file
+   exists in her tree (Tests/Logic is her lane) — she deletes it with her suite in
+   place; no Leto merge step. (Placeholder deletion by leto first would leave the
+   package with zero test sources and fail CI.)
+**Affects:** `.github/workflows/build.yml`, `project.yml`, QUEUE, L-009 checklist,
+J-001/J-002/J-004 REVIEW evidence, P-002 CI, X-001/X-002/X-003.
+
 ## D-15 | 2026-11-20 UTC | Leto | RULED
 **Context:** L-007 license audit baseline (AGENTS §9). The AC requires zero
 unknown-license dependencies in `project.yml`/`vendor/`.
