@@ -6,6 +6,10 @@ Generates the git-committed fixture set for Tests/Spikes (all SYNTHETIC, all
 
   sweep_46_2100Hz_16k.wav   8 s log sine sweep 46.9 -> 2093.75 Hz (contract V11
                             band edges), 16 kHz mono PCM16
+  synthetic_voice_16k.wav   5 s voice-like mono melody C3-D3-E3-D3-C3 with ±15 c
+                            vibrato @5.5 Hz, 5 harmonics + breath noise, 0.5 s
+                            silence tail (P-101 swiftf0-spike truth via
+                            synthetic_voice_f0), 16 kHz mono
   satb_mixture_16k.wav      8 s 4-voice chord progression (C-F-G-C, voicings
                             C3/E3/G3/C4 family) with harmonics + noise floor,
                             16 kHz mono
@@ -171,8 +175,55 @@ def gen_mix44k() -> np.ndarray:
     return buf
 
 
+def gen_synthetic_voice():
+    """5 s voice-like monophonic fixture (P-101 swiftf0-spike "synthetic-voice"):
+    C3-D3-E3-D3-C3 (MIDI 48/50/52/50/48, 0.9 s each) with ±15-cent vibrato at
+    5.5 Hz, 5-harmonic voice-ish spectrum, breath noise floor, 0.5 s silence tail.
+
+    The truth F0 contour is shared with the spike via synthetic_voice_f0(t) /
+    sweep_f0(t) below, so accuracy asserts compare against the exact synthesis
+    contour (frame-center instantaneous F0), not a re-estimate.
+    """
+    dur = 5.0
+    n = int(SR * dur)
+    t = np.arange(n, dtype=np.float64) / SR
+    f0 = synthetic_voice_f0(t)
+    phase = 2.0 * np.pi * np.cumsum(f0) / SR
+    # Voice-ish spectrum: decaying harmonics, pseudo-formant emphasis on 2-3.
+    buf = np.zeros(n, dtype=np.float64)
+    for mult, a in ((1, 1.0), (2, 0.60), (3, 0.45), (4, 0.28), (5, 0.18)):
+        buf += a * np.sin(mult * phase)
+    # 10 ms fades at the very ends only (note steps fade via the contour envelope).
+    fade = int(0.01 * SR)
+    buf[:fade] *= np.linspace(0.0, 1.0, fade, endpoint=False)
+    buf[-int(0.4 * SR):] *= np.linspace(1.0, 0.0, int(0.4 * SR), endpoint=False)
+    rng = np.random.default_rng(0x5EED)
+    buf += 0.0015 * rng.standard_normal(n)
+    return 0.4 * buf
+
+
+def sweep_f0(t: np.ndarray) -> np.ndarray:
+    """Instantaneous F0 of gen_sweep at time(s) t (s) — shared spike truth."""
+    return HZ_MIN * (HZ_MAX / HZ_MIN) ** (t / 8.0)
+
+
+def synthetic_voice_f0(t: np.ndarray) -> np.ndarray:
+    """Instantaneous F0 of gen_synthetic_voice at time(s) t (s) — shared spike
+    truth: 0.9 s notes C3(48)/D3(50)/E3(52)/D3(50)/C3(48), ±15 c vibrato @5.5 Hz,
+    silent (0.0) after 4.5 s."""
+    notes = [48, 50, 52, 50, 48]
+    note_dur = 0.9
+    f0 = np.zeros_like(t)
+    for k, midi in enumerate(notes):
+        m = (t >= k * note_dur) & (t < (k + 1) * note_dur)
+        vibrato = 15.0 * np.sin(2.0 * np.pi * 5.5 * t)
+        f0[m] = midi_hz(float(midi)) * 2.0 ** (vibrato[m] / 1200.0)
+    return f0
+
+
 FIXTURES = [
     ("sweep_46_2100Hz_16k.wav", gen_sweep, SR),
+    ("synthetic_voice_16k.wav", gen_synthetic_voice, SR),
     ("satb_mixture_16k.wav", gen_satb, SR),
     ("click_track_16k.wav", gen_clicks, SR),
     ("silence_16k.wav", gen_silence, SR),
