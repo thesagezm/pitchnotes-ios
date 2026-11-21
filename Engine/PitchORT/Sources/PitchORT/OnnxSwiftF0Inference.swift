@@ -104,24 +104,32 @@ public enum SwiftF0ModelStore {
         cacheDir.appendingPathComponent("\(name)-\(sha256.prefix(16))")
     }
 
-    /// Look up the swiftf0 entry from a manifest JSON and resolve its cached
+    /// Look up a named model entry from a manifest JSON and resolve its cached
     /// path under `cacheDir`. Throws `EngineError.modelMissing` when absent —
     /// callers (app first-run flow) then trigger the one-time download.
-    public static func locateSwiftF0(manifestURL: URL, cacheDir: URL) throws -> URL {
+    public static func locateModel(named name: String, manifestURL: URL, cacheDir: URL) throws -> URL {
         let data = try Data(contentsOf: manifestURL)
         let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let models = obj?["models"] as? [[String: Any]] else {
             throw EngineError.modelMissing("manifest unreadable: \(manifestURL.path)")
         }
-        guard let entry = models.first(where: { ($0["name"] as? String) == "swiftf0" }),
+        guard let entry = models.first(where: { ($0["name"] as? String) == name }),
               let sha = entry["sha256"] as? String else {
-            throw EngineError.modelMissing("manifest has no 'swiftf0' entry")
+            throw EngineError.modelMissing("manifest has no '\(name)' entry")
         }
-        let url = modelURL(for: "swiftf0", sha256: sha, in: cacheDir)
+        let url = modelURL(for: name, sha256: sha, in: cacheDir)
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw EngineError.modelMissing(
-                "SwiftF0 ONNX not cached at \(url.path) — run scripts/models/download.py --entry swiftf0")
+                "\(name) not cached at \(url.path) — run scripts/models/download.py --entry \(name)")
         }
         return url
+    }
+
+    public static func locateSwiftF0(manifestURL: URL, cacheDir: URL) throws -> URL {
+        try locateModel(named: "swiftf0", manifestURL: manifestURL, cacheDir: cacheDir)
+    }
+
+    public static func locateSilero(manifestURL: URL, cacheDir: URL) throws -> URL {
+        try locateModel(named: "silero-vad", manifestURL: manifestURL, cacheDir: cacheDir)
     }
 }
