@@ -1,18 +1,19 @@
 import Foundation
 import SwiftUI
 
-/// Library state (J-002). Loads the preview catalog OFF the main thread and
-/// publishes it. When Paul's MockEngine (P-001) lands + X-003 wiring, the
-/// catalog source swaps to his engine — the views do not change.
+/// Library state (J-002 → X-006). Loads the MockEngine-materialized preview
+/// catalog OFF the main thread and publishes it. Bundle verdicts come from
+/// EngineCore validators over DISK truth (LibraryCatalog). The M2 real-import
+/// swap (J-201/J-202) changes only the producer — views do not change.
 @MainActor
 final class LibraryModel: ObservableObject {
-    @Published private(set) var songs: [StubSong] = []
+    @Published private(set) var songs: [LibrarySong] = []
     @Published private(set) var isLoading = true
 
     init() {
         Task {
             let catalog = await Task.detached(priority: .userInitiated) {
-                StubEngine.makeCatalog()
+                LibraryCatalog.makeCatalog()
             }.value
             songs = catalog
             isLoading = false
