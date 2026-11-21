@@ -27,6 +27,32 @@
         "role": "public-network HTTP+SHA256 validation (pinned immutable blob; swap to HF repo file when D-2 unblocks)",
         "format": "markdown text"
       }
+    },
+    {
+      "name": "swiftf0",
+      "version": "1.0.0+hf7877fba",
+      "url": "https://huggingface.co/aaatmy/swift-f0-onnx/resolve/7877fbaad8ea5dbe0fac0edc4b2703cbea381c14/model.onnx",
+      "sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22",
+      "size": 135090,
+      "license": "MIT",
+      "runtime": "onnx-cpu",
+      "io": {
+        "role": "grading-grade pitch engine (C-6 SWIFTF0; P-101/P-105). URL pinned to HF revision 7877fba (immutable) per D-19 interim rule — swap to thesagezm/pitchnotes-models when D-2 unblocks, sha256 MUST NOT change. Leto verified 2026-11-21: computed == upstream SHA256SUMS == HF LFS oid.",
+        "format": "ONNX; 16 kHz mono in, per-16ms-frame hz/confidence out, streaming lookahead 176 ms; fmin/fmax band filter per C-6.1"
+      }
+    },
+    {
+      "name": "silero-vad",
+      "version": "data@bfdc019",
+      "url": "https://raw.githubusercontent.com/snakers4/silero-vad/bfdc0193023f121ea5b3cc7b176dbed570a68a59/src/silero_vad/data/silero_vad.onnx",
+      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+      "size": 2327524,
+      "license": "MIT",
+      "runtime": "onnx-cpu",
+      "io": {
+        "role": "mic VAD gating (P-103/P-104). URL pinned to upstream commit bfdc019 (immutable) per D-19 interim rule — swap to thesagezm/pitchnotes-models when D-2 unblocks, sha256 MUST NOT change. Leto verified 2026-11-21 (downloaded + hashed at pin time).",
+        "format": "ONNX; 16 kHz mono in, 30 ms chunks, speech-probability out, <1 ms/chunk target"
+      }
     }
   ]
 }

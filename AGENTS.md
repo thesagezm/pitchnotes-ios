@@ -191,7 +191,7 @@ a `.xcodeproj`. All targets, deps, and settings live in `project.yml` (Leto owns
 conversion, UltraStar import/export, chord labeling, sentence-of-lyrics chunking,
 manifest validation). Must be runnable without audio hardware.
 2. **Spike contract tests (one job per model, NON-BLOCKING daily, BLOCKING at merge):**
-`swiftf0-spike`, `nanopitch-spike` (C engine), `separation-spike` (demucs.cpp /
+`swiftf0-spike`, `ribbon-spike` (D-19: renamed from `nanopitch-spike`; C/C++ engine), `separation-spike` (demucs.cpp /
 windowed-roformer), `basicpitch-spike`, `silero-vad-spike`. Each downloads its
 model from the project HF repo, runs it on the macOS runner against tiny committed
 fixtures, and asserts valid output shape/ranges (e.g., pitch in 46.9–2093.75 Hz,

@@ -55,6 +55,25 @@ jobs:
             --entry http-probe \
             --cache-dir "$HOME/pitchnotes-model-cache"
 
+      # D-19 interim rule (L-101): REAL model entries pinned to upstream
+      # immutable URLs (HF revision / GitHub commit) + Leto-verified SHA256,
+      # until thesagezm/pitchnotes-models exists (D-2, BLOCKED(human)).
+      # Blocking here: proves the exact bytes the spikes will consume hash out
+      # on every run, and warms the CI cache for the spike jobs.
+      - name: Download + SHA256-verify swiftf0 (D-19 pinned upstream)
+        run: |
+          python3 -I scripts/models/download.py \
+            --manifest Models/manifest.json \
+            --entry swiftf0 \
+            --cache-dir "$HOME/pitchnotes-model-cache"
+
+      - name: Download + SHA256-verify silero-vad (D-19 pinned upstream)
+        run: |
+          python3 -I scripts/models/download.py \
+            --manifest Models/manifest.json \
+            --entry silero-vad \
+            --cache-dir "$HOME/pitchnotes-model-cache"
+
       - name: Run PitchLogic package tests
         run: |
           set -o pipefail
@@ -119,8 +138,14 @@ jobs:
       - name: Run spike harness (mock model, no weights in M0)
         run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike swiftf0'
 
-  nanopitch-spike:
-    name: NanoPitch spike (P-002 mock harness)
+  # D-19 rename: nanopitch-spike -> ribbon-spike. The M1 gate spike tests the
+  # D-17 ribbon default (vendored sevagh MPM/YIN, MIT — vendor/pitch-detection),
+  # NOT NanoPitch (pretrained weights banned, GTSinger NC data). Until Paul's
+  # P-102 lands the real C++ runner, this job keeps the P-002 mock harness
+  # (harness spike name stays `nanopitch` until P-102 renames it + adds the
+  # ribbon runner). continue-on-error stays until L-101 ACTIVATION at the gate.
+  ribbon-spike:
+    name: Causal ribbon spike (D-19: MPM/YIN, P-102 mock harness)
     runs-on: macos-latest
     timeout-minutes: 10
     continue-on-error: true
@@ -131,7 +156,7 @@ jobs:
         run: |
           python3 -m venv "$HOME/spike-venv"
           "$HOME/spike-venv/bin/pip" install --quiet numpy
-      - name: Run spike harness (mock model, no weights in M0)
+      - name: Run spike harness (mock model until P-102 real ribbon runner)
         run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike nanopitch'
 
   separation-spike:

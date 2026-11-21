@@ -37,7 +37,7 @@
 | M | Name | Goal (human-visible) | Primary gate |
 |---|---|---|---|
 | M0 | Scaffold & Contracts | Empty app boots from CI IPA; queue/contracts live | `build-ipa` + `logic-tests` green; contracts v0 |
-| M1 | Live Pitch | Sing → live note name + cents ribbon | `swiftf0`/`nanopitch`/`silero` spikes green |
+| M1 | Live Pitch | Sing → live note name + cents ribbon | `swiftf0`/`ribbon`/`silero` spikes green (D-19 rename) |
 | M2 | Import & Separation | FLAC → vocals/instrumental stems → mixer | `separation-spike` green; RSS/thermal logged |
 | M3 | Per-Voice Note Tracks | 5-part piano roll + UltraStar export + score hook | `basicpitch-spike` green; honest F1 report |
 | M4 | Learner & Grading | Sing a part → graded session + history | scoring `logic-tests` green |
@@ -129,27 +129,27 @@ dispatch build-ipa → start J-003.
 
 ## M1 — Live Pitch
 
-**Open condition:** M0 merged. **CI jobs:** `swiftf0-spike`, `nanopitch-spike`,
+**Open condition:** M0 merged. **CI jobs:** `swiftf0-spike`, `ribbon-spike` (D-19: renamed from `nanopitch-spike`; tests the D-17 MPM/YIN ribbon — NanoPitch weights banned),
 `silero-vad-spike` become REAL (remove allow-failure at gate); `logic-tests`, `build-ipa`.
 **Contract:** v0.1 (PitchFrame `engine_id`, `lookahead_ms`; LivePitchEngine facade).
 
 | ID | Owner | Task & AC | Deps | Size |
 |---|---|---|---|---|
 | P-101 | Paul | SwiftF0 ONNX (MIT, lars76/swift-f0): export/verify bundled model → `Engine/Pitch/SwiftF0Engine.swift` ORT session; 16 kHz resample (AVAudioConverter); 16 ms frames; `fmin/fmax` band filter; output PitchFrame {t,hz,confidence,loudness_db}. **AC:** `swiftf0-spike` green on sweep/synthetic-voice/silence fixtures; pitch within ±20c of synthetic truth; RTF logged; SHA in manifest. | P-002, L-005 | M |
-| P-102 | Paul | NanoPitch C engine (smulelabs/NanoPitch): **verify LICENSE first (D7)**; if ship-safe, train small model (gru-size 64, ~200K params; data HF smulelabs/NanoPitch-PreExtract; train on Linux/CI or human machine — 6–8 h risk, use smaller/fewer epochs), export weights, compile `nanopitch.c/h` (mel+GRU+Viterbi, causal, 16 kHz, VAD) into `Engine/Pitch/NanoPitch`. **Fallback if license fails or training stalls:** vendor `sevagh/pitch-detection` (MIT) MPM/YIN as zero-lag ribbon source; record ruling. **AC:** license verdict in DECISIONS; `nanopitch-spike` green (pitch+VAD); RTF<0.1 native; OR fallback implemented + ruled. | P-002, L-007 | L |
+| P-102 | Paul | NanoPitch C engine (smulelabs/NanoPitch): **verify LICENSE first (D7)**; if ship-safe, train small model (gru-size 64, ~200K params; data HF smulelabs/NanoPitch-PreExtract; train on Linux/CI or human machine — 6–8 h risk, use smaller/fewer epochs), export weights, compile `nanopitch.c/h` (mel+GRU+Viterbi, causal, 16 kHz, VAD) into `Engine/Pitch/NanoPitch`. **Fallback if license fails or training stalls:** vendor `sevagh/pitch-detection` (MIT) MPM/YIN as zero-lag ribbon source; record ruling. **AC:** license verdict in DECISIONS; `ribbon-spike` green (pitch+VAD; D-19 rename of nanopitch-spike — the tested engine is the D-17/D-19 vendored MPM/YIN ribbon, NanoPitch weights banned); RTF<0.1 native; fallback = default per D-17. | P-002, L-007 | L |
 | P-103 | Paul | silero-vad ONNX (MIT): mic gating, <1 ms/30 ms chunk, manifest entry. **AC:** `silero-vad-spike` green; silence fixtures gated; voiced fixtures pass. | P-002, L-005 | S |
 | P-104 | Paul | Live mic capture: AVAudioEngine input tap, `.playAndRecord`, headphone policy (voiceProcessing OFF for fidelity; ON for speaker mode), 1024@48k→16k ring buffer, audio-thread→engine-queue model, loopback latency hook. **AC:** simulated stream spike shows no drops; latency budget documented (<100 ms target); permission string verified; interruption handling. | P-101, P-103 | M |
-| P-105 | Paul | `LivePitchEngine` facade per CONTRACTS v0.1: NanoPitch (or fallback) = causal ribbon source; SwiftF0 = accurate grading source; Part range presets (bass E2–G3, baritone A2–D4, baritenor C3–F4, T2 E3–A4, T1 G3–E5; calibratable); confidence fusion. **AC:** facade returns contract PitchFrames; synthetic-stream unit test; ENGINE.md updated with measured RTF/latency. | P-101, P-102, P-104, L-102 | M |
+| P-105 | Paul | `LivePitchEngine` facade per CONTRACTS v0.1: D-17 ribbon (vendored MPM/YIN; NanoPitch banned) = causal ribbon source; SwiftF0 = accurate grading source; Part range presets (bass E2–G3, baritone A2–D4, baritenor C3–F4, T2 E3–A4, T1 G3–E5; calibratable); confidence fusion. **AC:** facade returns contract PitchFrames; synthetic-stream unit test; ENGINE.md updated with measured RTF/latency. | P-101, P-102, P-104, L-102 | M |
 | P-106 | Paul | Benchmark harness v1: F1@50c on synthetic fixtures + RTF/RSS logging → `Docs/BENCHMARKS.md`; CI bench job (non-blocking). **AC:** report generated; targets §0 stated; synthetic clean F1≥0.75. | P-105 | S |
 | J-101 | Jess | Tuner ribbon UI (MockEngine first, real swap at merge): scrolling cents deviation, note name+octave, tolerance band ±50 default, sharp/flat color, voiced state, octave-equivalence toggle, part selector (range presets), dynamic type. **AC:** renders mock stream smoothly; cents→UI mapping unit tests; swaps to real engine with ZERO UI changes (contract). | J-003, P-001 | M |
 | J-102 | Jess | Mic permission + audio session UX: prompt flow, denied state, headphone banner, input level meter, latency slider stub (real M4). **AC:** permission flows tested; interruptions (call/background) handled; no crash on deny. | P-104 | S |
 | J-103 | Jess | Live pitch debug screen: raw hz/confidence/loudness plot, engine selector (NanoPitch/SwiftF0/fallback), RTF meter. **AC:** shows live frames; used in M1 device demo. | P-105 | S |
 | J-104 | Jess | UX.md update: ribbon finalized; learner session storyboard (M4 prep). **AC:** committed; M4 flow spec ready. | J-101 | S |
-| L-101 | Leto | CI: activate swiftf0/nanopitch/silero spikes as real jobs; HF model caching in CI. **AC:** spikes green on merge candidate; cache hit verified. | P-101, P-102, P-103 | S |
+| L-101 | Leto | CI: activate swiftf0/ribbon/silero spikes as real jobs; HF model caching in CI. **AC:** spikes green on merge candidate; cache hit verified. | P-101, P-102, P-103 | S |
 | L-102 | Leto | Contract v0.1: PitchFrame `engine_id`/`lookahead_ms`, LivePitchEngine facade signature; additive only. **AC:** ratified; both lanes ack. | P-105 | S |
 | L-103 | Leto | M1 merge + Device Demo checklist; tag `m1`; open M2; seed queue. **AC:** demo logged (sing→ribbon, latency subjective, octave toggle); `m1` tagged. | all M1 | S |
 
-**Merge Gate M1:** P-101…P-106, J-101…J-104, L-101…L-103 `DONE`; swiftf0/nanopitch/silero
+**Merge Gate M1:** P-101…P-106, J-101…J-104, L-101…L-103 `DONE`; swiftf0/ribbon/silero
 spikes green; logic-tests green; build-ipa green; RTF/latency logged; NanoPitch license
 verdict (or fallback) recorded; contracts v0.1.
 **Device Demo M1:** sing into mic (headphones) → live note name + cents ribbon → toggle
