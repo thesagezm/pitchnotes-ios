@@ -153,10 +153,19 @@ final class ContractValidatorTests: XCTestCase {
     }
 
     func testNoteTrackOutOfOrderIsV8() {
-        // Swap the two notes: second starts before the first.
-        let bad = validNoteTrack.replacingOccurrences(
-            of: "{ \"start_s\": 1.232, \"end_s\": 2.500, \"midi\": 48, \"cents_ref\": 12, \"confidence\": 0.9 },\n        { \"start_s\": 2.500, \"end_s\": 4.000, \"midi\": 50, \"cents_ref\": -20, \"confidence\": 0.7 }",
-            with: "{ \"start_s\": 2.500, \"end_s\": 4.000, \"midi\": 50, \"cents_ref\": -20, \"confidence\": 0.7 },\n        { \"start_s\": 1.232, \"end_s\": 2.500, \"midi\": 48, \"cents_ref\": 12, \"confidence\": 0.9 }")
+        // Second note starts before the first (dedicated literal — no
+        // indentation-coupled string surgery; multiline literals strip the
+        // closing delimiter's indentation, so \n-joined searches don't match).
+        let bad = """
+        {
+          "contractVersion": "v0.0",
+          "part": "BASS",
+          "notes": [
+            { "start_s": 2.500, "end_s": 4.000, "midi": 50, "cents_ref": -20, "confidence": 0.7 },
+            { "start_s": 1.232, "end_s": 2.500, "midi": 48, "cents_ref": 12, "confidence": 0.9 }
+          ]
+        }
+        """
         XCTAssertTrue(ruleIds(ContractValidator.validateNoteTrack(data(bad), expectedPart: "BASS")).contains("V8"))
     }
 
