@@ -273,16 +273,26 @@ mir_eval/museval metrics: F1@50c, RPA/RCA, SDR/NSDR, note onset F1).
 - **Ship-safe (MIT/Apache/BSD):** SwiftF0, demucs.cpp, basicpitch.cpp, windowed-roformer,
 MSST, python-audio-separator (prep only), spotify/basic-pitch, CREPE, silero-vad,
 signalsmith-stretch, TinySoundFont, tonaljs, VexFlow, OSMD, mir_eval, museval, libfmp,
-partitura, pyroomacoustics, pedalboard, ONNX Runtime.
+partitura, pyroomacoustics, pedalboard, ONNX Runtime, **dettato transcriber + evidence
+weights (Apache-2.0, clean training data — D-21/D-26; any dettato-derived port/weights
+MUST carry the upstream NOTICE attribution in our NOTICE file + in-app licenses screen)**.
 - **STUDY-ONLY, never link/ship (copyleft):** Nightingale, Performous, USDX, Vocaluxe,
 UltraStar Play, aubio (GPL), essentia (AGPL), TarsosDSP (GPL), PESTO (LGPL), Verovio
-(LGPL), FluidSynth (LGPL), Rubber Band (GPL), GNU Solfege (GPL). Reimplement ideas;
-do not copy code. Static linking makes LGPL especially dangerous for our IPA.
+(LGPL), FluidSynth (LGPL), Rubber Band (GPL), GNU Solfege (GPL), **FuzzyIdeas/Muskey
+(AGPL-3.0 app; statically links Essentia AGPL + Rubber Band GPL-2+/PitchTap GPL-3;
+private macOS APIs — never link or copy code, never hotlink the lowtechguys.com model
+CDN; D-26.1)**. Reimplement ideas; do not copy code. Static linking makes LGPL
+especially dangerous for our IPA.
 - **Verify-before-use:** RMVPE/FCPE weights, jaCappella models, UVR/MDX community
-checkpoints, SepACap, NanoPitch LICENSE file. Leto records each verification in
-DECISIONS.md. Unknown license = not shipped.
+checkpoints, SepACap, NanoPitch LICENSE file, **BS-Roformer-SW checkpoint, MVSep
+53-stem checkpoint (both PENDING → X-310; gate P-605), dettato-evidence (card verified
+clean 2026-11-21 — soundfont-babies file licenses residual)**. Leto records each
+verification in DECISIONS.md. Unknown license = not shipped.
 - **Training data:** GTSinger (CC BY-NC-SA) and M4Singer (CC BY-NC) are BANNED for
-commercial weight training. Commercial-safe path = synthetic SATB (hymn MIDI +
+commercial weight training; **dettato-grouper and dettato-drums WEIGHTS are likewise
+banned from shipping (MUSDB18/IRMAS non-commercial training data — D-21.3; the grouper
+ARCHITECTURE/decode may be reimplemented and retrained on clean synthetic SATB via
+X-301)**. Commercial-safe path = synthetic SATB (hymn MIDI +
 permissive voicebanks + church IRs) + CC-BY corpora (VocalSet, SingStyle111) + PD
 hymn scores. User-uploaded audio is processed locally only; never redistribute stems.
 - New dependency rule: any new repo/model/dataset enters via a queue task with
@@ -347,8 +357,8 @@ pitchnotes-ios/
 ├── Tests/Logic/ # Jess: pure Swift unit tests (logic-tests job)
 ├── Tests/Spikes/ # Paul: model contract fixtures + assertions
 ├── vendor/ # Leto: vendored permissive C/C++ (demucs.cpp, SwiftF0 C, etc.)
-└── Docs/ # RESEARCH.md, ARCHITECTURE.md (Leto), ENGINE.md/BENCHMARKS.md
-# (Paul), UX.md/CONTENT.md (Jess)
+└── Docs/ # RESEARCH.md (Leto — file owner per D-26.4), ARCHITECTURE.md (Leto),
+# ENGINE.md/BENCHMARKS.md (Paul), UX.md/CONTENT.md (Jess)
 ```
 
 Shared-file rule: only Leto edits README.md, CHANGELOG.md, AGENTS.md, PLAN.md,
