@@ -16,6 +16,34 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-15 | 2026-11-20 UTC | Leto | RULED
+**Context:** L-007 license audit baseline (AGENTS §9). The AC requires zero
+unknown-license dependencies in `project.yml`/`vendor/`.
+**Ruling:** Baseline recorded as follows.
+- **SHIP-SAFE (MIT/Apache/BSD/Zlib) — may be vendored/linked:** SwiftF0, demucs.cpp,
+  basicpitch.cpp, windowed-roformer, MSST, python-audio-separator (prep tooling only,
+  never on device), spotify/basic-pitch, CREPE, silero-vad, signalsmith-stretch,
+  TinySoundFont, tonaljs, VexFlow, OSMD, mir_eval, museval, libfmp, partitura,
+  pyroomacoustics, pedalboard, ONNX Runtime (+ our SPM mirror of it, MIT).
+- **STUDY-ONLY — never linked/shipped (copyleft):** Nightingale, Performous, USDX,
+  Vocaluxe, UltraStar Play, aubio (GPL), essentia (AGPL), TarsosDSP (GPL), PESTO
+  (LGPL), Verovio (LGPL), FluidSynth (LGPL), Rubber Band (GPL), GNU Solfege (GPL).
+  Reimplement ideas, never copy code; static linking makes LGPL especially dangerous
+  for our IPA.
+- **VERIFY-BEFORE-USE (no integration until verdict recorded here):** NanoPitch
+  LICENSE → P-102 (fallback: sevagh/pitch-detection MPM/YIN, MIT); soundfont →
+  L-501 (D-6); RMVPE/FCPE weights → X-601; jaCappella models, UVR/MDX community
+  checkpoints, SepACap → M3+ X-tasks before any use. Unknown license = not shipped.
+- **TRAINING DATA:** GTSinger (CC BY-NC-SA) and M4Singer (CC BY-NC) are BANNED from
+  commercial weight training. Commercial-safe path = synthetic SATB (PD hymn MIDI +
+  permissive voicebanks + church IRs) + CC-BY corpora (VocalSet, SingStyle111) + PD
+  hymn scores. User audio is processed locally; stems never redistributed.
+- **AUDIT RESULT (M0):** `project.yml` deps = ONNX Runtime mirror (MIT, D-13) +
+  PitchLogic (in-house). `vendor/` empty at M0 (intake process = L-008). **Zero
+  unknown-license dependencies.** New deps enter ONLY via a queue task with
+  {url, license, purpose, ship/study verdict} + a Leto ruling here.
+**Affects:** AGENTS §9, `project.yml`, `vendor/**`, P-102, L-501, X-601, X-301/X-302.
+
 ## D-14 | 2026-11-20 UTC | Leto | RULED
 **Context:** AGENTS §3/§11 forbid direct commits to `main`, but L-001/L-002 (repo init +
 governance seeding) need a first push to create the repo baseline; no milestone merge
