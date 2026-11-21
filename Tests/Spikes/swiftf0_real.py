@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -104,7 +105,10 @@ def ensure_model(cache_dir: Path | None = None) -> Path:
     line = [l for l in r.stdout.splitlines() if l.startswith(("downloaded", "cached"))]
     if not line:
         raise RuntimeError(f"download.py printed no path: {r.stdout!r}")
-    return Path(line[0].split(": ", 1)[1])
+    # "downloaded + verified: <path> (<size> bytes)" | "cached: <path>" — strip suffix.
+    raw = line[0].split(": ", 1)[1]
+    raw = re.sub(r"\s+\(\d+ bytes\)\s*$", "", raw)
+    return Path(raw)
 
 
 def load_session(model_path: Path, threads: int):
