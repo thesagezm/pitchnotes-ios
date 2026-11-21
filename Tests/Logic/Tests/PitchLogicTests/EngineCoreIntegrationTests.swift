@@ -203,17 +203,28 @@ final class EngineCoreIntegrationTests: XCTestCase {
         XCTAssertEqual(UnisonDetector.label(for: pair), "T1 ↔ T2")
     }
 
-    func testMockScriptedSongUnisonPairsMatchStubEraExpectation() throws {
-        // The M0 catalog showed one unison chip per song (close-position male
-        // voicings). Assert the real MockEngine script still produces pairs —
-        // the honesty affordance stays visible in the X-006 UI.
+    func testMockScriptVoicingsHaveNoUnisonButDetectorFindsSyntheticOverlap() throws {
+        // MockEngine's scripted voicings are SPREAD (no two same-time notes
+        // within 100¢) — the honest catalog shows NO unison chips, and the
+        // detector must agree with that. Then a synthetic overlap proves the
+        // detector fires on real NoteTrack shapes (UX §3.7 affordance).
         let (engine, _) = try makeMockBundle(scenario: .perfect, seed: 0x5027)
-        var tracks: [Part: NoteTrack] = [:]
         let ensemble: [Part] = [.bass, .baritone, .baritenor, .t2, .t1] // mock ensemble (C-1 raws)
+        var tracks: [Part: NoteTrack] = [:]
         for part in ensemble {
             tracks[part] = engine.noteTrack(for: part)
         }
-        XCTAssertFalse(UnisonDetector.pairs(in: tracks).isEmpty,
-                       "close-position mock voicings must contain at least one unison pair")
+        XCTAssertTrue(UnisonDetector.pairs(in: tracks).isEmpty,
+                      "spread mock voicings must not be flagged as unison")
+
+        // Synthetic: give T2 T1's pitches (same time, same pitch) → pair found.
+        var overlapped = tracks
+        overlapped[.t2] = NoteTrack(part: .t2, notes: (tracks[.t1]?.notes ?? []).map {
+            Note(start_s: $0.start_s, end_s: $0.end_s, midi: $0.midi,
+                 cents_ref: $0.cents_ref, confidence: $0.confidence)
+        })
+        let pairs = UnisonDetector.pairs(in: overlapped)
+        XCTAssertTrue(pairs.contains(UnisonPair(first: .t1, second: .t2)),
+                      "T2 cloning T1's notes must surface the unison pair")
     }
 }

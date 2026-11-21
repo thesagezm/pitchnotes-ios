@@ -27,27 +27,41 @@ final class RibbonMappingTests: XCTestCase {
     // MARK: - §3.4 state table
 
     func testInTuneAtCenterAndToleranceBoundary() {
-        XCTAssertEqual(reading(hz: hz(52)).state, .inTune)                       // exact center
-        XCTAssertEqual(reading(hz: hz(52, cents: 12)).state, .inTune)            // +12¢
-        XCTAssertEqual(reading(hz: hz(52, cents: 50)).state, .inTune)            // +50 = |dev| ≤ tol (inclusive)
-        XCTAssertEqual(reading(hz: hz(52, cents: -50)).state, .inTune)           // −50 inclusive
-        // At exactly +50¢ the NEAREST semitone is the upper one (F3), so the
-        // standalone-tuner deviation reads −50 from F3 — still in-tune, |dev| = 50.
-        let at = reading(hz: hz(52, cents: 50))
-        XCTAssertEqual(abs(at.cents), 50, accuracy: 0.001)
+        let ref = RibbonReference(midi: 52) // E3 — flat/sharp need a REFERENCE;
+                                            // nearest-semitone mode re-centers
+        XCTAssertEqual(reading(hz: hz(52), reference: ref).state, .inTune)             // exact center
+        XCTAssertEqual(reading(hz: hz(52, cents: 12), reference: ref).state, .inTune)  // +12¢
+        // ±50 boundary inclusive (|dev| ≤ tol); ±0.0001 margins dodge float wobble.
+        XCTAssertEqual(reading(hz: hz(52, cents: 49.9999), reference: ref).state, .inTune)
+        XCTAssertEqual(reading(hz: hz(52, cents: -49.9999), reference: ref).state, .inTune)
+        XCTAssertEqual(reading(hz: hz(52, cents: 50.0001), reference: ref).state, .sharp)
+        XCTAssertEqual(reading(hz: hz(52, cents: -50.0001), reference: ref).state, .flat)
+        let at = reading(hz: hz(52, cents: 12), reference: ref)
+        XCTAssertEqual(at.cents, 12, accuracy: 0.001)
         XCTAssertEqual(at.direction, .none)
         XCTAssertNil(at.octaveBadge)
     }
 
+    func testStandaloneTunerNeverExceedsHalfSemitoneDeviation() {
+        // Reference-nil mode: the NEAREST semitone is the reference, so |dev|
+        // is always ≤ 50¢ — a pure tuner cannot say "51¢ flat".
+        let far = reading(hz: hz(52, cents: -51))
+        XCTAssertEqual(far.state, .inTune, "−51¢ below E3 = +49¢ above E♭3 → in tune")
+        XCTAssertEqual(far.nearestMidi, 51)
+        let up = reading(hz: hz(52, cents: 51))
+        XCTAssertEqual(up.state, .inTune, "+51¢ above E3 = −49¢ below F3 → in tune")
+        XCTAssertEqual(up.nearestMidi, 53)
+    }
+
     func testFlatOutOfRangeSingsHigher() {
-        let r = reading(hz: hz(52, cents: -51))
+        let r = reading(hz: hz(52, cents: -51), reference: RibbonReference(midi: 52))
         XCTAssertEqual(r.state, .flat)
         XCTAssertEqual(r.direction, .up, "flat → ↑ (sing higher), UX §3.4")
         XCTAssertNil(r.octaveBadge)
     }
 
     func testSharpOutOfRangeSingsLower() {
-        let r = reading(hz: hz(52, cents: 51))
+        let r = reading(hz: hz(52, cents: 51), reference: RibbonReference(midi: 52))
         XCTAssertEqual(r.state, .sharp)
         XCTAssertEqual(r.direction, .down, "sharp → ↓ (sing lower), UX §3.4")
     }
@@ -150,8 +164,12 @@ final class RibbonMappingTests: XCTestCase {
     func testSpokenSummaryStates() {
         XCTAssertEqual(reading(hz: 0.0).spokenSummary, "unvoiced")
         XCTAssertEqual(reading(hz: hz(52, cents: 12)).spokenSummary, "E3, in tune")
-        XCTAssertEqual(reading(hz: hz(52, cents: -23)).spokenSummary, "E3, 23 cents flat, sing higher")
-        XCTAssertEqual(reading(hz: hz(52, cents: 41)).spokenSummary, "E3, 41 cents sharp, sing lower")
+        // Out-of-tune states need a REFERENCE (nearest-semitone mode re-centers):
+        let ref = RibbonReference(midi: 52)
+        XCTAssertEqual(reading(hz: hz(52, cents: -23), reference: ref, tolerance: .narrow).spokenSummary,
+                       "E3, 23 cents flat, sing higher")
+        XCTAssertEqual(reading(hz: hz(52, cents: 41), reference: ref, tolerance: .narrow).spokenSummary,
+                       "E3, 41 cents sharp, sing lower")
         let oct = reading(hz: hz(60, cents: 1200), reference: RibbonReference(midi: 60), octave: true)
         XCTAssertEqual(oct.spokenSummary, "C4, in tune, one octave up")
     }
