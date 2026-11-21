@@ -59,11 +59,15 @@ Task row format (one line per task, keep it short):
 
 ## BLOCKED / DECISIONS PENDING (anyone appends; Leto resolves)
 
+- **OPEN (paul, 2026-11-21) — X-002 (proposed ID): NanoPitch provenance ruling, needed BEFORE P-102 (extends D-7).** NanoPitch CODE license unverified (D-7) AND its pretrained weights are trained on GTSinger (CC BY-NC-SA) + FSDNoisy18k (RESEARCH §4b) — NC-trained weights are commercially encumbered even if code is permissive. PROPOSAL: v1 causal ribbon = sevagh/pitch-detection (MIT, pure DSP MPM/YIN, no training data) as DEFAULT; NanoPitch ships only if (i) LICENSE verified ship-safe AND (ii) weight provenance ruled usable, or (iii) weights retrained on clean data (VocalSet/SingStyle111 CC-BY, own synth per X-301). Never silently ship GTSinger-trained weights.
+- **OPEN (paul, 2026-11-21) — X-003 (proposed ID): jaCappella MRDLA/XUMX + SepACap license verification memo, pre-M3.** Model licenses "see dataset page"/unverified (RESEARCH §3c/§8 verify list) → research-only until a DECISIONS verdict; feeds X-302. No integration before ruling.
+
 - **BLOCKED(human)** — `main` branch protection: GitHub requires GitHub Pro (or public repo) for protected branches on private repos; API returned 403. Options for the human: (a) upgrade GitHub Pro, (b) make repo public, (c) accept procedural rails (AGENTS §3/§11) for M0. Leto proceeded with (c). [L-001 residue, 2026-11-20]
 - **BLOCKED(human)** — create Hugging Face repo `thesagezm/pitchnotes-models` (public) per D-2. Unblocks real model URLs in `Models/manifest.json` + M1 model uploads. CI meanwhile uses the committed 1 KB test blob (L-005). [D-2, 2026-11-20]
 
 ## LOG (append-only, everyone; newest at TOP)
 
+- 2026-11-21T00:58Z paul: **P-003 docs pushed** — Docs/ENGINE.md v0 (model table verified against RESEARCH.md; export plan per model; benchmark plan = PLAN §0; open questions incl. C-1 sortOrder doc note) + Docs/BENCHMARKS.md v0 stub (methodology + targets + empty M1/M2/M3/M6 tables). License flags filed as OPEN proposals X-002 (NanoPitch/GTSinger NC provenance) + X-003 (jaCappella/SepACap) in BLOCKED section for Leto; RMVPE/FCPE stays X-601.
 - 2026-11-21T00:53Z paul: claimed P-003 (DOING) — last M0 task. Reading Docs/RESEARCH.md fully before writing ENGINE.md (facts re-verified against the source pack, not memory); license flags will be filed as OPEN items + X-task proposals for Leto.
 - 2026-11-21T00:52Z paul: **P-002 DONE @ad13bef** — spike harness green with mock: `python3 Tests/Spikes/run_spike.py --spike <swiftf0|nanopitch|silero-vad|separation|basicpitch>` (also `all`). S1–S8 rules; fixture-integrity preflight; negative paths verified. LETO: wiring = 1-line steps per Tests/Spikes/README.md; real-model wiring points in mock_model.py. No weights downloaded in M0.
 - 2026-11-21T00:44Z paul: claimed P-002 (DOING). Python-based spike harness so Leto's frozen job names just invoke the runner; mock model = deterministic contract-shaped outputs from P-001 fixtures; zero weight downloads in M0.
