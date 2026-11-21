@@ -30,19 +30,15 @@ packages:
     # in M1+ behind the same package. Static linkage (no type: .dynamic); the
     # build-ipa patch/verify steps guard this.
     path: Engine
-  PitchORT:
-    # Paul's Apple-only ORT seam (P-101, wired per X-008/D-27.5): OnnxSwiftF0Inference
-    # + SwiftF0ModelStore over the SAME OnnxRuntime mirror pin (D-13 tag 1.24.2) and
-    # EngineCore. Sits outside EngineCore so the portable core stays Linux-clean
-    # (ORT ObjC bindings are Apple-only). Pure Swift over the STATIC ORT ar archive —
-    # no new @rpath surface (build-ipa verify step guards).
-    path: Engine/PitchORT
-  MicCapture:
-    # Paul's Apple-only mic-capture wrapper (P-104, wired per X-011): AVAudioEngine
-    # input tap → AVAudioConverter (16 kHz) → EngineCore CapturePipeline. No new
-    # remote deps (path-dep on Engine only); static by default. Mic permission
-    # string already in the Info.plist above.
-    path: Engine/MicCapture
+  # X-008b/X-011a DEFERRED (Leto ruling at gate time, run 44957019830): Paul's
+  # Apple-only seam packages Engine/PitchORT (ORT seam, 3 compile errors in
+  # OnnxSwiftF0Inference.swift) and Engine/MicCapture (declares MicCaptureTests
+  # with NO test sources committed → fatal "overlapping sources" at SPM
+  # resolution) have never met a compiler — the X-008/X-011 wiring surfaced it.
+  # They return HERE (packages + app deps, static) the moment X-013 lands:
+  # PitchORT compiles green + MicCapture package resolves. CI proof runs
+  # meanwhile as advisory steps in the logic-tests job (pitchort/miccapture
+  # test logs + artifacts). Fix task: X-013 (owner: paul).
 targets:
   PitchNotesIOS:
     type: application
@@ -55,10 +51,6 @@ targets:
       - package: PitchLogic
       - package: EngineCore
         product: EngineCore
-      - package: PitchORT
-        product: PitchORT
-      - package: MicCapture
-        product: MicCapture
     info:
       path: App/Resources/Info.plist
       properties:

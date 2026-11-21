@@ -79,7 +79,15 @@ jobs:
       # real-model tests locate the cache the download steps above just filled
       # ($HOME/pitchnotes-model-cache, then <ws>/Models/downloads fallback);
       # XCTSkip when no cached model (local runs without the cache).
-      - name: Run PitchORT package tests (real model via cache, X-008c)
+      #
+      # ADVISORY (step-level continue-on-error) until X-013 (owner: paul)
+      # lands: the seam has never compiled (run 44957019830 — 3 errors in
+      # OnnxSwiftF0Inference.swift). The step still COMPILES the ORT bindings
+      # + EngineCore + PitchORT and its log artifact carries Paul's exact
+      # diagnostics. Flip to blocking when X-013 goes green. Blocking core
+      # (PitchLogic/EngineCore/manifest/model-verify) is unaffected.
+      - name: Run PitchORT package tests (real model via cache, X-008c — ADVISORY until X-013)
+        continue-on-error: true
         run: |
           set -o pipefail
           cd Engine/PitchORT
@@ -87,7 +95,14 @@ jobs:
 
       # X-011b (P-104): MicCapture wrapper smoke tests — config math +
       # interruption-hook state machine. NO mic needed, no capture started.
-      - name: Run MicCapture package tests (X-011b)
+      #
+      # ADVISORY until X-013 (owner: paul): MicCapture declares a MicCaptureTests
+      # target whose test sources were never committed — SPM resolution itself
+      # is fatal ("overlapping sources", run 44957019830 build-ipa). The step
+      # gives Paul the exact resolution error in miccapture-tests.log. Flip to
+      # blocking when X-013 commits the tests + fixes the package.
+      - name: Run MicCapture package tests (X-011b — ADVISORY until X-013)
+        continue-on-error: true
         run: |
           set -o pipefail
           cd Engine/MicCapture
