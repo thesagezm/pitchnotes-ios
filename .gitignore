@@ -42,3 +42,4 @@ Models/downloads/
 *.ogg
 *.opus
 Tests/Spikes/.ribbon-build/
+Tests/Spikes/.bench-build/

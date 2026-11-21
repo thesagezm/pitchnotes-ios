@@ -1,0 +1,98 @@
+{
+  "schema": "pitchnotes.bench.v1",
+  "methodology": "BENCHMARKS.md \u00a71 \u2014 hit iff est voiced AND ref voiced AND |cents|<50; F1=2PR/(P+R); RPA=hits/ref-voiced; RCA=octave-folded \u00b12 oct; voicing hz>0 (V11)",
+  "target": {
+    "F1@50c synthetic clean": 0.75,
+    "source": "PLAN \u00a70 / BENCHMARKS \u00a72"
+  },
+  "rows": [
+    {
+      "F1": 0.7639,
+      "RPA": 0.618,
+      "RCA": 0.618,
+      "precision": 1.0,
+      "n_est_voiced": 309,
+      "n_ref_voiced": 500,
+      "n_hits": 309,
+      "n_frames": 500,
+      "cents_med": 7.39,
+      "cents_p95": 17.41,
+      "engine": "swiftf0",
+      "fixture": "sweep_46_2100Hz_16k",
+      "model_sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22"
+    },
+    {
+      "F1": 0.9858,
+      "RPA": 0.9858,
+      "RCA": 0.9858,
+      "precision": 0.9858,
+      "n_est_voiced": 281,
+      "n_ref_voiced": 281,
+      "n_hits": 277,
+      "n_frames": 312,
+      "cents_med": 3.06,
+      "cents_p95": 9.35,
+      "engine": "swiftf0",
+      "fixture": "synthetic_voice_16k",
+      "model_sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22"
+    },
+    {
+      "F1": 0.9254,
+      "RPA": 0.8612,
+      "RCA": 0.8612,
+      "precision": 1.0,
+      "n_est_voiced": 428,
+      "n_ref_voiced": 497,
+      "n_hits": 428,
+      "n_frames": 497,
+      "cents_med": 0.2,
+      "cents_p95": 0.96,
+      "engine": "ribbon-swift",
+      "fixture": "sweep_46_2100Hz_16k"
+    },
+    {
+      "F1": 0.9821,
+      "RPA": 0.9821,
+      "RCA": 0.9821,
+      "precision": 0.9821,
+      "n_est_voiced": 280,
+      "n_ref_voiced": 280,
+      "n_hits": 275,
+      "n_frames": 309,
+      "cents_med": 1.63,
+      "cents_p95": 2.67,
+      "engine": "ribbon-swift",
+      "fixture": "synthetic_voice_16k"
+    },
+    {
+      "F1": 0.8959,
+      "RPA": 0.831,
+      "RCA": 0.831,
+      "precision": 0.9718,
+      "n_est_voiced": 425,
+      "n_ref_voiced": 497,
+      "n_hits": 413,
+      "n_frames": 497,
+      "cents_med": 5.86,
+      "cents_p95": 42.47,
+      "engine": "ribbon-cpp",
+      "fixture": "sweep_46_2100Hz_16k"
+    },
+    {
+      "F1": 0.9767,
+      "RPA": 0.975,
+      "RCA": 0.975,
+      "precision": 0.9785,
+      "n_est_voiced": 279,
+      "n_ref_voiced": 280,
+      "n_hits": 273,
+      "n_frames": 309,
+      "cents_med": 1.32,
+      "cents_p95": 5.8,
+      "engine": "ribbon-cpp",
+      "fixture": "synthetic_voice_16k"
+    }
+  ],
+  "skipped": [],
+  "rss_dev_box_mb_note": "n/m for the A14 budget \u2014 dev box peak RSS ~89 MB (stdout only)"
+}

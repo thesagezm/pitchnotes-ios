@@ -84,3 +84,29 @@ synthetic voice med 3.06 / p95 9.35; silence 125/125 frames gated; RTF (4 s audi
 median of 5): 0.0156 (1 thread) / 0.0098 (2) / 0.0089 (4) — target < 0.3.
 Full history goes in Docs/BENCHMARKS.md (P-106 aggregates per environment).
 
+
+## Pitch bench harness v1 (P-106 — F1@50c per Docs/BENCHMARKS.md §1)
+
+```bash
+# local (PATH needs swiftc for the ribbon-swift rows; skipped loudly without it):
+~/.venvs/pitchnotes/bin/python -I Tests/Spikes/bench_f1.py --assert
+# CI (X-012, non-blocking, ubuntu + venv numpy/onnxruntime — ribbon-swift auto-skips):
+python3 Tests/Spikes/bench_f1.py --assert
+```
+
+- `bench_f1.py` — F1@50c / RPA / RCA per BENCHMARKS §1 (hit iff est voiced AND ref
+  voiced AND |cents| < 50; RPA = recall; RCA = octave-folded ±2 oct; voicing hz > 0
+  = V11). Engines × fixtures: swiftf0 (real pinned ONNX) on sweep + synthetic_voice;
+  ribbon-cpp (vendored sevagh MPM via ribbon_real machinery) on both; ribbon-swift
+  (EngineCore RibbonEngine via `ribbon_swift_bench/main.swift`, swiftc -O) on both.
+  Truth pairing: swiftf0 = 256-sample frame CENTER (spike convention); ribbon =
+  1024-sample window CENTER (Swift emits window END − 32 ms; C++ runner emits
+  window START + 32 ms — same physical convention). Asserts the §2 target
+  F1 ≥ 0.75 on every engine row that RAN; writes the committed deterministic
+  report artifact `bench_report_v1.json` (no timing — stdout only).
+- `ribbon_swift_bench/main.swift` — standalone driver for the Swift MPM ribbon:
+  compiles with `swiftc -O main.swift <EngineCore>/Pitch/{RibbonMPM,PCMWaveReader}.swift`
+  and dumps `t_s\thz\tclarity` per 16 ms frame (window END convention). Results
+  (voice F1 0.982 / sweep F1 0.925, med 0.20 c) live in BENCHMARKS.md §3.
+- Numbers + the pure-sine confidence-gating note (swiftf0 sweep F1 0.764,
+  precision 1.000): BENCHMARKS.md §3 note ¹. History = §7 change log.
