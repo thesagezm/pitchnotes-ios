@@ -4,9 +4,12 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v0.1.1 — RATIFIED 2026-11-21 UTC by Leto** (M1; additive over v0.1/v0.0).
-> Paul + Jess: ack in QUEUE LOG when you first implement against it. Change log at
-> the bottom. v0.0 ratified 2026-11-20 (L-006); v0.1 ratified 2026-11-21 (L-102).
+> Status: **v1.0 — RATIFIED 2026-11-22 UTC by Leto (L-203, M2 SongBundle manifest
+> FREEZE). Additive-only from here on**; breaking changes require a new version +
+> Leto ruling + a migration task (AGENTS §7). Paul + Jess: ack in QUEUE LOG when
+> you first implement against it. Change log at the bottom. v0.0 (L-006,
+> 2026-11-20); v0.0.1 (D-18.4); v0.1 (L-102, 2026-11-21); v0.1.1 (D-22/D-24);
+> **v1.0 (L-203, 2026-11-22 — the M2 freeze)**.
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -38,6 +41,8 @@ public enum Part: String, Codable, CaseIterable, Sendable, Comparable {
     case vp            = "VP"        // vocal percussion
     case lead          = "LEAD"      // featured soloist within a song
     case instrumental  = "INSTRUMENTAL"
+    case vocals        = "VOCALS"    // v1.0 (L-203): two-stem separation output
+                                     // (M2); structural marker, never graded
 
     /// Contractual display/assignment order (see above).
     public var sortOrder: Int {
@@ -52,6 +57,8 @@ public enum Part: String, Codable, CaseIterable, Sendable, Comparable {
         case .vp: return 7
         case .lead: return 8
         case .instrumental: return 9
+        case .vocals: return 10    // v1.0 (L-203): appended — no pre-existing
+                                   // sortOrder value changed (additive rule)
         }
     }
     public static func < (l: Part, r: Part) -> Bool { l.sortOrder < r.sortOrder }
@@ -64,33 +71,38 @@ public enum Part: String, Codable, CaseIterable, Sendable, Comparable {
     //    singable voices. P-303's no-crossing constraint and any "pitch order"
     //    logic use VOICE RANK, not Comparable.
 
-    /// Voice parts that get note tracks + grading (instrumental/VP handled separately).
+    /// Voice parts that get note tracks + grading (instrumental/VP/VOCALS are
+    /// structural markers handled separately).
     public var isSingableVoice: Bool {
         switch self {
         case .bass, .baritone, .baritenor, .t2, .t1, .soprano, .alto, .lead: return true
-        case .vp, .instrumental: return false
+        case .vp, .instrumental, .vocals: return false
         }
     }
 }
 ```
 
 - File/directory names use the **rawValue verbatim** (e.g. `stems/BASS.m4a`,
-  `notes/T1.json`) — case-sensitive.
+  `notes/T1.json`) — case-sensitive. v1.0 stem naming (C-2.2): two-stem bundles
+  use the `VOCALS`/`INSTRUMENTAL` rawValues; per-voice `stems/<PART>.m4a` names
+  arrive with M3 bundles (additive).
 - Default male SDA ensemble: `BASS, BARITONE, BARITENOR, T2, T1`. SOPRANO/ALTO only
-  appear in female chorales. VP/LEAD/INSTRUMENTAL are structural markers, not graded
-  singing parts (`isSingableVoice == false`).
+  appear in female chorales. VP/LEAD/INSTRUMENTAL/VOCALS are structural markers, not
+  graded singing parts (`isSingableVoice == false`).
 
 ## C-2 · SongBundle (finalized)
 
 Directory produced by Paul's engine, consumed by Jess's UI. One directory per song,
-named by the song `id`. Everything is written ATOMICALLY (write `.tmp`, then rename)
-so a cancelled job never leaves a partial bundle (P-202).
+named by the song `id`. Everything is written ATOMICALLY — exact v1.0 semantics in
+C-2.2 (write staging, rename on success; a cancelled/failed job leaves NO bundle).
 
 ```
 <bundle>/                       # directory name == song.json "id"
-  song.json                     # manifest (schema below)
-  stems/<PART>.m4a              # ALAC (AVFoundation native), 44.1 kHz (D-8)
-  notes/<PART>.json             # NoteTrack (schema C-2.3)
+  song.json                     # manifest (schema below) — bundle-complete marker
+  stems/<STEM>.m4a              # ALAC (AVFoundation native), 44.1 kHz (D-8);
+                                # <STEM> = VOCALS/INSTRUMENTAL (M2 two-stem, C-2.2)
+                                # or a C-1 PART rawValue (per-voice stems, M3+)
+  notes/<PART>.json             # NoteTrack (schema C-2.3) — M3+ (reserved in M2)
   pitch/<PART>.json             # PitchFrames (schema C-2.4) — OPTIONAL
   lyrics.lrc                    # OPTIONAL, word/line timed (LRC v1 format)
   score.musicxml                # OPTIONAL, hymn score for score-informed alignment
@@ -98,62 +110,96 @@ so a cancelled job never leaves a partial bundle (P-202).
 
 - `stems/`: voice parts are **MONO**; `INSTRUMENTAL` stem is **STEREO** (D-8).
   When the source is acapella, `hasInstrumental == false` and NO
-  `stems/INSTRUMENTAL.m4a` exists (D-9).
+  `stems/INSTRUMENTAL.m4a` exists (D-9, V15).
 - `notes/` and `pitch/` exist only for parts listed with those files in the manifest.
 - No file in the bundle may exceed the durations implied by `duration_s`.
 
-### C-2.1 · `song.json` manifest schema
+### C-2.1 · `song.json` manifest schema (v1.0 — FROZEN, L-203)
 
 ```json
 {
-  "contractVersion": "v0.0",
-  "engineVersion": "engine-0.0.0",
+  "contractVersion": "v1.0",
+  "engineVersion": "engine-0.1.0",
   "id": "01JXXXXXXXXXXXXXXXXXXXXXXX",
   "title": "Just As I Am",
   "sourceHash": { "algo": "blake3", "hex": "<64 lowercase hex>" },
   "duration_s": 213.4,
   "sampleRate": 44100,
+  "channels": 2,
   "tuning_cents": 32,
   "hasInstrumental": true,
   "parts": [
-    {
-      "part": "BASS",
-      "stemFile": "stems/BASS.m4a",
-      "channels": 1,
-      "notesFile": "notes/BASS.json",
-      "pitchFile": "pitch/BASS.json",
-      "noteConfidence": 0.82
-    }
+    { "part": "VOCALS",       "stemFile": "stems/VOCALS.m4a",       "channels": 1, "noteConfidence": 0.0 },
+    { "part": "INSTRUMENTAL", "stemFile": "stems/INSTRUMENTAL.m4a", "channels": 2, "noteConfidence": 0.0 }
   ],
   "confidenceSummary": { "meanNoteConfidence": 0.78 }
 }
 ```
 
-Field rules:
+(Example shows the M2 two-stem shape per C-2.2. M3+ bundles list per-voice parts
+`BASS…T1` with `notesFile`/`pitchFile` keys; `INSTRUMENTAL` appears only when
+`hasInstrumental == true`.)
+
+Field rules (v1.0 — all fields below are **REQUIRED** in a `"v1.0"` manifest):
 - `contractVersion` — string `"v<major>.<minor>"`; consumers reject unknown MAJOR.
 - `engineVersion` — free string, engine-authored, monotonic per engine.
 - `id` — ULID (26 chars, Crockford base32, uppercase) generated at import.
+- `title` — display title (human-entered at import or filename-derived).
 - `sourceHash` — BLAKE3 of the ORIGINAL imported file bytes (pre-decode).
-- `duration_s`, `sampleRate` — of the decoded mix at 44.1 kHz.
-- **v0.1.1 (additive, D-22):** `tuning_cents` — OPTIONAL int, estimated offset of the
-  recording's tuning reference from A440 equal temperament, clamped **[−50, +50]**
-  (+ = sharp); `0` when absent, weak-salience, or <10c (dettato `MIN_CENTS` practice).
-  Produced at import (P-207), REQUIRED at the v1.0 manifest freeze (L-203). Consumers:
-  transcription engine-side retune (P-308: retune in memory when |tuning| ≥ 10, never
-  mutate stored audio) and grading reference offset (J-401: reference + tuning_cents
-  before deviation math). No V-rule in v0.1.1 (validators must ACCEPT bundles without
-  the key; a range V-rule arrives with the v1.0 freeze).
-- `parts[].part` — C-1 rawValue.
-- `parts[].channels` — 1 or 2; must match D-8 policy (voice=1, INSTRUMENTAL=2).
-- `parts[].pitchFile` — key may be OMITTED (contract v0.0: pitch tracks optional).
-- `parts[].noteConfidence` — mean note confidence of that part's NoteTrack, [0,1];
-  parts without a NoteTrack use 0.0.
-- **V-rules:** V1 file exists and parses; V2 every `parts[].stemFile` exists in the
-  bundle; V3 `channels`/stem reality match D-8; V4 `duration_s > 0`,
+- `duration_s`, `sampleRate` — of the decoded mix at 44.1 kHz (V4).
+- **`channels` — v1.0 NEW REQUIRED:** channel count of the decoded mix (1 or 2);
+  describes the SOURCE mix, not the stems (stem channels live in `parts[]`).
+- **`tuning_cents` — REQUIRED at v1.0** (optional since v0.1.1, D-22): estimated
+  offset of the recording's tuning reference from A440 equal temperament, clamped
+  **[−50, +50]** (+ = sharp); `0` when weak-salience or <10c (dettato `MIN_CENTS`
+  practice). Produced at import (P-207). Consumers per D-22: grading REFERENCE
+  offset (J-401/J-205) and M3 transcription engine-side in-memory retune (P-308);
+  stored audio is NEVER retuned.
+- **`hasInstrumental` — REQUIRED at v1.0:** false ⇔ acapella source; governs the
+  `INSTRUMENTAL` stem's existence (V15, D-9).
+- `parts[]` — one entry per stem in the bundle (C-2.2 naming); `part` is a C-1
+  rawValue, unique; `stemFile` relative path; `channels` 1|2 matching D-8 (voice
+  parts 1, INSTRUMENTAL 2 — V3); `notesFile`/`pitchFile` keys OPTIONAL (M3+);
+  `noteConfidence` mean note confidence of that part's NoteTrack [0,1], `0.0` for
+  parts without a NoteTrack (all M2 stems).
+- `confidenceSummary` — engine-authored aggregate (v1.0: `meanNoteConfidence` over
+  parts that carry NoteTracks; `0.0` when none).
+- **V-rules (unchanged):** V1 file exists and parses; V2 every `parts[].stemFile`
+  exists in the bundle; V3 `channels`/stem reality match D-8; V4 `duration_s > 0`,
   `sampleRate == 44100`; V5 `sourceHash.algo == "blake3"`, `hex` is 64 hex chars;
   V6 every `part` is a C-1 rawValue and unique.
+- **V-rules NEW at v1.0:**
+  - **V14 — v1.0 required-fields rule:** a manifest with `contractVersion == "v1.0"`
+    MUST carry `channels` (1|2), `tuning_cents` (int, [−50, +50]), and
+    `hasInstrumental` (bool); any v1.x manifest missing/range-violating them is
+    INVALID. v0.0/v0.1 manifests REMAIN VALID under their era rules (V1–V13;
+    validators MUST keep accepting them — back-compat is permanent).
+  - **V15 — instrumental consistency (D-9):** `parts[]` contains an `INSTRUMENTAL`
+    entry ⇔ `hasInstrumental == true`; when false there is NO `INSTRUMENTAL` entry
+    and no `stems/INSTRUMENTAL.m4a` on disk.
 
-### C-2.2 · (reserved for v1.0 — SongBundle manifest FREEZE at M2, L-203)
+### C-2.2 · v1.0 freeze notes — stem naming, atomic writes, back-compat (L-203)
+
+- **Stem naming (FROZEN):** `stems/<STEM>.m4a` where `<STEM>` is a C-1 rawValue.
+  **M2 two-stem bundles (P-201..P-205):** exactly `VOCALS` (mono) and — when the
+  source has accompaniment — `INSTRUMENTAL` (stereo). **M3+ bundles** add per-voice
+  `BASS`/`BARITONE`/`BARITENOR`/`T2`/`T1` (+`SOPRANO`/`ALTO` for female chorales)
+  stems; `VOCALS`/`INSTRUMENTAL` names remain valid afterward (additive; simple
+  imports and mixed-mode bundles keep working). No other stem names are valid;
+  new names enter ONLY as additive C-1 rawValues.
+- **Atomic bundle write semantics (FROZEN — P-202/P-204):** the engine writes into
+  a staging directory `<bundle-id>.tmp` ADJACENT to the final bundle location,
+  then renames it to `<bundle-id>` on success. On ANY failure, cancellation, or
+  app kill mid-import, the engine MUST remove the staging directory — a cancelled
+  job leaves NO partial bundle (P-202 AC). **Consumer rule:** a bundle directory
+  is complete IFF it contains a parseable `song.json`; library/scan code ignores
+  (and Settings cleanup may delete) `<id>.tmp` staging dirs.
+- **Back-compat (permanent):** validators accept v0.0/v0.1/v1.0 manifests, each
+  validated under its era's rules (V1–V13 for v0.x; +V14/V15 for v1.x). Generators
+  (engine, MockEngine) emit `"v1.0"` from the freeze onward.
+- **Additive-only after this freeze** (AGENTS §7): new fields/keys/stem names may
+  be added; nothing above may change meaning, type, or raw values without a new
+  contract version + Leto ruling + a migration task.
 
 ### C-2.3 · `notes/<PART>.json` — NoteTrack schema
 
@@ -271,10 +317,10 @@ public struct PitchFrameStream: AsyncSequence, Sendable {
 }
 ```
 
-Threading model (v0.0):
+Threading model (v0.0; progress/cancellation refined in C-8, v1.0):
 - `importAudio/separate/pitchFrames/noteTrack` — `async`; long-running; internally
-  serialized per engine instance; support cooperative cancellation (Task.isCancelled
-  checked between chunks); progress reporting arrives in contract v1.0 (L-203).
+  serialized per engine instance; support cooperative cancellation per C-8
+  (Task.isCancelled checked between chunks; progress reporting per C-8).
 - `livePitch` — synchronous, thread-safe, no locks held on the audio thread; never
   blocks on I/O.
 - All bundled output MUST validate against C-2 schemas (Paul's responsibility).
@@ -420,6 +466,51 @@ parity assertions (P-208) are reproducible:
   output. Tolerances are documented per engine, never tightened silently.
 - Same shape reserved for P-307 dettato maps (`engine: "DETTATO_TRANSCRIBER"`).
 
+## C-8 · Import progress & cancellation — NEW v1.0 (L-203, D-32.3)
+
+Long-running engine calls (`importAudio`, `separate`, the future note-track paths)
+report staged progress and cancel cooperatively. EngineAPI signatures are UNCHANGED —
+this is an additive protocol so v0.x conformers keep compiling.
+
+```swift
+/// RawValues STABLE FOREVER (additive only). Persisted in UI state/logs.
+public enum ImportStage: String, Sendable, CaseIterable {
+    case decoding     // container decode → 44.1 kHz mix (P-203)
+    case separating   // chunked two-stem separation (P-201/P-202)
+    case assembling   // ALAC stem encode + SongBundle assembly (P-204)
+}
+
+public struct ImportProgress: Sendable {
+    public let stage: ImportStage
+    /// OVERALL import fraction in [0, 1]; MONOTONIC within one import call
+    /// (never decreases; 1.0 only at completion — P-202 AC).
+    public let fraction: Double
+    /// Engine-authored optional human-readable detail (e.g. "chunk 7/40").
+    public let detail: String?
+}
+
+public typealias ImportProgressHandler = @Sendable (ImportProgress) -> Void
+
+/// Additive conformance over EngineAPI (C-3). Implemented by Paul's real engine
+/// AND MockEngine (J-201 builds the progress UI against the mock from day one).
+public protocol ProgressReportingEngine: EngineAPI {
+    /// Set BEFORE calling importAudio/separate; nil clears. Called on an ARBITRARY
+    /// thread/queue — the handler must not block or touch UI directly. Last
+    /// handler wins; the engine owns no delivery cadence guarantees beyond
+    /// "monotonic fraction, at least one call per stage".
+    func setImportProgressHandler(_ handler: ImportProgressHandler?)
+}
+```
+
+**Cancellation (FROZEN):** the caller cancels by cancelling the surrounding Swift
+`Task`. Engines check `Task.isCancelled` between chunks/frames and abort by throwing
+`CancellationError()` (Swift standard — no new error enum case; engines MAY wrap it
+in `EngineError.separationFailed`/`importFailed` ONLY if the underlying cause is
+something other than the cancellation itself). On cancellation or error mid-import:
+staging directory removed, NO partial bundle (C-2.2), and any already-emitted
+progress state is simply abandoned. J-201's cancel button cancels the Task; the
+UI resets to idle on the thrown error.
+
 ---
 
 ## Change log
@@ -431,3 +522,4 @@ parity assertions (P-208) are reproducible:
 | v0.0.1 | 2026-11-21 | C-1 doc-only clarification (D-18.4): numeric `sortOrder` (UI/display, Comparable) vs VOICE RANK (assignment/no-crossing = descending sortOrder among singable voices). No raw values, fields, or signatures changed. | Leto |
 | v0.1.1 | 2026-11-21 | ADDITIVE (D-22/D-24): C-2.1 song.json gains OPTIONAL `tuning_cents` (int, [−50,+50], default 0; REQUIRED at the v1.0 freeze per L-203 pre-staging) — no V-rule yet, validators accept v0.0 bundles unchanged; NEW C-7 optional spike-fixture parity/reference metadata (sidecar, never in SongBundles; P-208). LivePitchEngine facade + PitchFrame semantics UNTOUCHED. | Leto |
 | **v0.1** | 2026-11-21 | **RATIFIED (L-102, additive over v0.0/v0.0.1):** C-3 PitchFrame gains `engine_id` (String) + `lookahead_ms` (Int) with decoding defaults ("", 0) — v0.0 JSON stays valid, no new V-rule; C-2.4 schema documents the optional keys; NEW C-6: `PitchEngineID` enum (RIBBON_MPM_YIN / SWIFTF0, rawValues stable forever) + `LivePitchEngine` facade (ribbonSource causal zero-lookahead vs gradingSource post-hoc 176 ms) + C-6.1 part range presets (X-001/UX §3.6 table verbatim, calibratable). EngineAPI signatures unchanged. | Leto |
+| **v1.0** | 2026-11-22 | **RATIFIED (L-203, M2 SongBundle manifest FREEZE — additive-only after this):** C-2.1 manifest v1.0 fields all REQUIRED — `tuning_cents` REQUIRED (was optional per v0.1.1/D-22) with NEW **V14** (v1.0 required-fields + ranges); top-level `channels` (decoded mix) NEW REQUIRED; `hasInstrumental` REQUIRED with NEW **V15** (INSTRUMENTAL entry ⇔ hasInstrumental, D-9); example shows the M2 two-stem shape. C-1 += `vocals = "VOCALS"` (structural, isSingableVoice false, sortOrder 10 appended — no pre-existing value changed). C-2.2 = freeze notes: stem naming (M2: VOCALS/INSTRUMENTAL; per-voice names M3+), atomic bundle write semantics (`<id>.tmp` staging + rename; song.json = complete marker), permanent v0.x back-compat. NEW C-8: ImportStage/ImportProgress/ImportProgressHandler + `ProgressReportingEngine` additive protocol + Task-cancellation contract (CancellationError, no partial bundles). EngineAPI signatures unchanged; C-5/C-6/C-7 untouched. | Leto |
