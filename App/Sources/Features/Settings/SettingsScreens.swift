@@ -210,9 +210,121 @@ struct LicensesView: View {
     }
 }
 
-// MARK: - Models (honest status list)
+// MARK: - Models (honest status list + one-time downloads, J-207)
+
+/// The Models screen's state: the shipped-model list (honest descriptions)
+/// plus the ONE-TIME DOWNLOADS the manifest drives (J-207, D-34 GAP 2).
+///
+/// D-12 honesty rules for this screen:
+///   · a model that is not downloaded says so — no "ready" that means nothing;
+///   · a download that cannot be verified NEVER turns into a cached file;
+///   · when the manifest is not bundled in this build the screen says exactly
+///     that (it never pretends a download is possible).
+@MainActor
+final class ModelsScreenModel: ObservableObject {
+
+    struct DownloadRow: Identifiable {
+        let id: String
+        let name: String
+        let sizeText: String
+        let licenseText: String?
+        var statusText: String
+        var isCached: Bool
+        var isBusy: Bool
+        var progress: Double
+    }
+
+    @Published private(set) var downloadRows: [DownloadRow] = []
+    @Published private(set) var manifestBundled = false
+    @Published private(set) var manifestNote: String = ""
+    @Published var statusMessage: String?
+
+    private let service = ModelDownloadService()
+    private var entries: [ModelManifestEntry] = []
+
+    func load() {
+        let entries = ModelCache.manifestEntries()
+        self.entries = entries
+        manifestBundled = !entries.isEmpty
+        manifestNote = entries.isEmpty
+            ? "This build has no bundled model manifest, so downloads are unavailable. Place the model file in the app's Files folder instead — its checksum is still verified."
+            : "Downloaded once, verified against the manifest checksum, then cached. After this, airplane mode works end to end."
+        downloadRows = entries.map { entry in
+            let cached = FileManager.default.fileExists(atPath: ModelCache.cachedURL(for: entry).path)
+            return DownloadRow(
+                id: entry.name,
+                name: entry.name,
+                sizeText: ModelCacheNaming.sizeDescription(bytes: entry.sizeBytes),
+                licenseText: entry.license,
+                statusText: cached ? "Downloaded and verified — cached on this device." : "Not downloaded yet.",
+                isCached: cached,
+                isBusy: false,
+                progress: 0)
+        }
+    }
+
+    /// Download one model (one-time; the app needs a connection only here).
+    func download(_ name: String) {
+        guard let entry = entries.first(where: { $0.name == name }) else { return }
+        setBusy(name, busy: true, progress: 0)
+        statusMessage = nil
+        Task {
+            let outcome = await service.download(entry: entry) { [weak self] fraction in
+                self?.setProgress(name, fraction)
+            }
+            finish(name: name, outcome: outcome)
+        }
+    }
+
+    /// The gate's fallback: the human placed the file in the app's Files
+    /// container — adopt it, but ONLY after the checksum matches.
+    func adoptFromFiles(_ name: String) {
+        guard let entry = entries.first(where: { $0.name == name }) else { return }
+        setBusy(name, busy: true, progress: 0)
+        statusMessage = nil
+        Task {
+            let outcome = await service.adoptFromDocuments(entry: entry)
+            finish(name: name, outcome: outcome)
+        }
+    }
+
+    private func setBusy(_ name: String, busy: Bool, progress: Double) {
+        guard let index = downloadRows.firstIndex(where: { $0.id == name }) else { return }
+        downloadRows[index].isBusy = busy
+        downloadRows[index].progress = progress
+    }
+
+    private func setProgress(_ name: String, _ fraction: Double) {
+        guard let index = downloadRows.firstIndex(where: { $0.id == name }) else { return }
+        downloadRows[index].progress = fraction
+        downloadRows[index].statusText = "Downloading… \(Int(fraction * 100))%"
+    }
+
+    private func finish(name: String, outcome: ModelDownloadService.Outcome) {
+        setBusy(name, busy: false, progress: 0)
+        guard let index = downloadRows.firstIndex(where: { $0.id == name }) else { return }
+        switch outcome {
+        case .alreadyCached:
+            downloadRows[index].isCached = true
+            downloadRows[index].statusText = "Downloaded and verified — cached on this device."
+            statusMessage = "\(name) is already on this device."
+        case .downloaded:
+            downloadRows[index].isCached = true
+            downloadRows[index].statusText = "Downloaded and verified — cached on this device."
+            statusMessage = "\(name) downloaded and verified. Airplane mode works from here on."
+        case .verificationFailed(let expected, let actual):
+            downloadRows[index].statusText = "Verification failed — the file did not match the manifest checksum and was NOT cached."
+            statusMessage = "Checksum mismatch for \(name) (expected \(expected), got \(actual)). Nothing was cached — please try again."
+        case .failed(let message):
+            downloadRows[index].statusText = "Download failed."
+            statusMessage = message
+        }
+    }
+}
 
 struct ModelsScreen: View {
+    @StateObject private var downloads = ModelsScreenModel()
+
     private let models: [(name: String, size: String, status: String, note: String)] = [
         ("SwiftF0", "~60 KB", "Shipped (M1)", "Grading-grade pitch stream."),
         ("MPM/YIN ribbon (vendored C)", "code only", "Shipped (M1)", "Live tuner, zero lookahead."),
@@ -250,9 +362,55 @@ struct ModelsScreen: View {
                     .accessibilityLabel("\(model.name), \(model.size), \(model.status)")
                 }
             }
+            Section("One-time downloads") {
+                Text(downloads.manifestNote)
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.pnTextSecondary)
+                ForEach(downloads.downloadRows) { row in
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        HStack {
+                            Text(row.name).font(Token.Fonts.body).fontWeight(.semibold)
+                            Spacer()
+                            Text(row.sizeText).font(Token.Fonts.numeric)
+                                .foregroundStyle(Color.pnTextSecondary)
+                        }
+                        Text(row.statusText).font(Token.Fonts.caption)
+                        if let license = row.licenseText {
+                            Text(license).font(Token.Fonts.caption)
+                                .foregroundStyle(Color.pnTextSecondary)
+                        }
+                        if row.isBusy {
+                            ProgressView(value: row.progress)
+                                .progressViewStyle(.linear)
+                                .accessibilityLabel("Downloading \(row.name)")
+                                .accessibilityValue("\(Int(row.progress * 100)) percent")
+                        }
+                        if !row.isCached {
+                            HStack(spacing: Token.Spacing.s3) {
+                                Button("Download") { downloads.download(row.id) }
+                                    .buttonStyle(.bordered)
+                                    .disabled(row.isBusy)
+                                    .accessibilityHint("Downloads once from the project model repo, then verifies the checksum.")
+                                Button("Use file from Files") { downloads.adoptFromFiles(row.id) }
+                                    .buttonStyle(.borderless)
+                                    .disabled(row.isBusy)
+                                    .accessibilityHint("Uses a model file you placed in the app's Files folder. Its checksum is still verified.")
+                            }
+                        }
+                    }
+                    .padding(.vertical, Token.Spacing.s1)
+                    .accessibilityElement(children: .contain)
+                }
+                if let message = downloads.statusMessage {
+                    Text(message)
+                        .font(Token.Fonts.caption)
+                        .foregroundStyle(Color.pnTextSecondary)
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(Color.pnBackground)
         .navigationTitle("Models")
+        .onAppear { downloads.load() }
     }
 }
