@@ -266,6 +266,71 @@ final class ImportDecodeTests: XCTestCase {
         XCTAssertTrue(leftovers.isEmpty, "staging not cleaned: \(leftovers)")
     }
 
+    // MARK: - Committed fixtures (Tests/Spikes/Fixtures, P-001 sha-pinned)
+
+    /// Locate a committed fixture relative to this test file (works on Linux +
+    /// macOS CI; requires the FULL-repo mount for the docker loop — same
+    /// pattern as SwiftF0CoreTests).
+    private func fixtureURL(_ name: String) -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // EngineCoreTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // Engine
+            .deletingLastPathComponent() // repo root
+            .appendingPathComponent("Tests/Spikes/Fixtures/\(name)")
+    }
+
+    /// The committed 48 kHz STEREO fixture goes through the full portable
+    /// decode path: 48k→44.1k sinc resample + D-8 channel-preserving staging
+    /// (mix stays 2 ch), BLAKE3 over the ORIGINAL committed bytes, manifest
+    /// v1.0 valid per V1–V15.
+    func testPipelineCommittedMix48kStereoFixture() async throws {
+        let src = fixtureURL("mix48k_stereo.wav")
+        let dir = tempDir("fixture48")
+        defer { cleanup(dir) }
+
+        let result = try await ImportPipeline.run(
+            source: src, title: "Fixture 48k Stereo", workDir: dir,
+            hasher: nil, decoder: WavSourceDecoder(), emitter: nil,
+            parts: twoStemParts())
+
+        XCTAssertEqual(result.manifest.sampleRate, 44100)
+        XCTAssertEqual(result.manifest.channels, 2)
+        XCTAssertEqual(result.manifest.duration_s, 2.5, accuracy: 1 / 44100.0 + 1e-3)
+        XCTAssertEqual(result.manifest.contractVersion, "v1.0")
+        let direct = try Blake3FileHasher().hashFile(at: src)
+        XCTAssertEqual(result.sourceHash.hex, direct.hex)
+        let v = BundleValidator.validate(manifest: result.manifest)
+        XCTAssertTrue(v.isValid, "violations: \(v.violations)")
+        // Staged mix: 44.1 kHz stereo, plausible sample count (2.5 s ± resampler).
+        let (frames, sr, ch) = try PCMF32Wav.read(url: result.mix.url)
+        XCTAssertEqual(sr, 44100); XCTAssertEqual(ch, 2)
+        XCTAssertTrue(frames.count > 2 * 44100 * 2 && frames.count < 2 * 44100 * 3,
+                      "unexpected resampled length \(frames.count)")
+        // Energy survived: both channels carry the mixture.
+        XCTAssertTrue(maxAbs(frames) > 0.5)
+    }
+
+    /// The canonical mono 44.1k mixture fixture passes through unchanged
+    /// (passthrough decode, hash pin).
+    func testPipelineCommittedMix44kFixture() async throws {
+        let src = fixtureURL("mix44k_short.wav")
+        let dir = tempDir("fixture44")
+        defer { cleanup(dir) }
+
+        let result = try await ImportPipeline.run(
+            source: src, title: "Fixture 44k Mono", workDir: dir,
+            hasher: nil, decoder: WavSourceDecoder(), emitter: nil,
+            parts: twoStemParts())
+
+        XCTAssertEqual(result.manifest.sampleRate, 44100)
+        XCTAssertEqual(result.manifest.channels, 1)
+        XCTAssertEqual(result.manifest.duration_s, 2.5, accuracy: 1e-9)
+        let direct = try Blake3FileHasher().hashFile(at: src)
+        XCTAssertEqual(result.sourceHash.hex, direct.hex)
+        XCTAssertTrue(BundleValidator.validate(manifest: result.manifest).isValid)
+    }
+
     // MARK: - Manifest builder
 
     func testManifestBuilderTuningClamp() throws {
