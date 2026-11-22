@@ -314,14 +314,18 @@ struct ImportFlowSheet: View {
                         .foregroundStyle(Color.pnTextSecondary)
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)
+                        .accessibilityLabel("Import metrics: \(ImportMetricsFormatter.summary(metrics))")
                     Text(model.engineKind.statusLine)
                         .font(Token.Fonts.caption)
                         .foregroundStyle(model.engineKind.isReal ? Color.pnTextSecondary : Color.octaveWarn)
                         .multilineTextAlignment(.center)
+                        // The badge keeps its OWN label: combining the two
+                        // would let the metrics label swallow the engine
+                        // line, and "which engine ran" is the one thing a
+                        // VoiceOver user must hear on this screen.
+                        .accessibilityLabel("Engine: \(model.engineKind.statusLine)")
                 }
                 .padding(.horizontal, Token.Spacing.s4)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Import metrics: \(ImportMetricsFormatter.summary(metrics))")
             }
             Spacer()
             Button {
