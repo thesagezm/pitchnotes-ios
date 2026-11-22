@@ -20,6 +20,17 @@ Generates the git-committed fixture set for Tests/Spikes (all SYNTHETIC, all
                             16 kHz mono
   mix44k_short.wav          2.5 s 44.1 kHz mono melody+chord mixture for later
                             separation/transcription spikes (M2/M3)
+  mix48k_stereo.wav         2.5 s 48 kHz STEREO variant of the same mixture
+                            (P-203 decode: 48k->44.1k resample + channel-preserving
+                            staging under D-8)
+
+Encoded format fixtures (P-203 ac "each format fixture imports"): lossy/lossless
+encodes of the canonical mix44k_short.wav via ffmpeg (dev box; files are
+COMMITTED so runners never need ffmpeg):
+
+  mix44k_short.mp3          libmp3lame 128 kbps  (lossy decode — tolerance tests)
+  mix44k_short.flac         FLAC               (lossless — bit-identity tests)
+  mix44k_short_alac.m4a     ALAC in M4A container (lossless — bit-identity tests)
 
 Determinism policy (P-001 AC: "fixtures regenerate byte-identically"):
   - Fixed seeds per fixture; numpy Generator(PCG64) streams are stable per numpy
@@ -27,11 +38,18 @@ Determinism policy (P-001 AC: "fixtures regenerate byte-identically"):
   - Tones use np.sin on IEEE-754 doubles. Cross-LIBC last-ULP differences could
     in principle flip an int16 rounding boundary; `--check` exists precisely to
     catch any such drift on CI. The committed fixtures are the canonical bytes.
+  - Seeded WAVs: byte-identity is the guarantee (--check compares bytes).
+  - Encoded formats: ffmpeg encoders are NOT byte-deterministic across
+    platforms/versions. Regenerate mode therefore only encodes when the file is
+    MISSING (existing committed encodes are never re-encoded — no churn), and
+    --check verifies committed bytes structurally (container magic) + against
+    the recorded sha (pinning the committed bytes; NO ffmpeg invocation).
   - Regenerate + verify:
         python3 scripts/fixtures/gen.py            # regenerate into Tests/Spikes/Fixtures
         python3 scripts/fixtures/gen.py --check    # verify bytes vs committed fixtures.sha256
 
-Dependency-light: numpy + Python stdlib only (no scipy/soundfile).
+Dependency-light: numpy + Python stdlib only (no scipy/soundfile); ffmpeg only
+when an encoded fixture file is missing.
 """
 import argparse
 import hashlib
@@ -47,6 +65,7 @@ SHA_FILE = OUT_DIR / "fixtures.sha256"
 
 SR = 16000
 SR_HIGH = 44100
+SR_48K = 48000
 
 # Contract V11 voiced band edges (CONTRACTS v0.0).
 HZ_MIN = 46.9
@@ -66,6 +85,21 @@ def write_wav(path: Path, samples: np.ndarray, sample_rate: int) -> None:
         w.setsampwidth(2)
         w.setframerate(sample_rate)
         w.writeframes(int16.tobytes())
+
+
+def write_wav_stereo(path: Path, left: np.ndarray, right: np.ndarray, sample_rate: int) -> None:
+    """Write stereo PCM16 WAV (interleaved L/R) via stdlib wave (deterministic)."""
+    assert len(left) == len(right)
+    li = np.clip(left, -1.0, 1.0)
+    ri = np.clip(right, -1.0, 1.0)
+    frames = np.empty(len(left) * 2, dtype="<i2")
+    frames[0::2] = (li * 32767.0).round().astype("<i2")
+    frames[1::2] = (ri * 32767.0).round().astype("<i2")
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        w.writeframes(frames.tobytes())
 
 
 def tone(freq: float, n: int, sr: int, amp: float, harmonics=((1, 1.0), (2, 0.3), (3, 0.15))) -> np.ndarray:
@@ -155,24 +189,40 @@ def gen_noise_burst() -> np.ndarray:
     return buf
 
 
-def gen_mix44k() -> np.ndarray:
-    """2.5 s 44.1 kHz melody+chord mixture (spike input for M2 separation / M3
-    transcription): melody C4-A3-B3-C4 with vibrato-ish detune + sustained chord."""
+def _mix_mixture(sr: int, melody_amp: float, chord_amp: float, seed: int) -> np.ndarray:
+    """Shared 2.5 s melody+chord mixture at the given sample rate (P-203/P-201
+    fixtures): melody C4-A3-B3-C4 with a -12-cent flat singer + sustained chord."""
     dur = 2.5
-    n = int(SR_HIGH * dur)
+    n = int(sr * dur)
     buf = np.zeros(n, dtype=np.float64)
     melody = [(0.0, 60), (0.625, 57), (1.25, 59), (1.875, 60)]  # C4 A3 B3 C4
     for start, midi in melody:
         f = midi_hz(midi) * 2.0 ** (-12.0 / 1200.0)  # slight flat singer (-12 cents)
-        place(buf, start, SR_HIGH, tone(f, int(0.55 * SR_HIGH), SR_HIGH, amp=0.35,
-                                        harmonics=((1, 1.0), (2, 0.35), (3, 0.2))))
+        place(buf, start, sr, tone(f, int(0.55 * sr), sr, amp=melody_amp,
+                                   harmonics=((1, 1.0), (2, 0.35), (3, 0.2))))
     # Backing sustained chord C3/E3/G3 under the melody.
     for midi in (48, 52, 55):
-        place(buf, 0.0, SR_HIGH, tone(midi_hz(midi), int(dur * SR_HIGH), SR_HIGH, amp=0.15,
-                                      harmonics=((1, 1.0), (2, 0.2))))
-    rng = np.random.default_rng(0x4411)
+        place(buf, 0.0, sr, tone(midi_hz(midi), int(dur * sr), sr, amp=chord_amp,
+                                 harmonics=((1, 1.0), (2, 0.2))))
+    rng = np.random.default_rng(seed)
     buf += 0.001 * rng.standard_normal(n)
     return buf
+
+
+def gen_mix44k() -> np.ndarray:
+    """2.5 s 44.1 kHz mono melody+chord mixture (spike input for M2 separation / M3
+    transcription)."""
+    return _mix_mixture(SR_HIGH, 0.35, 0.15, 0x4411)
+
+
+def gen_mix48k_stereo() -> tuple[np.ndarray, np.ndarray]:
+    """2.5 s 48 kHz STEREO variant of the mixture (P-203 decode fixture): the
+    melody leads left (vocal-like placement), chord sits right — exercises the
+    D-8 channel-preserving staging + 48k->44.1k resample path. Distinct seeds
+    per channel so L != R."""
+    left = _mix_mixture(SR_48K, 0.35, 0.12, 0x48C1)
+    right = _mix_mixture(SR_48K, 0.26, 0.20, 0x48C2)
+    return left, right
 
 
 def gen_synthetic_voice():
@@ -229,6 +279,18 @@ FIXTURES = [
     ("silence_16k.wav", gen_silence, SR),
     ("noise_burst_16k.wav", gen_noise_burst, SR),
     ("mix44k_short.wav", gen_mix44k, SR_HIGH),
+    ("mix48k_stereo.wav", gen_mix48k_stereo, SR_48K),  # stereo (L, R)
+]
+
+# Encoded format fixtures (P-203): ffmpeg encodes of the canonical mono 44.1k
+# mixture, COMMITTED to git. ffmpeg is only invoked when the file is missing
+# (encoders are not byte-deterministic across platforms/versions — never
+# re-encode an existing committed encode).
+ENCODED_FIXTURES = [
+    # (name, source, ffmpeg codec args, structural validator)
+    ("mix44k_short.mp3", "mix44k_short.wav", ["-c:a", "libmp3lame", "-b:a", "128k"], "mp3"),
+    ("mix44k_short.flac", "mix44k_short.wav", ["-c:a", "flac"], "flac"),
+    ("mix44k_short_alac.m4a", "mix44k_short.wav", ["-c:a", "alac"], "m4a"),
 ]
 
 
@@ -236,16 +298,75 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _validate_mp3(data: bytes) -> None:
+    """ID3 tag or raw MPEG frame sync (11 set bits = 0xFF 0xEx)."""
+    if data[:3] == b"ID3":
+        return
+    if len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0:
+        return
+    raise ValueError("no ID3 header and no MPEG frame sync")
+
+
+def _validate_flac(data: bytes) -> None:
+    if data[:4] != b"fLaC":
+        raise ValueError("missing 'fLaC' stream magic")
+
+
+def _validate_m4a(data: bytes) -> None:
+    # ISO-BMFF: 4-byte size then 'ftyp' as the first box type.
+    if data[4:8] != b"ftyp":
+        raise ValueError("missing 'ftyp' ISO-BMFF box")
+
+
+VALIDATORS = {"mp3": _validate_mp3, "flac": _validate_flac, "m4a": _validate_m4a}
+
+
+def encode_missing() -> list[str]:
+    """Encode any MISSING encoded fixture via ffmpeg. Existing committed encodes
+    are never touched (cross-platform encoder non-determinism)."""
+    import shutil
+    import subprocess
+
+    encoded = []
+    for name, source, codec_args, kind in ENCODED_FIXTURES:
+        dst = OUT_DIR / name
+        if dst.exists():
+            encoded.append(f"kept {name} (exists)")
+            continue
+        src = OUT_DIR / source
+        if not src.exists():
+            raise RuntimeError(f"{source} missing — regenerate WAVs first")
+        if shutil.which("ffmpeg") is None:
+            raise RuntimeError(f"{name} missing and ffmpeg not on PATH — cannot encode")
+        subprocess.run(
+            ["ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-i", str(src), *codec_args, str(dst)],
+            check=True,
+        )
+        size = dst.stat().st_size
+        assert size <= 1_000_000, f"{name} is {size} bytes (> 1 MB policy)"
+        try:
+            VALIDATORS[kind](dst.read_bytes()[:64])
+        except ValueError as e:
+            raise RuntimeError(f"{name}: encoded output failed structural check: {e}") from e
+        encoded.append(f"encoded {name} ({size} B)")
+    return encoded
+
+
 def regenerate() -> list[tuple[str, str]]:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    rows = []
     for name, gen, sr in FIXTURES:
-        samples = gen()
         path = OUT_DIR / name
-        write_wav(path, samples, sr)
+        if name == "mix48k_stereo.wav":
+            left, right = gen()
+            write_wav_stereo(path, left, right, sr)
+        else:
+            write_wav(path, gen(), sr)
         size = path.stat().st_size
         assert size <= 1_000_000, f"{name} is {size} bytes (> 1 MB policy)"
-        rows.append((name, sha256(path)))
+    encode_missing()
+    # sha file covers every fixture on disk (WAVs byte-identical, encodes pinned).
+    names = [n for n, _, _, _ in ENCODED_FIXTURES] + [n for n, _, _ in FIXTURES]
+    rows = [(name, sha256(OUT_DIR / name)) for name in names]
     SHA_FILE.write_text("".join(f"{h}  {n}\n" for n, h in rows))
     return rows
 
@@ -256,16 +377,38 @@ def check() -> bool:
         return False
     expected = dict(reversed(line.split("  ", 1)) for line in SHA_FILE.read_text().splitlines() if line.strip())
     ok = True
-    for name, _, _ in FIXTURES:
+    wav_names = {n for n, _, _ in FIXTURES}
+    encoded_kinds = {n: k for n, _, _, k in ENCODED_FIXTURES}
+    for name in list(wav_names) + list(encoded_kinds):
         path = OUT_DIR / name
         if not path.exists():
             print(f"FAIL: {name} missing", file=sys.stderr)
             ok = False
             continue
-        actual = sha256(path)
+        data = path.read_bytes()
+        actual = hashlib.sha256(data).hexdigest()
         if expected.get(name) != actual:
-            print(f"FAIL: {name} hash drift (committed {expected.get(name)}, actual {actual})", file=sys.stderr)
-            ok = False
+            # Encoded formats may legitimately be re-encoded on another platform
+            # (deliberate regenerate) — structural validity decides there.
+            if name in encoded_kinds:
+                try:
+                    VALIDATORS[encoded_kinds[name]](data[:64])
+                except ValueError as e:
+                    print(f"FAIL: {name} hash drift AND invalid structure ({e})", file=sys.stderr)
+                    ok = False
+                else:
+                    print(f"NOTE: {name} sha differs from record but structure valid "
+                          f"(re-encoded elsewhere? update {SHA_FILE.name})", file=sys.stderr)
+            else:
+                print(f"FAIL: {name} hash drift (committed {expected.get(name)}, actual {actual})", file=sys.stderr)
+                ok = False
+        else:
+            if name in encoded_kinds:
+                try:
+                    VALIDATORS[encoded_kinds[name]](data[:64])
+                except ValueError as e:
+                    print(f"FAIL: {name} matches recorded sha but invalid structure ({e})", file=sys.stderr)
+                    ok = False
         if path.stat().st_size > 1_000_000:
             print(f"FAIL: {name} exceeds 1 MB", file=sys.stderr)
             ok = False
