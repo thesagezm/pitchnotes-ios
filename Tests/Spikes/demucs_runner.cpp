@@ -164,7 +164,14 @@ double rms_db(const std::vector<float>& x) {
 std::size_t peak_rss_kb() {
 	struct rusage ru;
 	getrusage(RUSAGE_SELF, &ru);
+#if defined(__APPLE__)
+	// macOS ru_maxrss is in BYTES (Apple getrusage(2) man page); normalize to
+	// KiB so the metric means the same thing on every host (run 45023115947:
+	// unnormalized macOS value 3,390,259,200 "KB" tripped the S8 bound).
+	return std::size_t(ru.ru_maxrss) / 1024;
+#else
 	return std::size_t(ru.ru_maxrss); // Linux: KiB
+#endif
 }
 
 } // namespace
