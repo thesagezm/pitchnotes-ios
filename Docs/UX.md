@@ -695,7 +695,14 @@ IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
 5. **Mic permission flow**: the mic UX appears on Learn — first visit shows
    "Enable microphone" prompt card. DENY it → denied card with [Open Settings]
    (no crash — AC). Grant later from Settings → re-open app → card gone, level
-   meter animates (mock level until P-104).
+   meter animates. **J-102 (M1 demo finding, still open):** the meter still
+   reads the MOCK level source (a 10 Hz wobble) even though the REAL P-104
+   capture is live on the ribbon path — so the meter wiggles "hot" regardless
+   of the singer, which reads as "the mic is very sensitive". The fix
+   (PitchLogic `InputLevelTracker` from the frame's `loudness_db`, real level
+   in liveMic mode, labeled mock kept for demo mode) is fully specified on the
+   J-102 row and lands AFTER the M2 gate. **Treat the meter as a mock until
+   then** — the ribbon's own pitch readout is the real capture.
 6. **Headphone banner**: with no headphones connected (granted state) → orange
    speaker guidance banner; plug in wired/BT headphones → banner disappears
    (route-change observer).
@@ -723,15 +730,49 @@ IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
 ### 10.2 M2 device demo checklist (human runs at the M2 gate; import → mixer → storage)
 
 IPA: artifact of the first ALL-GREEN `build-ipa` carrying the M2 Jess lane
-(≥ J-202/J-205 merge; real-engine steps marked [P] need P-204/P-207 landed —
-otherwise the ScriptedImportEngine mock path demonstrates the same UX).
+(≥ J-202/J-205 merge).
 
+> **GATE RULE (Leto, 2026-11-22T21:55Z — binding on this checklist): the MOCK
+> path does NOT satisfy the M2 gate.** The demo MUST run the REAL engine
+> (J-208's swap seam + P-204's assembled bundle): the L-204 AC says "import a
+> real SDA FLAC → stems → mixer", and a scripted mock demo would be a D-12
+> honesty failure at the gate (the mock cannot separate a real FLAC). The
+> mock path stays valid for UI regression only, never for the gate. The import
+> screen states which engine ran, so a mock run cannot be mistaken for a
+> real one: it reads **"DEMO ENGINE (mock) — no real separation was run."**
+
+0. **One-time model download (NEW — before step 1).** The separation weights
+   (htdemucs fp16 ggml, 84 MB) are fetched ONCE, verified against the
+   manifest's SHA256, and cached; after that the app works in airplane mode
+   forever (AGENTS §0 rail — download once, then offline).
+   - Path: Settings → Models → "One-time downloads" → **Download** (J-207).
+     The screen states the outcome honestly: "Downloaded and verified — cached
+     on this device." / a checksum mismatch says so and caches NOTHING.
+   - **Fallback (only if the download path is not in the build):** the human
+     places the ggml file in the app's Files container and taps "Use file from
+     Files" — the checksum is still verified. The gate EXPECTS the download
+     path.
+   - **Then turn AIRPLANE MODE ON and leave it on for the rest of the demo.**
+   - The import sheet must show the **"Real engine (htdemucs fp16)"** badge
+     (J-208). A "DEMO ENGINE (mock)" badge means the demo is not a gate demo.
 1. **Import a real SDA FLAC** (a short hymn, airplane mode ON): Library (+) →
    Files picker (FLAC selectable) → Import sheet shows title prefilled.
 2. **Staged progress**: the three C-8 stages light in order — Decode ✓ →
    Separating (chunk detail, e.g. "chunk 7/40") → Assembling — fraction
-   strictly rising, no jumps backward. [P: real RTF observed ≈ demucs A14
-   numbers; mock: paced synthetic.]
+   strictly rising, no jumps backward.
+   **2b. RECORD THE DEVICE NUMBERS (J-206 surface — the L-204 AC's
+   "RSS/thermal/RTF from device" and the human's P-603 ask).** The done
+   screen shows one copyable line; write it into the QUEUE LOG VERBATIM (it
+   feeds BENCHMARKS §6 / the M2 gate row):
+   `Separation <m:ss> for <m:ss> source → RTF <n.nn>× · peak RSS <n> MB · thermal <start>→<end>`
+   - separation wall-time, source duration, computed separation RTF
+     (wall-time ÷ source duration — RTF < 1.0 = faster than real time);
+   - **peak resident footprint** during the import (Darwin `task_info`
+     phys_footprint — the §8 budget is peak RSS < 1.5 GB during separation);
+   - **thermal state at the start and at the end** of the separation pass.
+   - Honest readings: an unsampled peak reads "not sampled" (never 0 MB); an
+     unknown RTF reads "—" (never "0.00×"). The live "Peak memory so far"
+     line is visible during the import.
 3. **Cancel integrity**: start a second import, cancel mid-separation → sheet
    resets; Library shows NO new song; Settings → Storage shows no growth from
    the cancelled run (stray `*.tmp` absent — C-2.2).
@@ -767,7 +808,8 @@ otherwise the ScriptedImportEngine mock path demonstrates the same UX).
    storage totals all survive (index persistence).
 10. VoiceOver spot-check one imported row (a cappella state, size, verdict) +
     one mixer fader label. Dynamic type largest: rows wrap, no clipping.
-11. Log PASS/FAIL per step in QUEUE LOG (L-203/L-20x gate evidence).
+11. Log PASS/FAIL per step in QUEUE LOG (L-203/L-20x gate evidence) — plus
+    the step-2b numbers line, verbatim.
 
 ## 11. Addendum A — as-built UX patterns & forward specs (Jess)
 
