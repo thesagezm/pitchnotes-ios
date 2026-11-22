@@ -63,21 +63,11 @@ final class RibbonModel: ObservableObject {
     /// the device demo runs before mic capture wires in, X-011a);
     /// `.liveMic` = the REAL LivePitchEngine causal ribbon via
     /// `ribbonFrame(_:)` (C-6.0; standalone-tuner semantics, no reference
-    /// track). Selector lands in TunerRibbonView next to the demo menu.
-    @Published var sourceMode: SourceMode = .demo {
+    /// track). Selection control = segmented Picker (J-FIX-104 — the M1 menu
+    /// dropped taps when its content mutated on selection); the wiring type
+    /// lives in PitchLogic (`RibbonSourceMode`) for the regression tests.
+    @Published var sourceMode: RibbonSourceMode = .demo {
         didSet { if oldValue != sourceMode { rebuildSource() } }
-    }
-
-    enum SourceMode: String, CaseIterable, Identifiable {
-        case demo
-        case liveMic
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .demo: return "Demo singer"
-            case .liveMic: return "Live mic (real engine)"
-            }
-        }
     }
 
     /// Reduce Motion (§7): snap the follow window instead of animating.
