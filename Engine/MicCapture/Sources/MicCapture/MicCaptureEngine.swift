@@ -126,7 +126,11 @@ public final class MicCaptureEngine: @unchecked Sendable {
         #if os(iOS)
         notificationObservers.forEach { NotificationCenter.default.removeObserver($0) }
         notificationObservers.removeAll()
-        AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // setActive(_:options:) is throws on iOS — invisible to macOS tests,
+        // which never compile this branch (gate run 44988906281). Deactivation
+        // is best-effort teardown: failure must not fail stop(); swallow
+        // deliberately. (Leto lane-exception fix — Paul to ratify.)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         #endif
         pipeline.finish()
         isRunning = false
