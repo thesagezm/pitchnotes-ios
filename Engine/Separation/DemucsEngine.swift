@@ -231,7 +231,7 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
     }
 
     public func separate(window: [Float], channels: Int,
-                          progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
+                          progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
         try Task.checkCancellation()
         try loadModelIfNeeded()
 
@@ -239,7 +239,7 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
         let stereo = try SeparationChannels.upmixToStereo(frames: window, channels: channels)
         let frameCount = stereo.count / 2
 
-        let raw = try inferStereo(stereo: stereo, frameCount: frameCount, progress: progress)
+        let raw = try await inferStereo(stereo: stereo, frameCount: frameCount, progress: progress)
 
         // Map → C-1 two-stem pair (portable mapper, Linux-tested).
         let mapped = try DemucsOutputMapper.map(rawStems: raw, nSamples: frameCount)
@@ -255,7 +255,7 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
     /// source-major stem buffer. Throws CancellationError when the task was
     /// cancelled (mid-window abort through the shim's abort seam).
     private func inferStereo(stereo: [Float], frameCount: Int,
-                             progress: @Sendable (Double, String) -> Void) throws -> [Float] {
+                             progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Float] {
         guard let handle = modelHandle else {
             throw EngineError.modelMissing("demucs model handle is nil")
         }
@@ -282,7 +282,16 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
         }
         let out = OutputBox()
 
-        let status = withTaskCancellationHandler {
+        // The handle is an OpaquePointer (not Sendable) — carry it in a box so
+        // the @Sendable cancellation closure can hold it without a concurrency
+        // warning (an error under the Swift 6 language mode).
+        final class HandleBox: @unchecked Sendable {
+            let handle: OpaquePointer
+            init(_ h: OpaquePointer) { handle = h }
+        }
+        let handleBox = HandleBox(handle)
+
+        let status = await withTaskCancellationHandler {
             stereo.withUnsafeBufferPointer { buf -> Int32 in
                 demucs_shim_infer(handle, buf.baseAddress, Int32(frameCount),
                                   cb, Unmanaged.passUnretained(box).toOpaque(),
@@ -291,7 +300,7 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
         } onCancel: {
             // Runs on the cancelling thread — the vendor sees the flag at its
             // next progress tick and unwinds (P-202 L2 abort seam).
-            demucs_shim_request_abort(handle)
+            demucs_shim_request_abort(handleBox.handle)
         }
 
         if status == DEMUCS_SHIM_ERR_ABORTED.rawValue {

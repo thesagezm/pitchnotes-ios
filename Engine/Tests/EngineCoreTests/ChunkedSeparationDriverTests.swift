@@ -240,7 +240,7 @@ final class ChunkedSeparationDriverTests: XCTestCase {
                 try await separate(window: window, channels: channels) { _, _ in }
             }
             func separate(window: [Float], channels: Int,
-                          progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
+                          progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
                 progress(0.0, "stage 0")
                 progress(0.5, "stage 1")
                 progress(1.0, "stage 2")

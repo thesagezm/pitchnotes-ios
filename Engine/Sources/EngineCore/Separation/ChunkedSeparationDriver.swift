@@ -80,16 +80,23 @@ public protocol SegmentEngine: Sendable {
     /// slice of the C-8 progress band — the driver stays the single writer of
     /// the band, so the engine never picks absolute fractions.
     ///
+    /// The closure is @escaping: an engine hands it to its native inference
+    /// callback, which outlives the call (the vendor calls back from the
+    /// inference thread). Protocol requirements may declare @escaping
+    /// explicitly — without it the parameter would be implicitly non-escaping
+    /// and could not be stored by the implementation (caught by the macOS
+    /// compile of P-202 L2).
+    ///
     /// Default implementation ignores the progress (engines with no
     /// sub-window signal, e.g. the Linux mock) — window-granular progress is
     /// then what the user sees.
     func separate(window: [Float], channels: Int,
-                  progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]]
+                  progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Part: [Float]]
 }
 
 public extension SegmentEngine {
     func separate(window: [Float], channels: Int,
-                  progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
+                  progress: @escaping @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
         _ = progress
         return try await separate(window: window, channels: channels)
     }
