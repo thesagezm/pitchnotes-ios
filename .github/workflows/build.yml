@@ -27,7 +27,10 @@ jobs:
   logic-tests:
     name: Logic tests (PitchLogic + model manifest)
     runs-on: macos-latest
-    timeout-minutes: 10
+    # X-203: 10 min killed the suite twice (45024720426, one prior) as the
+    # M2 suites grew (EngineCore 112 + PitchLogic ~110 + MicCapture) — 15
+    # gives headroom without masking hangs (Paul evidence two-for-two).
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -330,6 +333,28 @@ jobs:
 
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      # X-201 branch-state adapter: xcodegen's `optional: true` still EMITS file
+      # references for missing sources (run 45023233718 — "Build input file
+      # cannot be found"). On branches without Paul's bridge files (main/leto
+      # until the M2 gate merge), strip the two Engine/Separation entries so the
+      # project generates clean; the 8 vendored demucs.cpp TUs compile
+      # everywhere (Apple-clang proof). After the gate merge lands the bridge
+      # on main this becomes a permanent no-op — remove it then.
+      - name: Drop Engine/Separation source entries when bridge files are absent (X-201)
+        run: |
+          if [ ! -f Engine/Separation/DemucsEngine.swift ]; then
+            python3 - <<'PY'
+            import re
+            s = open('project.yml').read()
+            s2 = re.sub(r'^      - path: Engine/Separation/\S+\n        optional: true\n', '', s, flags=re.M)
+            assert s2 != s, 'expected Engine/Separation optional entries in project.yml'
+            open('project.yml', 'w').write(s2)
+            print('bridge files absent — Engine/Separation entries stripped (branch-state adapter)')
+            PY
+          else
+            echo "bridge files present — entries kept (full DemucsEngine compile)"
+          fi
 
       - name: Generate Xcode project
         run: xcodegen generate
