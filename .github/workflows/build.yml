@@ -75,34 +75,21 @@ jobs:
             --entry silero-vad \
             --cache-dir "$HOME/pitchnotes-model-cache"
 
-      # X-008c (D-27.5): Paul's PitchORT package tests (P-101 ORT seam) — the
-      # real-model tests locate the cache the download steps above just filled
-      # ($HOME/pitchnotes-model-cache, then <ws>/Models/downloads fallback);
-      # XCTSkip when no cached model (local runs without the cache).
-      #
-      # ADVISORY (step-level continue-on-error) until X-013 (owner: paul)
-      # lands: the seam has never compiled (run 44957019830 — 3 errors in
-      # OnnxSwiftF0Inference.swift). The step still COMPILES the ORT bindings
-      # + EngineCore + PitchORT and its log artifact carries Paul's exact
-      # diagnostics. Flip to blocking when X-013 goes green. Blocking core
-      # (PitchLogic/EngineCore/manifest/model-verify) is unaffected.
-      - name: Run PitchORT package tests (real model via cache, X-008c — ADVISORY until X-013)
-        continue-on-error: true
+      # X-008c (D-27.5, BLOCKING since X-013 landed — Paul's seam compiles and
+      # the real-model tests pass green on run 44981256783): the tests locate
+      # the cache the download steps above just filled ($HOME/pitchnotes-model-
+      # cache, then <ws>/Models/downloads fallback); XCTSkip when no cached
+      # model (local runs without the cache).
+      - name: Run PitchORT package tests (real model via cache, X-008c BLOCKING)
         run: |
           set -o pipefail
           cd Engine/PitchORT
           swift test 2>&1 | tee ../pitchort-tests.log
 
-      # X-011b (P-104): MicCapture wrapper smoke tests — config math +
-      # interruption-hook state machine. NO mic needed, no capture started.
-      #
-      # ADVISORY until X-013 (owner: paul): MicCapture declares a MicCaptureTests
-      # target whose test sources were never committed — SPM resolution itself
-      # is fatal ("overlapping sources", run 44957019830 build-ipa). The step
-      # gives Paul the exact resolution error in miccapture-tests.log. Flip to
-      # blocking when X-013 commits the tests + fixes the package.
-      - name: Run MicCapture package tests (X-011b — ADVISORY until X-013)
-        continue-on-error: true
+      # X-011b (P-104, BLOCKING since X-013 landed — 7 smoke tests committed and
+      # green on run 44981256783): config math + interruption-hook state
+      # machine. NO mic needed, no capture started.
+      - name: Run MicCapture package tests (X-011b BLOCKING)
         run: |
           set -o pipefail
           cd Engine/MicCapture
