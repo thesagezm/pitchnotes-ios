@@ -40,14 +40,35 @@ final class OnnxSileroVADInferenceTests: XCTestCase {
         return (0..<n).map { i in Float(amplitude) * Float(sin(w * Double(i))) }
     }
 
+    /// Speech-LIKE fixture (mirrors scripts/fixtures/gen.py synthetic_voice):
+    /// silero is a SPEECH VAD — a pure sine scores ~0.08 (Python-verified:
+    /// pure tone 0.0835, this fixture 0.8647), so the voice-detection test
+    /// feeds a harmonic-rich signal, not a tone. Deterministic LCG noise
+    /// floor instead of SeededGeneratorType (stable across platforms).
+    private func voiceLike(seconds: Double, f0: Double = 130.81, amplitude: Double = 0.4) -> [Float] {
+        let n = Int(seconds * Double(SileroVADSpec.sampleRate))
+        let w = 2.0 * Double.pi * f0 / Double(SileroVADSpec.sampleRate)
+        let harmonics: [(Double, Double)] = [(1, 1.0), (2, 0.60), (3, 0.45), (4, 0.28), (5, 0.18)]
+        var state: UInt64 = 0x5EED
+        return (0..<n).map { i -> Float in
+            var s = 0.0
+            let phase = w * Double(i)
+            for (mult, a) in harmonics { s += a * sin(Double(mult) * phase) }
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            let noise = Double(Int64(bitPattern: state >> 11)) / Double(Int64.max) * 0.003
+            return Float(amplitude * (s + noise))
+        }
+    }
+
     func testSilenceGatedAndVoiceDetected() throws {
         let stream = SileroVADStream(inference: try OnnxSileroVADInference(modelURL: try locateModel()))
         let silence = try stream.push([Float](repeating: 0, count: 2 * SileroVADSpec.sampleRate))
         XCTAssertLessThan(silence.max() ?? 1.0, 0.05, "digital silence must gate (Swift seam)")
 
         stream.reset()
-        let voice = try stream.push(sine(146.83, seconds: 5.0))
-        XCTAssertGreaterThanOrEqual(voice.max() ?? 0.0, 0.5, "voice-like harmonic fixture detected (Swift seam)")
+        let voice = try stream.push(voiceLike(seconds: 5.0))
+        XCTAssertGreaterThanOrEqual(voice.max() ?? 0.0, 0.5,
+                                    "speech-like fixture detected (Python ground truth 0.8647; pure sine is NOT speech for this model)")
         for p in voice {
             XCTAssertTrue(p >= 0 && p <= 1, "prob bounds")
         }
