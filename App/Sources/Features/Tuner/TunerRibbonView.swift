@@ -288,7 +288,7 @@ struct TunerRibbonView: View {
 
     private func chipButton(part: Part) -> some View {
         let selected = model.selectedPart == part
-        let range = PartRangePresets.range(for: part)
+        let range = PartRangeChips.range(for: part)
         let label = selected
             ? (range?.displayName ?? part.displayName)
             : part.displayName

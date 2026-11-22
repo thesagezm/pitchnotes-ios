@@ -175,7 +175,7 @@ final class RibbonMappingTests: XCTestCase {
                        "summary announces the SUNG note (nearest) + the octave fact")
     }
 
-    // MARK: - PartRangePresets (CONTRACTS v0.1 C-6.1 verbatim)
+    // MARK: - PartRangeChips (CONTRACTS v0.1 C-6.1 verbatim)
 
     func testC61TableVerbatim() {
         // (part, preset, midiLow, midiHigh) — C-6.1 rows, no substitutions.
@@ -189,44 +189,44 @@ final class RibbonMappingTests: XCTestCase {
             (.alto, "G3–D5", 55, 74),
         ]
         for (part, name, lo, hi) in expected {
-            let range = PartRangePresets.range(for: part)
+            let range = PartRangeChips.range(for: part)
             XCTAssertNotNil(range, "\(part.rawValue) missing from presets")
             XCTAssertEqual(range?.presetName, name)
             XCTAssertEqual(range?.midiLow, lo)
             XCTAssertEqual(range?.midiHigh, hi)
         }
-        XCTAssertEqual(PartRangePresets.all.count, 7)
+        XCTAssertEqual(PartRangeChips.all.count, 7)
     }
 
     func testC61HzValuesMatchContractRounding() {
         // C-6.1 Hz column (rounded to 0.1). BASS 82.4–196.0, BARITONE
         // 110.0–293.7, BARITENOR 130.8–349.2, T2 164.8–440.0, T1 196.0–659.3,
         // SOPRANO 261.6–784.0, ALTO 196.0–587.3.
-        XCTAssertEqual(PartRangePresets.bass.hzLow, 82.4, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.bass.hzHigh, 196.0, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.baritone.hzLow, 110.0, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.baritone.hzHigh, 293.7, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.baritenor.hzLow, 130.8, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.baritenor.hzHigh, 349.2, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.t2.hzLow, 164.8, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.t2.hzHigh, 440.0, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.t1.hzLow, 196.0, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.t1.hzHigh, 659.3, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.soprano.hzLow, 261.6, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.soprano.hzHigh, 784.0, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.alto.hzLow, 196.0, accuracy: 0.05)
-        XCTAssertEqual(PartRangePresets.alto.hzHigh, 587.3, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.bass.hzLow, 82.4, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.bass.hzHigh, 196.0, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.baritone.hzLow, 110.0, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.baritone.hzHigh, 293.7, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.baritenor.hzLow, 130.8, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.baritenor.hzHigh, 349.2, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.t2.hzLow, 164.8, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.t2.hzHigh, 440.0, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.t1.hzLow, 196.0, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.t1.hzHigh, 659.3, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.soprano.hzLow, 261.6, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.soprano.hzHigh, 784.0, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.alto.hzLow, 196.0, accuracy: 0.05)
+        XCTAssertEqual(PartRangeChips.alto.hzHigh, 587.3, accuracy: 0.05)
     }
 
     func testStructuralPartsHaveNoPreset() {
-        XCTAssertNil(PartRangePresets.range(for: .vp))
-        XCTAssertNil(PartRangePresets.range(for: .lead))
-        XCTAssertNil(PartRangePresets.range(for: .instrumental))
+        XCTAssertNil(PartRangeChips.range(for: .vp))
+        XCTAssertNil(PartRangeChips.range(for: .lead))
+        XCTAssertNil(PartRangeChips.range(for: .instrumental))
     }
 
     func testPresetDisplayNameAndCenter() {
-        XCTAssertEqual(PartRangePresets.bass.displayName, "Bass E2–G3")
-        XCTAssertEqual(PartRangePresets.bass.centerCents, 4750, "center of E2(40)…G3(55)")
+        XCTAssertEqual(PartRangeChips.bass.displayName, "Bass E2–G3")
+        XCTAssertEqual(PartRangeChips.bass.centerCents, 4750, "center of E2(40)…G3(55)")
     }
 
     // MARK: - NoteTrackQuery

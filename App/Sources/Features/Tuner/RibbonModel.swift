@@ -33,7 +33,7 @@ final class RibbonModel: ObservableObject {
     @Published private(set) var windowTime: Double = 0
     /// Follow-window center in absolute cents (§3.3). Animates ≤ 250 ms; never
     /// jumps mid-note. Held (dimmed) through gaps.
-    @Published private(set) var centerCents: Double = PartRangePresets.bass.centerCents
+    @Published private(set) var centerCents: Double = PartRangeChips.bass.centerCents
     @Published private(set) var centerIsHeld = false
     /// VoiceOver summary, throttled to ≤ 1 Hz (UX §7).
     @Published private(set) var spoken = "unvoiced"
@@ -115,7 +115,7 @@ final class RibbonModel: ObservableObject {
         let engine = MockEngine(scenario: demoScenario, seed: 0x5017, referencePart: selectedPart)
         noteTrack = (try? engine.noteTrack(for: selectedPart)) ?? NoteTrack(part: selectedPart, notes: [])
         // §3.6: selecting a part re-centers the follow window on its preset.
-        centerCents = PartRangePresets.range(for: selectedPart)?.centerCents ?? centerCents
+        centerCents = PartRangeChips.range(for: selectedPart)?.centerCents ?? centerCents
         centerIsHeld = false
         trace = []
         reading = nil
