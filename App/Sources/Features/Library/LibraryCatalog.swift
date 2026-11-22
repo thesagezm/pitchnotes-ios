@@ -146,18 +146,26 @@ enum LibraryCatalog {
                     ? []
                     : [ContractViolation("V2", "stemFile \(p.stemFile) does not exist in bundle")]))
 
-            // notes/<PART>.json (V7–V10 from disk).
-            let notesURL = dir.appendingPathComponent(p.notesFile)
-            if let data = try? Data(contentsOf: notesURL),
-               let track = try? JSONDecoder().decode(NoteTrack.self, from: data) {
-                tracks[p.part] = track
-                reports.append(BundleFileReport(
-                    fileName: p.notesFile,
-                    violations: BundleValidator.validate(noteTrack: track).violations))
-            } else {
-                reports.append(BundleFileReport(
-                    fileName: p.notesFile,
-                    violations: [ContractViolation("V1", "notes file missing or does not parse as NoteTrack")]))
+            // notes/<PART>.json (V7–V10 from disk). notesFile is OPTIONAL since
+            // contract v1.0 (C-2.1: M2 two-stem manifests omit it) — a part that
+            // declares none is not a violation; only a DECLARED file that is
+            // missing/unparseable fails. The local Optional normalization
+            // compiles against both the pre-v1.0 PartInfo (required) and the
+            // v1.0 PartInfo (String?) — nil path tested at the EngineCore swap.
+            let notesFile: String? = p.notesFile
+            if let notesFile = notesFile {
+                let notesURL = dir.appendingPathComponent(notesFile)
+                if let data = try? Data(contentsOf: notesURL),
+                   let track = try? JSONDecoder().decode(NoteTrack.self, from: data) {
+                    tracks[p.part] = track
+                    reports.append(BundleFileReport(
+                        fileName: notesFile,
+                        violations: BundleValidator.validate(noteTrack: track).violations))
+                } else {
+                    reports.append(BundleFileReport(
+                        fileName: notesFile,
+                        violations: [ContractViolation("V1", "notes file missing or does not parse as NoteTrack")]))
+                }
             }
 
             // pitch/<PART>.json — optional file (C-2); validated when present.

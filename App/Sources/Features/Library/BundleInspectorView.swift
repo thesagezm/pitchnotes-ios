@@ -226,6 +226,11 @@ struct BundleInspectorView: View {
         Section("Parts") {
             ForEach(song.manifest.parts, id: \.part) { partInfo in
                 let part = partInfo.part
+                // notesFile is OPTIONAL since contract v1.0 (C-2.1: M2
+                // two-stem manifests omit it); the typed-local normalization
+                // compiles against both the pre-v1.0 PartInfo (required) and
+                // the v1.0 PartInfo (String?).
+                let notesFile: String? = partInfo.notesFile
                 VStack(alignment: .leading, spacing: Token.Spacing.s2) {
                     HStack {
                         Text(part.displayName)
@@ -240,7 +245,7 @@ struct BundleInspectorView: View {
                             .foregroundStyle(Color.pnTextSecondary)
                     }
                     field("stem", partInfo.stemFile)
-                    field("notes", partInfo.notesFile)
+                    field("notes", notesFile ?? "— (optional, absent)")
                     field("pitch", partInfo.pitchFile ?? "— (optional, absent)")
                     let unison = song.unisonPairs
                         .filter { $0.first == part || $0.second == part }
