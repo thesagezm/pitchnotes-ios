@@ -246,9 +246,11 @@ final class ModelsScreenModel: ObservableObject {
         let entries = ModelCache.manifestEntries()
         self.entries = entries
         manifestBundled = !entries.isEmpty
+        let location = ModelCache.bundledManifestLocation()
         manifestNote = entries.isEmpty
             ? "This build has no bundled model manifest, so downloads are unavailable. Place the model file in the app's Files folder instead — its checksum is still verified."
-            : "Downloaded once, verified against the manifest checksum, then cached. After this, airplane mode works end to end."
+            : (location.map { "Manifest: \($0). " } ?? "")
+                + "Downloaded once, verified against the manifest checksum, then cached. After this, airplane mode works end to end."
         downloadRows = entries.map { entry in
             let cached = FileManager.default.fileExists(atPath: ModelCache.cachedURL(for: entry).path)
             return DownloadRow(

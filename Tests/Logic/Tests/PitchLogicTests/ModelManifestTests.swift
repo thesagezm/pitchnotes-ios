@@ -88,4 +88,49 @@ final class ModelManifestTests: XCTestCase {
         XCTAssertTrue(text.contains("83,994,361"), "the exact byte count must be shown: \(text)")
         XCTAssertTrue(text.contains("MB"), "the human size must be shown: \(text)")
     }
+
+    // MARK: - The bundled-manifest locator (J-207 last mile, X-207)
+
+    func testManifestLocatorTriesTheBundleRootFirst() {
+        let root = URL(fileURLWithPath: "/tmp/app.bundle", isDirectory: true)
+        XCTAssertEqual(ModelManifestLocator.candidateRelativePaths.first, "manifest.json")
+        XCTAssertEqual(ModelManifestLocator.candidateURLs(in: root).first?.path,
+                       "/tmp/app.bundle/manifest.json")
+    }
+
+    func testManifestLocatorAlsoCoversTheModelsSubfolderLayout() {
+        let root = URL(fileURLWithPath: "/tmp/app.bundle", isDirectory: true)
+        XCTAssertTrue(
+            ModelManifestLocator.candidateRelativePaths.contains("Models/manifest.json"),
+            "XcodeGen can land a directory resource under Models/ — the lookup must cover it")
+        let paths = ModelManifestLocator.candidateURLs(in: root).map(\.path)
+        XCTAssertTrue(paths.contains("/tmp/app.bundle/Models/manifest.json"), "got \(paths)")
+    }
+
+    func testManifestLocatorPicksTheFirstExistingCandidate() {
+        let root = URL(fileURLWithPath: "/tmp/app.bundle", isDirectory: true)
+        let existing = ModelManifestLocator.candidateURLs(in: root)[1]
+        let found = ModelManifestLocator.locate(in: root) { $0 == existing }
+        XCTAssertEqual(found?.path, existing.path)
+    }
+
+    func testManifestLocatorPrefersTheRootWhenBothExist() {
+        let root = URL(fileURLWithPath: "/tmp/app.bundle", isDirectory: true)
+        let urls = ModelManifestLocator.candidateURLs(in: root)
+        let found = ModelManifestLocator.locate(in: root) { _ in true }
+        XCTAssertEqual(found?.path, urls[0].path)
+    }
+
+    func testManifestLocatorReturnsNilWhenNoManifestIsBundled() {
+        let root = URL(fileURLWithPath: "/tmp/app.bundle", isDirectory: true)
+        XCTAssertNil(ModelManifestLocator.locate(in: root) { _ in false })
+    }
+
+    func testManifestLocatorReportsItsRelativePathForTheDemo() {
+        let root = URL(fileURLWithPath: "/tmp/app.bundle", isDirectory: true)
+        let nested = ModelManifestLocator.candidateURLs(in: root)[1]
+        XCTAssertEqual(ModelManifestLocator.relativePath(of: nested, in: root), "Models/manifest.json")
+        let top = ModelManifestLocator.candidateURLs(in: root)[0]
+        XCTAssertEqual(ModelManifestLocator.relativePath(of: top, in: root), "manifest.json")
+    }
 }

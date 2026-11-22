@@ -56,10 +56,43 @@ enum ModelCache {
     /// The manifest entries from the BUNDLED manifest (X-207). Returns an
     /// empty array when the manifest is not bundled in this build — the UI
     /// then says so honestly instead of pretending a download is possible.
+    ///
+    /// The lookup is LAYOUT-AGNOSTIC on purpose (J-207, session 6): XcodeGen
+    /// can land `Models/manifest.json` either at the bundle ROOT (a single
+    /// file in `sources:`) or under a `Models/` subfolder (a directory in
+    /// `sources:`), and both are legitimate ways for Leto to wire X-207. A
+    /// false negative here would say "this build has no bundled model
+    /// manifest" while the file is sitting in the bundle — so both shapes are
+    /// tried, in an explicit order.
     static func manifestEntries() -> [ModelManifestEntry] {
-        guard let url = Bundle.main.url(forResource: "manifest", withExtension: "json"),
-              let data = try? Data(contentsOf: url) else { return [] }
+        guard let data = bundledManifestData() else { return [] }
         return (try? ModelManifest.entries(from: data)) ?? []
+    }
+
+    /// The bundled manifest's bytes, or nil when this build ships no manifest.
+    static func bundledManifestData() -> Data? {
+        if let url = Bundle.main.url(forResource: "manifest", withExtension: "json"),
+           let data = try? Data(contentsOf: url) {
+            return data
+        }
+        guard let root = Bundle.main.resourceURL else { return nil }
+        for url in ModelManifestLocator.candidateURLs(in: root) {
+            if let data = try? Data(contentsOf: url) { return data }
+        }
+        return nil
+    }
+
+    /// Where the manifest was found, relative to the bundle root ("manifest.json"
+    /// / "Models/manifest.json"), or nil when this build ships no manifest.
+    /// Surfaced in the Models screen so a demo can show WHICH layout the build
+    /// uses instead of guessing.
+    static func bundledManifestLocation() -> String? {
+        guard let root = Bundle.main.resourceURL else { return nil }
+        if Bundle.main.url(forResource: "manifest", withExtension: "json") != nil {
+            return "manifest.json"
+        }
+        guard let url = ModelManifestLocator.locate(in: root) else { return nil }
+        return ModelManifestLocator.relativePath(of: url, in: root)
     }
 }
 

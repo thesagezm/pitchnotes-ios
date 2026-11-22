@@ -112,3 +112,50 @@ public enum ModelCacheNaming {
         return "\(grouped) (\(exact) B)"
     }
 }
+
+/// Where the bundled manifest may live inside the app bundle (J-207 / X-207).
+///
+/// Leto's one-liner in `project.yml` can land `Models/manifest.json` in
+/// EITHER shape, and both are legitimate XcodeGen resource layouts:
+///   · `- path: Models/manifest.json` (a single FILE) ⇒ the resource is
+///     copied to the bundle ROOT ⇒ `<bundle>/manifest.json`;
+///   · `- path: Models` (a DIRECTORY) ⇒ XcodeGen makes a folder reference ⇒
+///     `<bundle>/Models/manifest.json`.
+///
+/// A demo that says "this build has no bundled model manifest" because of a
+/// folder layout would be a FALSE NEGATIVE — the weights are right there. So
+/// the lookup is layout-agnostic, the ORDER is explicit, and it is a pure
+/// function (testable on Linux, no `Bundle` dependency).
+public enum ModelManifestLocator {
+
+    /// The relative paths the manifest may occupy, in lookup order.
+    public static let candidateRelativePaths = ["manifest.json", "Models/manifest.json"]
+
+    /// The candidate URLs inside a bundle root, in lookup order.
+    public static func candidateURLs(in bundleRoot: URL) -> [URL] {
+        candidateRelativePaths.map {
+            URL(fileURLWithPath: $0, relativeTo: bundleRoot).standardizedFileURL
+        }
+    }
+
+    /// The first candidate that actually exists, or nil.
+    ///
+    /// - Parameter fileExists: injected so the rule is testable without a
+    ///   filesystem (and without `Bundle`).
+    public static func locate(
+        in bundleRoot: URL,
+        fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+    ) -> URL? {
+        candidateURLs(in: bundleRoot).first(where: fileExists)
+    }
+
+    /// The relative path of a located manifest, for the UI ("Models/manifest.json").
+    public static func relativePath(of url: URL, in bundleRoot: URL) -> String {
+        let root = bundleRoot.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(root) else { return url.lastPathComponent }
+        var relative = String(path.dropFirst(root.count))
+        while relative.hasPrefix("/") { relative.removeFirst() }
+        return relative.isEmpty ? url.lastPathComponent : relative
+    }
+}
