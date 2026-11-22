@@ -14,9 +14,11 @@ import os
 // zipper noise (A.1.3).
 //
 // Background/lock-screen: MPRemoteCommandCenter + MPNowPlayingInfoCenter are
-// wired here; until X-021 lands UIBackgroundModes [audio] in project.yml
-// (Leto), playback simply stops when the app backgrounds — graceful degrade,
-// no crash, honest behavior.
+// wired here; X-021 landed UIBackgroundModes [audio] in project.yml (Leto,
+// 2026-11-22 early rulings merge) so playback continues and lock-screen
+// transport works. The runtime detection below STAYS as a drift guard — if
+// the key disappears from the built plist, playback degrades to foreground-only
+// with an honest notice (no crash, no promise we can't keep).
 //
 // D-12 honesty: the FOCUS preset attenuates (−12 dB), it does not solo; the
 // UI labels carry that distinction (MixerView).
@@ -48,8 +50,9 @@ final class MixerPlayer: ObservableObject {
         t.setLoop(start_s: 0, end_s: song.manifest.duration_s) // default A/B = whole song
         t.clearLoop()
         self.transport = t
-        // The lock-screen step of the M2 device demo (UX §10.2) degrades
-        // until Leto lands X-021; detect honestly rather than promise.
+        // X-021 is in the plist; if a future build drops the key, the
+        // lock-screen step of the device demo (UX §10.2) degrades with this
+        // honest notice rather than silently failing.
         if !Self.hasBackgroundAudioMode {
             backgroundNotice = "Background playback activates once the app gains the audio background mode (X-021) — foreground playback is fully functional."
         }
