@@ -53,6 +53,16 @@ final class ImportModel: ObservableObject {
     @Published var isImportPickerPresented = false
     /// Editable display title (prefilled from the filename at pick time).
     @Published var setupTitle = ""
+    /// Which engine the LAST import ran on (J-208) — the import screen shows
+    /// it, so a mock demo can never be mistaken for a real separation
+    /// (D-12 honesty; Leto 21:55Z §1c: the M2 gate requires the REAL path).
+    @Published private(set) var engineKind: ImportEngineKind = .mock
+    /// The import-pass metrics of the LAST import (J-206): separation RTF,
+    /// peak resident footprint, thermal start→end. nil until an import has
+    /// run (never zeros — "not measured" must not read as "measured 0").
+    @Published private(set) var metrics: ImportDeviceMetrics?
+    /// The peak footprint seen SO FAR (live during the import).
+    @Published private(set) var livePeakResidentBytes: UInt64?
 
     // FLAC has no static UTType member (UniformTypeIdentifiers ships
     // .mp3/.wav/.mpeg4Audio/.aiff); the system-declared UTI is org.xiph.flac,
@@ -66,8 +76,19 @@ final class ImportModel: ObservableObject {
     private var tracker = ImportProgressTracker()
     private var scopedURL: URL?
     private var thermalObserver: NSObjectProtocol?
+    /// The import-pass metrics collector (J-206) — samples the resident
+    /// footprint while the import runs.
+    private let metricsCollector = ImportMetricsCollector()
+    /// The engine seam (J-208): the app resolves the REAL engine when it is
+    /// compiled in and its weights are on disk; previews/tests inject the
+    /// mock explicitly.
+    private let engineFactory: ImportEngineFactory
 
-    init() {
+    /// - Parameter engineFactory: nil = the shipping resolution (real engine
+    ///   when available, mock otherwise — see `ImportEngineResolver`).
+    init(engineFactory: ImportEngineFactory? = nil) {
+        self.engineFactory = engineFactory
+            ?? ImportEngineResolver.factory(modelURL: ModelCache.verifiedModelURL(named: "htdemucs"))
         Task.detached(priority: .userInitiated) { [weak self] in
             let store = try? BundleStore.makeDefault()
             await MainActor.run { [weak self] in
@@ -137,14 +158,33 @@ final class ImportModel: ObservableObject {
         progress = nil
         progressViolations = 0
         importStartedAt = Date()
+        metrics = nil
+        livePeakResidentBytes = nil
+        // J-206: sample the resident footprint for the whole import; the
+        // §8 budget is about the PEAK, not the last value.
+        metricsCollector.start()
         phase = .running
+
+        // The engine seam (J-208): the app never names a concrete engine at
+        // the call site. The REAL engine (post paul→main) THROWS with an
+        // actionable message when its weights are missing — it never falls
+        // back to the mock silently (D-12 honesty).
+        let handle: ImportEngineHandle
+        do {
+            handle = try engineFactory.makeEngine(bundleRoot: store.root)
+        } catch {
+            phase = .failed(ImportFailure.cause(from: error))
+            stopSecurityScope()
+            return
+        }
+        engineKind = handle.kind
 
         let sourceURL = info.url
         let title = setupTitle.isEmpty ? info.title : setupTitle
 
         importTask = Task { [weak self] in
             guard let self else { return }
-            let engine = ScriptedImportEngine(bundleRoot: store.root)
+            let engine = handle.engine
             engine.setImportProgressHandler { progress in
                 // C-8: handler runs on an ARBITRARY queue — hop to main; the
                 // tracker (pure) enforces monotonicity on ingest.
@@ -159,12 +199,37 @@ final class ImportModel: ObservableObject {
             }
             do {
                 let audio = try await engine.importAudio(url: sourceURL)
-                _ = try await engine.separate(audio, mode: .twoStem) // D-9: two-stem always
+                // J-206: the metrics cover the SEPARATION pass (the engine
+                // work the §8 budget and the L-204 AC talk about): its wall
+                // time, the source duration it separated, and the thermal
+                // state at both ends of the pass.
+                let thermalAtStart = ThermalLevelBridge.current
+                let separationStartedAt = Date()
+                let stems = try await engine.separate(audio, mode: .twoStem) // D-9: two-stem always
+                let separationWallTime = Date().timeIntervalSince(separationStartedAt)
+                let thermalAtEnd = ThermalLevelBridge.current
+                let peakBytes = metricsCollector.stop()
+                self.livePeakResidentBytes = peakBytes
+                self.metrics = ImportDeviceMetrics(
+                    separationWallTime_s: separationWallTime,
+                    sourceDuration_s: audio.duration_s,
+                    peakResidentBytes: peakBytes,
+                    thermalAtStart: thermalAtStart,
+                    thermalAtEnd: thermalAtEnd,
+                    sourceDurationIsEstimate: handle.kind == .mock)
 
                 // Post-separate bookkeeping OFF the main actor (file I/O):
                 // consumer-rule completeness check (C-2.2) + index register.
+                // C-9: prefer the producer's id; fall back to the rule-3
+                // derivation from a stem URL (verified against song.json, the
+                // completion marker — a half-written bundle is never
+                // registered).
                 let record = try await Task.detached(priority: .utility) { () -> BundleRecord in
-                    guard let id = engine.importedBundleID,
+                    let resolvedID = BundleIdentityResolver.resolveBundleID(
+                        producerID: handle.bundleID(),
+                        stems: stems,
+                        bundleRoot: store.root)
+                    guard let id = resolvedID,
                           store.isCompleteBundle(at: store.root.appendingPathComponent(id, isDirectory: true)) else {
                         throw EngineError.importFailed("completed bundle failed the completeness check")
                     }
@@ -190,6 +255,7 @@ final class ImportModel: ObservableObject {
                 // C-8: cancellation or error mid-import → staging removed by
                 // the engine; NO partial bundle exists to clean up here.
                 let cause = ImportFailure.cause(from: error)
+                self.livePeakResidentBytes = self.metricsCollector.stop()
                 self.phase = cause == .cancelled ? .idle : .failed(cause)
                 self.stopSecurityScope()
             }
@@ -211,6 +277,7 @@ final class ImportModel: ObservableObject {
         tracker = ImportProgressTracker()
         progress = nil
         importStartedAt = nil
+        livePeakResidentBytes = metricsCollector.stop()
         phase = .idle
         stopSecurityScope()
     }
