@@ -167,10 +167,51 @@ DemucsOutputMapper (EngineCore, Linux-tested): vocals = target_3,
   mirrors it byte-for-byte (verified by diff vs origin/leto @d007780), so
   revert+re-apply on vendor reproduces the committed text exactly.
 - **Honest limits:** mid-inference abort is not possible through the vendor API —
-  cancellation is checked before/after `demucs_inference`; segment-boundary
-  cancellation + abort flag arrive with P-202's chunked driver. multiStem mode
-  throws in M2 (per-voice stems are the M3 assignment path). `hasInstrumental`
+  cancellation is checked before/after `demucs_inference`. **P-202 L2 landed the abort
+  seam WITHOUT a vendor patch:** the shim (`Engine/Separation/DemucsShim.{h,cpp}`, Paul
+  lane) carries an atomic abort flag and throws from the vendor's progress callback —
+  which the vendor calls ~26× per 7.8 s segment, always OUTSIDE any joinable
+  `std::thread` scope (verified in `vendor/demucs.cpp/src/model_inference.cpp`) — so the
+  throw unwinds the blocking vendor call (abort latency = one encoder stage). Swift
+  arms the flag from `withTaskCancellationHandler.onCancel` (on the cancelling thread);
+  the shim maps it to `DEMUCS_SHIM_ERR_ABORTED` → Swift `CancellationError`. multiStem
+  mode throws in M2 (per-voice stems are the M3 assignment path). `hasInstrumental`
   (D-9 near-silence) = P-205.
+
+### 1.4 M2 import/decode stack (P-203, D-8 / C-2.1)
+
+```
+ImportPipeline (EngineCore, portable, Linux-tested)
+  │  DecodePolicy (D-8: 44.1 kHz out, mix ∈ {1,2} ch, channel-preserving)
+  │  → AudioResampler (kaiser-sinc, stateful) → PCMF32Wav staging (mix)
+  │  → BLAKE3 (pure Swift, from spec — 23 official vectors) over the SOURCE bytes
+  │  → ImportManifestBuilder (song.json v1.0: tuning_cents + channels + hasInstrumental)
+  ▼
+AVAudioFileDecoder (Engine/ImportKit — APPLE-ONLY package, AVFoundation)
+  AVAudioFile → deinterleave f32 @ source rate/ch → SHARED normalizeAndStage
+  (ONE policy path: the portable core owns the D-8 resample/channel policy)
+```
+
+- **Package boundary (Leto's X-204/step-5 ask, answered):** `Engine/ImportKit` is an
+  Apple-only SPM package (product `ImportKit`, path-dep `..` → `EngineCore`), the same
+  pattern as `Engine/PitchORT` and `Engine/MicCapture`. AVFoundation-dependent code
+  (this decoder, and P-204's ALAC writer + SongBundle assembler) CANNOT live in
+  `Engine/Sources/EngineCore` (Foundation-only / Linux-clean by AGENTS §0). **P-204
+  extends `Engine/ImportKit`** (no new package ⇒ no new identity surprise at the gate);
+  exact product name `ImportKit` for `project.yml`.
+- **MP3 GAPLESS BEHAVIOUR (measured, macOS runner 45076895490):** `AVAudioFile` does NOT
+  apply the LAME gapless tag, so an imported MP3 keeps the encoder delay + trailing
+  padding: the 2.5 s fixture decodes to **111744 frames (97 MPEG frames × 1152) =
+  2.534 s**, while ffmpeg (which honours the tag) returns exactly 110250 frames. The
+  extra frames are codec padding, not duplicated source audio — the import leg asserts
+  the count is a whole number of MPEG frames and that the decode agrees with the source
+  WAV (SNR ≥ 18 dB; locally measured 26.0 dB, max |Δ| 0.045) once the ~1105-sample
+  encoder delay is removed. **Consequence for the manifest:** `duration_s` for an MP3
+  import is up to ~51 ms longer than the true song length (delay 1105 + ≤1152 frames);
+  negligible for a 4-minute track, and NOT silently "fixed" by trimming (a trailing-
+  silence heuristic would truncate quiet real endings). WAV/FLAC/ALAC are exact
+  (bit-identical to ffmpeg's decode, verified locally: ffmpeg's f32 output is bit-for-bit
+  `s16/32768`).
 
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
@@ -257,3 +298,4 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.1 | 2026-11-21 | P-105: LivePitchFacade (C-6.0 verbatim) + C-6.1 presets + MockEngine additive conformance — §1.1 facade semantics (sticky sub-hop, VAD fail-open fusion, V12 clarity clamp, M2 stubs, reset); P-102 Swift MPM noted in the M1 layer diagram. RibbonEngine partial-window crash fixed (Int-division truncation; testTimestampsOnContractGridAndCausal red on CI arm64 + Linux, emitCount guard). |
 | v1.2 | 2026-11-22 | P-201a CONTRACTS v1.0 wired in EngineCore (C-1 += VOCALS sortOrder 10, C-2.1 notesFile optional, V14/V15 era-scoped, C-8 verbatim + ImportProgressEmitter) — 103/103 Linux; P-201c M2 separation stack: §1.3 architecture (shim C-ABI + DemucsEngine bridge + DemucsOutputMapper/PCMWavWriter portable layer), demucs model row → Tier B provenance (D-30/D-32.6) + std::thread pair parallelism spec (D-32.4, apply_demucs_threading.py). EngineCore 112/112 Linux. |
 | v1.3 | 2026-11-22 | P-208 (D-24/C-7): §4.1 spike parity harness — C-7 sidecar exporter (--export-c7, JSON+f32/f64 bins, model+fixture sha binding), Swift/ORT parity tests in PitchORTTests (SwiftF0 3 fixtures × 4 tensors incl. EngineCore postprocess outputs; silero 4 fixtures), tolerance abs 1e-3 OR rel 1e-4; engine-parity CI job spec = X-205 (Leto). |
+| v1.4 | 2026-11-23 | P-202 L2 (chunked driver + abort seam, no vendor patch) + P-203 (import/decode): §1.4 import stack (ImportPipeline / AVAudioFileDecoder / BLAKE3 / manifest v1.0), the **ImportKit package declaration** answered for Leto's step-5 wiring (extend `Engine/ImportKit`, product `ImportKit`), and the **measured MP3 gapless behaviour** (AVAudioFile keeps the LAME encoder delay + padding → 111744 vs ffmpeg's 110250 frames; duration_s up to ~51 ms long; padding proven frame-aligned + SNR-vs-source 26.0 dB). §1.3 abort seam replaced with the landed design. |
