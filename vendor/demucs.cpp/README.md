@@ -30,7 +30,7 @@
 | `LICENSE` | upstream MIT, verbatim | L-008 rule 1 |
 | `src/**` (16 files: tensor.hpp, dsp.*, layers.*, conv.hpp, lstm.*, encdec.*, crosstransformer.*, model.hpp, model_*.cpp) | the inference LIBRARY — the only part we compile into the app | P-201 consumes exactly these |
 | `scripts/convert-pth-to-ggml.py` + `scripts/requirements.txt` | weight-conversion tooling, pinned | D-32.6 PRIMARY provenance chain (Meta .pth → ggml fp16); **Linux/CI-side tooling only — NEVER compiled into any app target** |
-| `third_party/eigen/Eigen/**` + `unsupported/**` + COPYING.{MPL2,README,BSD,APACHE,MINPACK} | Eigen headers at upstream's pinned submodule `dd8c71e62852b2fe429edb6682ac91fd1c578a26` | demucs.cpp's only library dependency (header-only); `unsupported/Eigen/CXX11/Tensor` IS required (src/tensor.hpp) |
+| `third_party/eigen/Eigen/**` + `unsupported/**` (test/ pruned) + COPYING.{MPL2,README,BSD,APACHE,MINPACK} | Eigen headers at upstream's pinned submodule `dd8c71e62852b2fe429edb6682ac91fd1c578a26` | demucs.cpp's only library dependency (header-only); `unsupported/Eigen/CXX11/Tensor` IS required (src/tensor.hpp); `unsupported/test/` EXCLUDED (Eigen's own test mains — dead weight, see patches.log) |
 
 **Deliberately NOT vendored** (upstream submodules/dirs, logged per L-008 rule 3):
 - `cli-apps/**` + `vendor/libnyquist` — CLI audio I/O; our app uses AVFoundation
