@@ -103,7 +103,12 @@ final class ImportKitTests: XCTestCase {
     }
 
     private func stagedSamples(_ mix: DecodedAudio) throws -> (samples: [Float], sampleRate: Int, channels: Int) {
-        try PCMF32Wav.read(url: mix.url)
+        // PCMF32Wav.read labels its first element `frames`; this helper's
+        // contract calls it `samples` (the ffmpeg reference's label) — remap
+        // explicitly (a bare `return try PCMF32Wav.read(...)` does not compile:
+        // tuple labels are part of the type).
+        let staged = try PCMF32Wav.read(url: mix.url)
+        return (samples: staged.frames, sampleRate: staged.sampleRate, channels: staged.channels)
     }
 
     /// Bit-identity of a lossless container's staged mono mix vs ffmpeg's
