@@ -67,8 +67,11 @@ public enum ImportFailure {
             return .diskFull(neededBytes: 0, availableBytes: 0)
         }
         // Permission: Cocoa file read/write no-permission, or URL error class.
+        // NSCocoaErrorDomain 257 = NSFileReadNoPermissionDenied,
+        // 513 = NSFileWriteNoPermissionDenied (literal codes — the named
+        // constants are not in scope in this SPM target on CI).
         if ns.domain == NSCocoaErrorDomain,
-           ns.code == NSFileReadNoPermissionDenied || ns.code == NSFileWriteNoPermissionDenied {
+           ns.code == 257 || ns.code == 513 {
             return .permissionDenied
         }
         if let urlError = error as? URLError,
