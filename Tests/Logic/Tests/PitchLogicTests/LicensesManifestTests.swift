@@ -66,7 +66,9 @@ final class LicensesManifestTests: XCTestCase {
     }
 
     func testRequiredShippedDependenciesAreListed() {
-        let mustShip = ["ONNX Runtime", "SwiftF0", "Silero VAD", "demucs.cpp", "htdemucs"]
+        // Eigen ships compiled into the M2 separation path (D-32.5 header-only
+        // MPL-2.0 exception) — its absence would be a license-screen lie.
+        let mustShip = ["ONNX Runtime", "SwiftF0", "Silero VAD", "demucs.cpp", "htdemucs", "Eigen"]
         for name in mustShip {
             XCTAssertTrue(LicensesCatalog.entries.contains { $0.name.contains(name) },
                           "required shipped dep missing from the catalog: \(name)")

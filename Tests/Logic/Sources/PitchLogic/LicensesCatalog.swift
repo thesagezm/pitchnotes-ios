@@ -85,6 +85,11 @@ public enum LicensesCatalog {
             role: "Two-stem separation (VOCALS / INSTRUMENTAL)", license: "MIT",
             tier: .shipSafe, shipsIn: "M2", note: "Inference code only — weights' provenance below."),
         LicenseEntry(
+            name: "Eigen",
+            role: "Linear algebra headers vendored at demucs.cpp's submodule pin", license: "MPL-2.0",
+            tier: .shipSafe, shipsIn: "M2",
+            note: "Ship-safe for UNMODIFIED header-only use per D-32.5 — vendored unmodified; any local modification voids the MPL exception."),
+        LicenseEntry(
             name: "htdemucs fp16 ggml weights",
             role: "Separation model (~81 MB)", license: "MIT (code) — weights Tier B",
             tier: .tierB, shipsIn: "M2",
