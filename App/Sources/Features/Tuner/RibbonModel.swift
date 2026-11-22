@@ -12,10 +12,13 @@ import PitchLogic
 // class only resolves the reference note, maintains the trace/window, and
 // publishes small render state.
 //
-// M1 scope: MockEngine singer (part + scenario selectable — the device demo
-// exercises flat/sharp/octave/vibrato states without a human singing). Real
-// mic capture arrives with P-104; the real LivePitchEngine ribbon source
-// (P-105) swaps behind RibbonFrameSource with ZERO view changes (C-6).
+// J-105 swap EXECUTED: both sources live behind RibbonFrameSource —
+// demo (MockEngine scripted singer, the M1 device-demo input) and liveMic
+// (LivePitchFacade.ribbonFrame — REAL causal ribbon, RIBBON_MPM_YIN / 0 ms).
+// The live path runs on real capture chunks once MicCapture joins the target
+// (Leto's X-011a re-wiring; the adapter activates with ZERO code changes) and
+// on hop-aligned silence until then — real DSP cost, honest unvoiced frames.
+// Standalone-tuner semantics in liveMic mode (no reference track; §3.9).
 // Settings persistence (tolerance/octave/part) lands with J-405 (M4).
 
 @MainActor
@@ -56,6 +59,26 @@ final class RibbonModel: ObservableObject {
     @Published var demoScenario: MockScenario = .perfect {
         didSet { if oldValue != demoScenario { rebuildSource() } }
     }
+    /// Frame source (J-105): `.demo` = scripted MockEngine singer (default —
+    /// the device demo runs before mic capture wires in, X-011a);
+    /// `.liveMic` = the REAL LivePitchEngine causal ribbon via
+    /// `ribbonFrame(_:)` (C-6.0; standalone-tuner semantics, no reference
+    /// track). Selector lands in TunerRibbonView next to the demo menu.
+    @Published var sourceMode: SourceMode = .demo {
+        didSet { if oldValue != sourceMode { rebuildSource() } }
+    }
+
+    enum SourceMode: String, CaseIterable, Identifiable {
+        case demo
+        case liveMic
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .demo: return "Demo singer"
+            case .liveMic: return "Live mic (real engine)"
+            }
+        }
+    }
 
     /// Reduce Motion (§7): snap the follow window instead of animating.
     var reduceMotion = false
@@ -89,6 +112,9 @@ final class RibbonModel: ObservableObject {
     private var lastFrame: PitchFrame?
     private var frameIndex = 0
     private var lastSpokenUpdate = Date.distantPast
+    /// The real live engine (J-105). One instance per live session; `reset()`
+    /// clears ribbon/VAD state on interruption per the facade contract.
+    private var liveEngine: LivePitchFacade?
 
     init() {
         rebuildSource()
@@ -112,8 +138,6 @@ final class RibbonModel: ObservableObject {
 
     private func rebuildSource() {
         consumeTask?.cancel()
-        let engine = MockEngine(scenario: demoScenario, seed: 0x5017, referencePart: selectedPart)
-        noteTrack = (try? engine.noteTrack(for: selectedPart)) ?? NoteTrack(part: selectedPart, notes: [])
         // §3.6: selecting a part re-centers the follow window on its preset.
         centerCents = PartRangeChips.range(for: selectedPart)?.centerCents ?? centerCents
         centerIsHeld = false
@@ -122,7 +146,24 @@ final class RibbonModel: ObservableObject {
         lastFrame = nil
         frameIndex = 0
 
-        let source = MockRibbonFrameSource(engine: engine)
+        let source: any RibbonFrameSource
+        switch sourceMode {
+        case .demo:
+            let engine = MockEngine(scenario: demoScenario, seed: 0x5017, referencePart: selectedPart)
+            noteTrack = (try? engine.noteTrack(for: selectedPart)) ?? NoteTrack(part: selectedPart, notes: [])
+            source = MockRibbonFrameSource(engine: engine)
+        case .liveMic:
+            // Standalone tuner (§3.9): no reference track — empty NoteTrack
+            // means nil reference decisions and no reference bars (honest
+            // free-singing; D-12 honesty rule).
+            noteTrack = NoteTrack(part: selectedPart, notes: [])
+            let engine = LivePitchFacade(swiftf0Inference: PlaceholderSwiftF0Inference(),
+                                         vadInference: nil) // VAD fusion arrives with the real Silero seam (X-008)
+            engine.reset()
+            liveEngine = engine
+            source = LivePitchEngineRibbonSource(engine: engine, mic: MicChunkSourceFactory.make())
+        }
+
         consumeTask = Task { [weak self] in
             for await frame in source.frames() {
                 guard let self, !Task.isCancelled else { break }

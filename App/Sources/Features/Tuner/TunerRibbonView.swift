@@ -330,18 +330,35 @@ struct TunerRibbonView: View {
 
                 Spacer()
 
+                // J-105 source selector: demo singer (scripted, the M1 demo
+                // input) vs live mic (the REAL causal ribbon — engine_id
+                // RIBBON_MPM_YIN, 0 ms lookahead; C-6.0). The SwiftF0 grading
+                // source is post-hoc only and never appears here. The demo
+                // menu stays until real capture wires into the target
+                // (X-011a); its removal is then a one-line change (UX §3.9).
                 Menu {
-                    ForEach(MockScenario.allCases, id: \.self) { s in
-                        Button(s.menuLabel) { model.demoScenario = s }
+                    ForEach(RibbonModel.SourceMode.allCases) { m in
+                        Button(m.label) { model.sourceMode = m }
+                    }
+                    if model.sourceMode == .demo {
+                        Divider()
+                        ForEach(MockScenario.allCases, id: \.self) { s in
+                            Button(s.menuLabel) { model.demoScenario = s }
+                        }
                     }
                 } label: {
-                    Label("Demo: \(model.demoScenario.menuLabel)", systemImage: "person.wave.2.fill")
+                    Label(model.sourceMode == .demo
+                          ? "Demo: \(model.demoScenario.menuLabel)"
+                          : "Source: live mic",
+                          systemImage: model.sourceMode == .demo ? "person.wave.2.fill" : "waveform.badge.mic")
                         .font(Token.Fonts.caption)
                         .padding(.horizontal, Token.Spacing.s3)
                         .padding(.vertical, Token.Spacing.s2)
                         .background(Color.pnTrack, in: Capsule())
                 }
-                .accessibilityLabel("Demo singer scenario, currently \(model.demoScenario.menuLabel)")
+                .accessibilityLabel(model.sourceMode == .demo
+                    ? "Demo singer scenario, currently \(model.demoScenario.menuLabel)"
+                    : "Live source, real pitch engine")
             }
         }
     }
