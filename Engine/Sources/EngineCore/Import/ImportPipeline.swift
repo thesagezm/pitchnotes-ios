@@ -33,7 +33,7 @@ public enum ImportPipeline {
                            hasher: SourceHashing?,
                            decoder: AudioDecoding,
                            emitter: ImportProgressEmitter?,
-                           tuningCents: Int = 0,
+                           tuningCents: Int? = nil,
                            hasInstrumental: Bool = true,
                            parts: [PartInfo] = [],
                            meanNoteConfidence: Double = 0.0,
@@ -78,9 +78,35 @@ public enum ImportPipeline {
 
         emit(1.0, "mix \(decodedMix.channels)ch 44.1 kHz \(String(format: "%.1f", decodedMix.duration_s))s")
 
+        // P-207 (D-22): nil tuningCents = ESTIMATE from the staged mix (circular
+        // mean of refined spectral peaks, ±50c clamp, MIN_CENTS gate); explicit
+        // value = user/pipeline override (J-205 UI override lives above us).
+        // Stored audio is NEVER resampled/retuned — the estimator is read-only.
+        let resolvedTuning: Int
+        if let explicit = tuningCents {
+            resolvedTuning = explicit
+        } else {
+            do {
+                let (samples, sr, ch) = try PCMF32Wav.read(url: decodedMix.url)
+                // Channel-mean fold (stereo stays stereo in the STAGED mix; the
+                // estimator is mono by design).
+                let mono: [Float]
+                if ch == 1 {
+                    mono = samples
+                } else {
+                    var folded = [Float](repeating: 0, count: samples.count / ch)
+                    for (i, v) in samples.enumerated() { folded[i / ch] += v / Float(ch) }
+                    mono = folded
+                }
+                resolvedTuning = TuningEstimator().estimate(samples: mono, sampleRate: sr)
+            } catch {
+                resolvedTuning = 0 // weak/failed estimate → D-22 default 0
+            }
+        }
+
         let manifest = ImportManifestBuilder.build(
             mix: decodedMix, title: title, sourceHash: hash,
-            tuningCents: tuningCents, hasInstrumental: hasInstrumental,
+            tuningCents: resolvedTuning, hasInstrumental: hasInstrumental,
             parts: parts, meanNoteConfidence: meanNoteConfidence,
             engineVersion: engineVersion, id: id)
         return ImportResult(mix: decodedMix, manifest: manifest, sourceHash: hash)
