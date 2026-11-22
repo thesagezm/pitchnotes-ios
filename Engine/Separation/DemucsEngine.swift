@@ -30,6 +30,8 @@ import DemucsShim
 //    (P-301 path); the 4-source run exists for the residual instrumental,
 //    not as multi-stem output.
 //  - `livePitch` returns the unvoiced frame — separation has no live path.
+//  - `pitchFrames` returns an empty (immediately-finished) stream — no batch
+//    pitch path in the separation engine; SwiftF0/PitchORT is the pitch engine.
 //  - Cancellation is checked before/after the (uninterruptible) vendor
 //    inference call; segment-boundary cancellation arrives with P-202's
 //    chunked driver (which will also own the abort-flag vendor patch).
@@ -76,7 +78,9 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard handle == nil else { return }
-        var status: Int32 = DEMUCS_SHIM_ERR_LOAD
+        // C enum constants import as `demucs_shim_status`; the shim's out-param
+        // is int32_t* — hand it the rawValue (Xcode 26 import semantics).
+        var status = DEMUCS_SHIM_ERR_LOAD.rawValue
         guard let h = modelPath.path.withCString({ p in
             demucs_shim_load(p, &status)
         }) else {
@@ -134,8 +138,8 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
 
         // C-8 separating progress: vendor cb → emitter (monotonic clamp);
         // reserve 0–5% for decode, 5–95% inference, 95–100% staging writes.
-        emitter.emit(stage: .separating, fraction: 0.05,
-                     detail: "demucs inference starting")
+        emitter.emit(ImportProgress(stage: .separating, fraction: 0.05,
+                                    detail: "demucs inference starting"))
         final class ProgressBox: @unchecked Sendable {
             let engine: DemucsEngine
             init(_ e: DemucsEngine) { engine = e }
@@ -147,7 +151,8 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
             // Map vendor [0,1] into the separating band [0.05, 0.95].
             let f = 0.05 + 0.9 * Double(max(0, min(1, fraction)))
             let d = detail.map { String(cString: $0) }
-            box.engine.emitter.emit(stage: .separating, fraction: f, detail: d)
+            box.engine.emitter.emit(ImportProgress(stage: .separating, fraction: f,
+                                                   detail: d))
         }
 
         var stems: UnsafeMutablePointer<Float>?
@@ -158,7 +163,7 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
                               &stems, &outN)
         }
         try Task.checkCancellation()
-        guard status == DEMUCS_SHIM_OK, let stems, outN > 0 else {
+        guard status == DEMUCS_SHIM_OK.rawValue, let stems, outN > 0 else {
             throw EngineError.separationFailed("demucs_shim_infer status \(status)")
         }
         defer { demucs_shim_free_buffer(stems) }
@@ -174,14 +179,16 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
             .appendingPathComponent("pitchnotes-sep-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         do {
-            emitter.emit(stage: .separating, fraction: 0.95, detail: "staging stems")
+            emitter.emit(ImportProgress(stage: .separating, fraction: 0.95,
+                                        detail: "staging stems"))
             let vocalsURL = staging.appendingPathComponent("vocals.wav")
             let instrumentalURL = staging.appendingPathComponent("instrumental.wav")
             try PCMWavWriter.write(url: vocalsURL, samples: mapped.vocals.mono(),
                                    sampleRate: 44100, channels: 1)
             try PCMWavWriter.write(url: instrumentalURL, samples: mapped.instrumental.samples,
                                    sampleRate: 44100, channels: 2)
-            emitter.emit(stage: .separating, fraction: 1.0, detail: "separation complete")
+            emitter.emit(ImportProgress(stage: .separating, fraction: 1.0,
+                                        detail: "separation complete"))
             return [.vocals: vocalsURL, .instrumental: instrumentalURL]
         } catch {
             try? FileManager.default.removeItem(at: staging)
@@ -199,5 +206,13 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
     public func livePitch(_ chunk: MicChunk) -> PitchFrame {
         PitchFrame(t: chunk.captureTime_s, hz: 0.0, confidence: 0.0,
                    loudness_db: -120.0, engine_id: "RIBBON_MPM_YIN", lookahead_ms: 0)
+    }
+
+    /// Separation engine owns no batch pitch path (SwiftF0/PitchORT is the
+    /// pitch engine) — always an empty, immediately-finished stream. Mirrors
+    /// the documented "livePitch returns unvoiced" M2 scope honesty.
+    public func pitchFrames(_ audio: DecodedAudio, fmin: Double,
+                            fmax: Double) async throws -> PitchFrameStream {
+        PitchFrameStream(AsyncStream<PitchFrame> { $0.finish() })
     }
 }
