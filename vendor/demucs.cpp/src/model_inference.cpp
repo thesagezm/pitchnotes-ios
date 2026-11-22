@@ -13,6 +13,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <unsupported/Eigen/FFT>
 #include <unsupported/Eigen/MatrixFunctions>
@@ -43,6 +44,21 @@ static void reflect_padding(Eigen::MatrixXf &padded_mix,
         padded_mix.block(0, N + left_padding + i, 2, 1) =
             mix.block(0, N - 1 - i, 2, 1);
     }
+}
+
+
+// P-201 THREADING PATCH (D-32.4): branch-parallel freq/time pairs. DEMUCSCPP_NUM_THREADS: unset/1 =
+// exact stock serial behavior; >= 2 = parallel pairs (disjoint buffers —
+// bit-identical output, see Tests/Spikes/apply_demucs_threading.py).
+static int demucscpp_thread_pair_threshold(void)
+{
+    const char *env = std::getenv("DEMUCSCPP_NUM_THREADS");
+    int n = env ? std::atoi(env) : 1;
+    return n < 2 ? 1 : 2; // LETO X-202 correction: script emitted `? 2 : n`, which
+                          // inverted the env semantics (unset/1 would run PARALLEL,
+                          // explicit 2/4 SERIAL) vs the documented contract above.
+                          // `? 1 : 2` + the sites' `== 2` test = docstring-true:
+                          // unset/1 -> serial stock, >= 2 -> parallel pairs.
 }
 
 void demucscpp::model_inference(
@@ -152,10 +168,17 @@ void demucscpp::model_inference(
 
     // apply tenc, enc
 
-    demucscpp::apply_time_encoder(model, 0, buffers.xt, buffers.xt_0);
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            demucscpp::apply_time_encoder(model, 0, buffers.xt, buffers.xt_0);
+        });
+        demucscpp::apply_freq_encoder(model, 0, buffers.x, buffers.x_0);
+        t.join();
+    } else {
+        demucscpp::apply_time_encoder(model, 0, buffers.xt, buffers.xt_0);
+        demucscpp::apply_freq_encoder(model, 0, buffers.x, buffers.x_0);
+    }
     cb(current_progress + segment_progress * 1.0f / 26.0f, "Time encoder 0");
-
-    demucscpp::apply_freq_encoder(model, 0, buffers.x, buffers.x_0);
     cb(current_progress + segment_progress * 2.0f / 26.0f, "Freq encoder 0");
 
     // absorb both scaling factors in one expression
@@ -184,28 +207,49 @@ void demucscpp::model_inference(
     cb(current_progress + segment_progress * 2.0f / 26.0f,
        "Freq branch: applied frequency embedding");
 
-    apply_time_encoder(model, 1, buffers.xt_0, buffers.xt_1);
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            apply_time_encoder(model, 1, buffers.xt_0, buffers.xt_1);
+        });
+        apply_freq_encoder(model, 1, buffers.x_0, buffers.x_1);
+        t.join();
+    } else {
+        apply_time_encoder(model, 1, buffers.xt_0, buffers.xt_1);
+        apply_freq_encoder(model, 1, buffers.x_0, buffers.x_1);
+    }
     cb(current_progress + segment_progress * 3.0f / 26.0f, "Time encoder 1");
-
-    apply_freq_encoder(model, 1, buffers.x_0, buffers.x_1);
     cb(current_progress + segment_progress * 4.0f / 26.0f, "Freq encoder 1");
 
     buffers.saved_1 = buffers.x_1;
     buffers.savedt_1 = buffers.xt_1;
 
-    apply_time_encoder(model, 2, buffers.xt_1, buffers.xt_2);
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            apply_time_encoder(model, 2, buffers.xt_1, buffers.xt_2);
+        });
+        apply_freq_encoder(model, 2, buffers.x_1, buffers.x_2);
+        t.join();
+    } else {
+        apply_time_encoder(model, 2, buffers.xt_1, buffers.xt_2);
+        apply_freq_encoder(model, 2, buffers.x_1, buffers.x_2);
+    }
     cb(current_progress + segment_progress * 5.0f / 26.0f, "Time encoder 2");
-
-    apply_freq_encoder(model, 2, buffers.x_1, buffers.x_2);
     cb(current_progress + segment_progress * 6.0f / 26.0f, "Freq encoder 2");
 
     buffers.saved_2 = buffers.x_2;
     buffers.savedt_2 = buffers.xt_2;
 
-    apply_time_encoder(model, 3, buffers.xt_2, buffers.xt_3);
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            apply_time_encoder(model, 3, buffers.xt_2, buffers.xt_3);
+        });
+        apply_freq_encoder(model, 3, buffers.x_2, buffers.x_3);
+        t.join();
+    } else {
+        apply_time_encoder(model, 3, buffers.xt_2, buffers.xt_3);
+        apply_freq_encoder(model, 3, buffers.x_2, buffers.x_3);
+    }
     cb(current_progress + segment_progress * 7.0f / 26.0f, "Time encoder 3");
-
-    apply_freq_encoder(model, 3, buffers.x_2, buffers.x_3);
     cb(current_progress + segment_progress * 8.0f / 26.0f, "Freq encoder 3");
 
     buffers.saved_3 = buffers.x_3;
@@ -311,36 +355,72 @@ void demucscpp::model_inference(
     // now decoder time!
 
     // skip == saved_3
-    demucscpp::apply_freq_decoder(model, 0, buffers.x_3, buffers.x_2,
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            demucscpp::apply_freq_decoder(model, 0, buffers.x_3, buffers.x_2,
                                   buffers.saved_3);
-    cb(current_progress + segment_progress * 19.0f / 26.0f, "Freq: decoder 0");
-
-    demucscpp::apply_time_decoder(model, 0, buffers.xt_3, buffers.xt_2,
+        });
+        demucscpp::apply_time_decoder(model, 0, buffers.xt_3, buffers.xt_2,
                                   buffers.savedt_3);
+        t.join();
+    } else {
+        demucscpp::apply_freq_decoder(model, 0, buffers.x_3, buffers.x_2,
+                                  buffers.saved_3);
+        demucscpp::apply_time_decoder(model, 0, buffers.xt_3, buffers.xt_2,
+                                  buffers.savedt_3);
+    }
+    cb(current_progress + segment_progress * 19.0f / 26.0f, "Freq: decoder 0");
     cb(current_progress + segment_progress * 20.0f / 26.0f, "Time: decoder 0");
 
-    demucscpp::apply_freq_decoder(model, 1, buffers.x_2, buffers.x_1,
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            demucscpp::apply_freq_decoder(model, 1, buffers.x_2, buffers.x_1,
                                   buffers.saved_2);
-    cb(current_progress + segment_progress * 21.0f / 26.0f, "Freq: decoder 1");
-
-    demucscpp::apply_time_decoder(model, 1, buffers.xt_2, buffers.xt_1,
+        });
+        demucscpp::apply_time_decoder(model, 1, buffers.xt_2, buffers.xt_1,
                                   buffers.savedt_2);
+        t.join();
+    } else {
+        demucscpp::apply_freq_decoder(model, 1, buffers.x_2, buffers.x_1,
+                                  buffers.saved_2);
+        demucscpp::apply_time_decoder(model, 1, buffers.xt_2, buffers.xt_1,
+                                  buffers.savedt_2);
+    }
+    cb(current_progress + segment_progress * 21.0f / 26.0f, "Freq: decoder 1");
     cb(current_progress + segment_progress * 22.0f / 26.0f, "Time: decoder 1");
 
-    demucscpp::apply_freq_decoder(model, 2, buffers.x_1, buffers.x_0,
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            demucscpp::apply_freq_decoder(model, 2, buffers.x_1, buffers.x_0,
                                   buffers.saved_1);
-    cb(current_progress + segment_progress * 23.0f / 26.0f, "Freq: decoder 2");
-
-    demucscpp::apply_time_decoder(model, 2, buffers.xt_1, buffers.xt_0,
+        });
+        demucscpp::apply_time_decoder(model, 2, buffers.xt_1, buffers.xt_0,
                                   buffers.savedt_1);
+        t.join();
+    } else {
+        demucscpp::apply_freq_decoder(model, 2, buffers.x_1, buffers.x_0,
+                                  buffers.saved_1);
+        demucscpp::apply_time_decoder(model, 2, buffers.xt_1, buffers.xt_0,
+                                  buffers.savedt_1);
+    }
+    cb(current_progress + segment_progress * 23.0f / 26.0f, "Freq: decoder 2");
     cb(current_progress + segment_progress * 24.0f / 26.0f, "Time: decoder 2");
 
-    demucscpp::apply_freq_decoder(model, 3, buffers.x_0, buffers.x_out,
+    if (demucscpp_thread_pair_threshold() == 2) {
+        std::thread t([&]() {
+            demucscpp::apply_freq_decoder(model, 3, buffers.x_0, buffers.x_out,
                                   buffers.saved_0);
-    cb(current_progress + segment_progress * 25.0f / 26.0f, "Freq: decoder 3");
-
-    demucscpp::apply_time_decoder(model, 3, buffers.xt_0, buffers.xt_out,
+        });
+        demucscpp::apply_time_decoder(model, 3, buffers.xt_0, buffers.xt_out,
                                   buffers.savedt_0);
+        t.join();
+    } else {
+        demucscpp::apply_freq_decoder(model, 3, buffers.x_0, buffers.x_out,
+                                  buffers.saved_0);
+        demucscpp::apply_time_decoder(model, 3, buffers.xt_0, buffers.xt_out,
+                                  buffers.savedt_0);
+    }
+    cb(current_progress + segment_progress * 25.0f / 26.0f, "Freq: decoder 3");
     cb(current_progress + segment_progress * 26.0f / 26.0f, "Time: decoder 3");
 
     cb(current_progress + segment_progress, "Mask + istft");
