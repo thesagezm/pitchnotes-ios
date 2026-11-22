@@ -386,6 +386,32 @@ The M0 drawing's 4-stage bar and the "Remove instruments?" toggle are both
 - Seam: `ScriptedImportEngine` (paced mock, C-8-shaped) stands in for Paul's
   real engine until **P-204** — same `ProgressReportingEngine` protocol
   surface, ZERO view changes at the swap (M1 preset precedent).
+- **AS-BUILT v0.3 (J-208, session 6): WHICH ENGINE, SAID TWICE.** The engine
+  is chosen behind one seam (`ImportEngineFactory` → `ImportEngineHandle`),
+  never by a view. The screen states it in two moments:
+  1. **BEFORE the import** (the setup screen): what the NEXT import will do —
+     *"Real engine (htdemucs fp16) — ready."* (engine in the build + weights
+     on the device) · *"… the model is not on this device yet (Settings →
+     Models)."* (engine in, weights missing) · the mock line (no engine in
+     this build) · and, when the weights are on the device but the build has
+     no real engine, an explicit warning that the import will FAIL rather
+     than quietly run the mock. The rule lives in one pure, tested function
+     (`ImportEngineAvailability.resolve(compiledIn:modelPresent:)`) and the
+     compile-time half is one flag (`RealEngineBuild.isCompiledIn`).
+  2. **AFTER the import** (the done screen): which engine ACTUALLY ran —
+     *"Real engine (htdemucs fp16)."* vs *"DEMO ENGINE (mock) — no real
+     separation was run."* The mock line is loud on purpose: the M2 gate does
+     not accept the mock path (D-12 honesty in BOTH directions — a real build
+     must not look like a mock one, and a mock build must not look like a
+     real one).
+- **AS-BUILT v0.3 (J-207, session 6): the bundled manifest is found in
+  EITHER bundle layout.** XcodeGen can place `Models/manifest.json` at the
+  bundle root (single file in `sources:`) or under a `Models/` subfolder
+  (directory in `sources:`); the Models screen tries both, in an explicit
+  order, and prints where it found it ("Manifest: Models/manifest.json.") so
+  the demo shows the layout instead of guessing. Without this, a legal
+  one-line wiring could produce a false "this build has no bundled model
+  manifest" — a demo failure that looks like a missing one-liner.
 
 Failure states (unchanged from the drawing, as shipped): unsupported file →
 `.unsupportedFile`; permission denied → system prompt + retry hint; disk full
