@@ -313,6 +313,22 @@ struct TunerRibbonView: View {
 
     private var controls: some View {
         VStack(spacing: Token.Spacing.s2) {
+            // J-205/D-22: visible only when a song context (J-203) sets a
+            // resolved offset ≥ the chip threshold — demo/standalone modes
+            // carry 0 and stay chip-free. Copy comes from PitchLogic
+            // (TuningDisplay), unit-tested states, never view-local math.
+            let tuning = TuningDisplay(resolvedCents: model.tuningOffset)
+            if tuning.showsChip {
+                Label(tuning.label, systemImage: "tuningfork")
+                    .font(Token.Fonts.caption)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Token.Spacing.s3)
+                    .padding(.vertical, Token.Spacing.s2)
+                    .background(Color.octaveWarn.opacity(0.15), in: Capsule())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Recording tuning: \(tuning.label)")
+            }
             Picker("Tolerance", selection: $model.tolerance) {
                 ForEach(RibbonTolerance.allCases) { t in
                     Text(t.label).tag(t)

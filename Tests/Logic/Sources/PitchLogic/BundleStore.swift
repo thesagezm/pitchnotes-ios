@@ -24,15 +24,22 @@ public struct BundleRecord: Codable, Identifiable, Equatable, Sendable {
     public let sourceBookmark: Data?
     public let addedAt: Date
     public let duration_s: Double
+    /// J-205/D-22: the user's tuning-reference override (UI-owned state in
+    /// the index — the manifest's `tuning_cents` itself is engine-authored
+    /// and never rewritten). Optional + defaulted: pre-J-205 index JSON
+    /// (and pre-J-205 call sites) decode unchanged.
+    public let tuningOverride: TuningOverride?
 
     public init(id: String, title: String, sourceFileName: String,
-                sourceBookmark: Data?, addedAt: Date, duration_s: Double) {
+                sourceBookmark: Data?, addedAt: Date, duration_s: Double,
+                tuningOverride: TuningOverride? = nil) {
         self.id = id
         self.title = title
         self.sourceFileName = sourceFileName
         self.sourceBookmark = sourceBookmark
         self.addedAt = addedAt
         self.duration_s = duration_s
+        self.tuningOverride = tuningOverride
     }
 }
 
@@ -172,6 +179,32 @@ public struct BundleStore: Sendable {
             return nil
         }
         return try? JSONDecoder().decode(SongManifest.self, from: data)
+    }
+
+    // MARK: - Tuning override (J-205, D-22)
+
+    /// Persists the user's tuning-reference override for one song (nil clears
+    /// back to the recording default). Pure index edit — the manifest and the
+    /// stored audio are never touched (D-22 byte-true rule).
+    public func setTuningOverride(_ override: TuningOverride?, forID id: String) throws {
+        var records = loadIndex()
+        guard let index = records.firstIndex(where: { $0.id == id }) else {
+            throw BundleStoreError.bundleNotFound(id)
+        }
+        records[index] = BundleRecord(
+            id: records[index].id,
+            title: records[index].title,
+            sourceFileName: records[index].sourceFileName,
+            sourceBookmark: records[index].sourceBookmark,
+            addedAt: records[index].addedAt,
+            duration_s: records[index].duration_s,
+            tuningOverride: override)
+        try saveIndex(records)
+    }
+
+    /// The stored override for one song (nil = recording default / unknown id).
+    public func tuningOverride(forID id: String) -> TuningOverride? {
+        loadIndex().first { $0.id == id }?.tuningOverride
     }
 
     // MARK: - Staging + deletion

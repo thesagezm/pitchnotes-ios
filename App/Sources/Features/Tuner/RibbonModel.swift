@@ -69,6 +69,13 @@ final class RibbonModel: ObservableObject {
     @Published var sourceMode: RibbonSourceMode = .demo {
         didSet { if oldValue != sourceMode { rebuildSource() } }
     }
+    /// D-22/J-205: the song's resolved tuning-reference offset (+ = sharp).
+    /// 0 in demo/liveMic standalone modes (no song context — J-203 sets this
+    /// from the playing bundle's manifest/override). The REFERENCE offsets,
+    /// never the audio; the chip renders via TuningDisplay when non-zero.
+    @Published var tuningOffset: Int = 0 {
+        didSet { if oldValue != tuningOffset { redecideLastFrame() } }
+    }
 
     /// Reduce Motion (§7): snap the follow window instead of animating.
     var reduceMotion = false
@@ -171,7 +178,8 @@ final class RibbonModel: ObservableObject {
         let reference = self.reference(at: frame.t)
         let r = RibbonMapper.reading(frame: frame, reference: reference,
                                      tolerance: tolerance.cents,
-                                     octaveEquivalence: octaveEquivalence)
+                                     octaveEquivalence: octaveEquivalence,
+                                     referenceOffsetCents: tuningOffset)
         reading = r
 
         appendTrace(frame: frame, reading: r)
@@ -246,6 +254,7 @@ final class RibbonModel: ObservableObject {
         reading = RibbonMapper.reading(frame: frame,
                                        reference: reference(at: frame.t),
                                        tolerance: tolerance.cents,
-                                       octaveEquivalence: octaveEquivalence)
+                                       octaveEquivalence: octaveEquivalence,
+                                       referenceOffsetCents: tuningOffset)
     }
 }

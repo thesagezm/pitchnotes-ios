@@ -2,17 +2,23 @@ import SwiftUI
 import PitchLogic
 import EngineCore
 
-/// Debug bundle inspector (J-002 → X-006). Renders song.json / notes / pitch
-/// shapes and the honest EngineCore contract verdicts per file (disk truth —
-/// LibraryCatalog reads the materialized bundle, not the generating script).
-/// Ships in Settings → Developer; the first stop for bundle bug reports (UX §5.2).
+/// Debug bundle inspector (J-002 → X-006 → J-202/J-205). Renders song.json /
+/// notes / pitch shapes, the honest EngineCore contract verdicts per file
+/// (disk truth — LibraryCatalog reads the materialized bundle, not the
+/// generating script), and the D-22 tuning-reference section with override.
+/// The first stop for bundle bug reports (UX §5.2).
 struct BundleInspectorView: View {
     let song: LibrarySong
+    /// J-205: called when the user changes the tuning-reference override
+    /// (nil = back to the recording default). LibraryView wires this to the
+    /// store-backed model; nil default keeps other call sites compiling.
+    var onTuningOverrideChange: ((TuningOverride?) -> Void)?
 
     var body: some View {
         List {
             manifestSection
             provenanceSection
+            tuningSection
             validationSection
             partsSection
             originNotice
@@ -21,6 +27,93 @@ struct BundleInspectorView: View {
         .background(Color.pnBackground)
         .navigationTitle("Bundle Inspector")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Tuning reference (J-205, D-22)
+
+    /// Detected offset + user override. The reference offsets; the audio
+    /// never does. Demo rows and v0-era manifests show the honest "unknown".
+    @State private var manualCentsDraft: Double = 0
+    @State private var manualModeActive = false
+
+    private var detectedCents: Int? { song.tuningCents }
+    private var currentOverride: TuningOverride? { song.record?.tuningOverride }
+
+    private var tuningSection: some View {
+        Section {
+            if let detected = detectedCents {
+                let display = TuningDisplay(resolvedCents: TuningPolicy.resolvedCents(
+                    detected: detected, override: currentOverride))
+                HStack {
+                    Image(systemName: "tuningfork")
+                        .foregroundStyle(display.showsChip ? Color.octaveWarn : Color.inTune)
+                        .accessibilityHidden(true)
+                    Text(display.showsChip
+                         ? display.label
+                         : "Recording in tune with A440 (within \(TuningDisplay.defaultChipThreshold)c)")
+                        .font(Token.Fonts.caption)
+                }
+                .accessibilityElement(children: .combine)
+            } else {
+                field("Tuning estimate", "— (v0-era manifest; estimate arrives with P-207)")
+            }
+
+            if song.record != nil {
+                Picker("Reference", selection: overrideSelection) {
+                    Text("Recording").tag(0)
+                    Text("Force A440").tag(1)
+                    Text("Manual").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Tuning reference override")
+                .accessibilityHint("Recording follows the estimated offset; Force A440 ignores it; Manual sets cents")
+
+                if manualModeActive {
+                    Stepper(value: $manualCentsDraft, in: -50...50, step: 1) {
+                        Text("Offset \(Int(manualCentsDraft) >= 0 ? "+" : "−")\(abs(Int(manualCentsDraft)))c")
+                            .font(Token.Fonts.caption)
+                    }
+                    .accessibilityLabel("Manual offset, \(Int(manualCentsDraft)) cents")
+                    Button("Apply manual offset") {
+                        onTuningOverrideChange?(TuningOverride(
+                            mode: .manual, manualCents: Int(manualCentsDraft)))
+                    }
+                    .font(Token.Fonts.caption)
+                    .fontWeight(.semibold)
+                }
+            }
+        } header: {
+            Text("Tuning reference (D-22)")
+        } footer: {
+            Text("The grading REFERENCE offsets by this amount — your audio is never retuned (stored audio stays byte-true).")
+        }
+    }
+
+    /// Index of the active override mode; selecting Manual seeds the stepper
+    /// with the stored manual value (or the detected offset as a hint) and
+    /// shows the apply row; Recording/A440 immediately persist and dismiss it.
+    private var overrideSelection: Binding<Int> {
+        Binding(
+            get: {
+                switch currentOverride?.mode {
+                case .forceA440: return 1
+                case .manual: return 2
+                case .recording, .none: return 0
+                }
+            },
+            set: { tag in
+                switch tag {
+                case 0:
+                    manualModeActive = false
+                    onTuningOverrideChange?(nil)
+                case 1:
+                    manualModeActive = false
+                    onTuningOverrideChange?(TuningOverride(mode: .forceA440))
+                default:
+                    manualCentsDraft = Double(currentOverride?.manualCents ?? detectedCents ?? 0)
+                    manualModeActive = true
+                }
+            })
     }
 
     // MARK: - Manifest (C-2.1)

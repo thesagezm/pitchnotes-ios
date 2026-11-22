@@ -83,7 +83,9 @@ struct LibraryView: View {
                 Section("Songs") {
                     ForEach(model.songs) { song in
                         NavigationLink {
-                            BundleInspectorView(song: song)
+                            BundleInspectorView(song: song) { override in
+                                model.setTuningOverride(song, override: override)
+                            }
                         } label: {
                             SongRow(song: song)
                         }

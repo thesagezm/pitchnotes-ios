@@ -34,6 +34,10 @@ struct LibrarySong: Identifiable {
     /// J-202: bytes this bundle occupies on disk (0 for demo rows — their
     /// temporary-directory size is meaningless and would mislead).
     let bytesOnDisk: Int64
+    /// J-205/D-22: the manifest's `tuning_cents` when the bundle is a v1.0
+    /// manifest (nil = v0-era/unknown — the lane-local ManifestV1 decoder
+    /// rejects v0.x; callers treat nil as "no estimate yet").
+    let tuningCents: Int?
 
     var id: String { manifest.id }
     var allReportsValid: Bool { reports.allSatisfy(\.isValid) }
@@ -70,8 +74,11 @@ enum LibraryCatalog {
             return failedSong(id: record.id, error: BundleStoreError.bundleIncomplete(record.id),
                               record: record, bytesOnDisk: bytesOnDisk)
         }
+        // J-205: v1.0 manifests carry tuning_cents (D-22); v0-era → nil.
+        let tuning = (try? ManifestV1.decode(data))?.tuning_cents
         return assemble(manifest: manifest, in: dir,
-                        caption: "", record: record, bytesOnDisk: bytesOnDisk)
+                        caption: "", record: record, bytesOnDisk: bytesOnDisk,
+                        tuningCents: tuning)
     }
 
     private static func song(scenario: MockScenario, seed: UInt64, caption: String) -> LibrarySong {
@@ -108,7 +115,8 @@ enum LibraryCatalog {
     /// EngineCore validators (per-file reports) plus the file-level bundle pass
     /// (V1/V2/V3 stem reality/V10). This is the honesty layer: disk truth.
     private static func assemble(manifest: SongManifest, in dir: URL, caption: String,
-                                 record: BundleRecord? = nil, bytesOnDisk: Int64 = 0) -> LibrarySong {
+                                 record: BundleRecord? = nil, bytesOnDisk: Int64 = 0,
+                                 tuningCents: Int? = nil) -> LibrarySong {
         var reports: [BundleFileReport] = []
         var tracks: [Part: NoteTrack] = [:]
 
@@ -185,14 +193,16 @@ enum LibraryCatalog {
             reports: reports,
             scenarioCaption: caption,
             record: record,
-            bytesOnDisk: bytesOnDisk)
+            bytesOnDisk: bytesOnDisk,
+            tuningCents: tuningCents)
     }
 
     /// Materialization itself failed — one red report row, no crash.
     /// `caption` doubles as the honest reason ("tampered — must FAIL" for the
     /// demo, "bundle no longer readable" for a real import that went bad).
     private static func failedSong(id: String, error: Error, caption: String = "",
-                                   record: BundleRecord? = nil, bytesOnDisk: Int64 = 0) -> LibrarySong {
+                                   record: BundleRecord? = nil, bytesOnDisk: Int64 = 0,
+                                   tuningCents: Int? = nil) -> LibrarySong {
         let manifest = SongManifest(
             engineVersion: "unavailable",
             id: id,
@@ -211,6 +221,7 @@ enum LibraryCatalog {
                 violations: [ContractViolation("V1", "load error: \(error)")])],
             scenarioCaption: caption,
             record: record,
-            bytesOnDisk: bytesOnDisk)
+            bytesOnDisk: bytesOnDisk,
+            tuningCents: tuningCents)
     }
 }

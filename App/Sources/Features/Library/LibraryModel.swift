@@ -86,6 +86,27 @@ final class LibraryModel: ObservableObject {
             }
         }
     }
+
+    /// J-205/D-22: persists the tuning-reference override for one song (nil
+    /// clears to the recording default). Index edit only — audio byte-true.
+    func setTuningOverride(_ song: LibrarySong, override: TuningOverride?) {
+        guard let store, let record = song.record else { return }
+        Task {
+            let outcome = await Task.detached(priority: .userInitiated) { () -> String? in
+                do {
+                    try store.setTuningOverride(override, forID: record.id)
+                    return nil
+                } catch {
+                    return "Could not save the tuning override for “\(record.title)”."
+                }
+            }.value
+            if let message = outcome {
+                loadErrorMessage = message
+            } else {
+                await load()
+            }
+        }
+    }
 }
 
 /// Everything one detached load pass produces, shipped back to the main actor
