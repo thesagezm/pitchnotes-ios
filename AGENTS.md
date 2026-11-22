@@ -270,10 +270,12 @@ mir_eval/museval metrics: F1@50c, RPA/RCA, SDR/NSDR, note onset F1).
 
 ## 9. License & sourcing rules (Leto audits every merge)
 
-- **Ship-safe (MIT/Apache/BSD):** SwiftF0, demucs.cpp, basicpitch.cpp, windowed-roformer,
+- **Ship-safe (MIT/Apache/BSD, + MPL-2.0 for unmodified header-only use per D-32.5):**
+SwiftF0, demucs.cpp, basicpitch.cpp, windowed-roformer,
 MSST, python-audio-separator (prep only), spotify/basic-pitch, CREPE, silero-vad,
 signalsmith-stretch, TinySoundFont, tonaljs, VexFlow, OSMD, mir_eval, museval, libfmp,
-partitura, pyroomacoustics, pedalboard, ONNX Runtime, **dettato transcriber + evidence
+partitura, pyroomacoustics, pedalboard, ONNX Runtime, Eigen (MPL-2.0, vendored
+unmodified at demucs.cpp's submodule pin — D-32.5), **dettato transcriber + evidence
 weights (Apache-2.0, clean training data — D-21/D-26; any dettato-derived port/weights
 MUST carry the upstream NOTICE attribution in our NOTICE file + in-app licenses screen)**.
 - **STUDY-ONLY, never link/ship (copyleft):** Nightingale, Performous, USDX, Vocaluxe,
@@ -288,11 +290,23 @@ checkpoints, SepACap, NanoPitch LICENSE file, **BS-Roformer-SW checkpoint, MVSep
 53-stem checkpoint (both PENDING → X-310; gate P-605), dettato-evidence (card verified
 clean 2026-11-21 — soundfont-babies file licenses residual)**. Leto records each
 verification in DECISIONS.md. Unknown license = not shipped.
+- **Weights provenance — THREE-TIER POLICY (D-30, 2026-11-22):** every model/weights
+  decision is classified Tier A/B/C in DECISIONS before it ships.
+  **Tier A SHIP:** explicit permissive license on code AND weights + clean/CC/permissive
+  training data (or no training data — pure DSP). **Tier B SHIP WITH RECORDED RISK:**
+  weights carry an explicit permissive license but upstream training data has NC terms
+  or is undocumented — provenance + risk recorded in DECISIONS, **HUMAN SIGN-OFF before
+  any commercial/App Store distribution**, never represented as "clean" (honest licenses
+  screen). Current Tier B: htdemucs weights (MIT © Meta; trained on MUSDB18 CC BY-NC-SA
+  + undocumented 800-song extra set — verified @e976d93e, D-30), dettato-grouper/drums
+  (Apache-2.0; MUSDB18/IRMAS — functionally skipped in v1 anyway, D-21.3), community
+  RoFormer checkpoints only after X-310 verification. **Tier C REFUSE:** no explicit
+  license, explicitly NC-licensed weights, or weights WE train on NC data.
 - **Training data:** GTSinger (CC BY-NC-SA) and M4Singer (CC BY-NC) are BANNED for
-commercial weight training; **dettato-grouper and dettato-drums WEIGHTS are likewise
-banned from shipping (MUSDB18/IRMAS non-commercial training data — D-21.3; the grouper
-ARCHITECTURE/decode may be reimplemented and retrained on clean synthetic SATB via
-X-301)**. Commercial-safe path = synthetic SATB (hymn MIDI +
+commercial weight training (D-30 Tier C — we never CREATE NC-trained weights; D-7's
+NanoPitch-on-GTSinger fallback stays banned). **The grouper ARCHITECTURE/decode may be
+reimplemented and retrained on clean synthetic SATB via X-301** (D-21.3). Commercial-safe
+path = synthetic SATB (hymn MIDI +
 permissive voicebanks + church IRs) + CC-BY corpora (VocalSet, SingStyle111) + PD
 hymn scores. User-uploaded audio is processed locally only; never redistribute stems.
 - New dependency rule: any new repo/model/dataset enters via a queue task with
@@ -329,7 +343,10 @@ only; if it isn't in the repo, it didn't happen.
 - No Python/PyTorch on device; no second ML runtime; no CoreML-only models (CPU path must exist).
 - No committing weights, generated .xcodeproj, dist/, or >1 MB audio fixtures.
 - No direct commits to main; no merging another agent's branch; no force-push to shared refs.
-- No copyleft code in shipped targets; no NC-licensed training data for commercial weights.
+- No copyleft code in shipped targets; no NC-licensed training data for weights WE train
+  (D-30 Tier C). Upstream permissive-license weights whose upstream training data has NC
+  terms ship ONLY under D-30 Tier B (provenance + risk recorded; human sign-off before
+  any commercial/App Store distribution).
 - No "waiting for CI" as a blocked state; no silent scope changes (PLAN.md changes go through Leto).
 - No re-litigating DECISIONS.md rulings within the same milestone.
 - Do not promise perfect 5-way separation: design for bleed (focus mixes, confidence,
