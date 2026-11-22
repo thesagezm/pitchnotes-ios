@@ -16,11 +16,13 @@ final class OnnxSileroVADInferenceTests: XCTestCase {
             URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent().deletingLastPathComponent()
                 .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
                 .appendingPathComponent("Models/downloads"),
         ]
         let manifest = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("Models/manifest.json")
         for cache in candidates {
             if let url = try? SwiftF0ModelStore.locateSilero(manifestURL: manifest, cacheDir: cache) {

@@ -21,11 +21,13 @@ final class OnnxSwiftF0InferenceTests: XCTestCase {
             URL(fileURLWithPath: #filePath) // repo-root fallback below
                 .deletingLastPathComponent().deletingLastPathComponent()
                 .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent()
                 .appendingPathComponent("Models/downloads"),
         ]
         let manifest = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
             .appendingPathComponent("Models/manifest.json")
         for cache in candidates {
             if let url = try? SwiftF0ModelStore.locateSwiftF0(manifestURL: manifest, cacheDir: cache) {
