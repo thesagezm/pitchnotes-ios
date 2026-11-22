@@ -343,18 +343,19 @@ jobs:
       # on main this becomes a permanent no-op — remove it then.
       - name: Drop Engine/Separation source entries when bridge files are absent (X-201)
         run: |
-          if [ ! -f Engine/Separation/DemucsEngine.swift ]; then
-            python3 - <<'PY'
-            import re
-            s = open('project.yml').read()
-            s2 = re.sub(r'^      - path: Engine/Separation/\S+\n        optional: true\n', '', s, flags=re.M)
-            assert s2 != s, 'expected Engine/Separation optional entries in project.yml'
-            open('project.yml', 'w').write(s2)
-            print('bridge files absent — Engine/Separation entries stripped (branch-state adapter)')
-            PY
-          else
-            echo "bridge files present — entries kept (full DemucsEngine compile)"
-          fi
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          if Path('Engine/Separation/DemucsEngine.swift').exists():
+              print('bridge files present — entries kept (full DemucsEngine compile)')
+              raise SystemExit(0)
+          p = Path('project.yml')
+          s = p.read_text()
+          s2 = re.sub(r'^      - path: Engine/Separation/\S+\n        optional: true\n', '', s, flags=re.M)
+          assert s2 != s, 'expected Engine/Separation optional entries in project.yml'
+          p.write_text(s2)
+          print('bridge files absent — Engine/Separation entries stripped (branch-state adapter)')
+          PY
 
       - name: Generate Xcode project
         run: xcodegen generate
