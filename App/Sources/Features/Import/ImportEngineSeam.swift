@@ -88,11 +88,31 @@ enum ImportEngineResolver {
     /// - Parameter modelURL: the VERIFIED htdemucs ggml path (J-207's cache),
     ///   nil when the weights were never downloaded.
     static func factory(modelURL: URL?) -> ImportEngineFactory {
-        #if canImport(DemucsShim)
+        #if canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
         return RealImportEngineFactory(modelURL: modelURL)
         #else
+        // This build cannot run a real separation. If the weights are ALREADY
+        // on the device the user expects a real separation — failing honestly
+        // beats silently running the mock (D-12 honesty; the mock path does
+        // not satisfy the M2 gate).
+        if modelURL != nil {
+            return UnavailableRealEngineFactory(
+                reason: "this build does not include the real separation engine")
+        }
         return MockImportEngineFactory()
         #endif
+    }
+}
+
+/// The real engine is not compiled into this build (or could not be used):
+/// the import FAILS with the reason instead of quietly running the mock.
+struct UnavailableRealEngineFactory: ImportEngineFactory {
+
+    let reason: String
+
+    func makeEngine(bundleRoot: URL) throws -> ImportEngineHandle {
+        throw ImportError.engineFailure(
+            "Real separation is not available: \(reason). A demo import on the mock engine is not a real separation.")
     }
 }
 
