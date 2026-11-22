@@ -154,7 +154,7 @@ public final class MicCaptureEngine: @unchecked Sendable {
         guard let conv = converter, let target16kMono = targetFormat else { return }
 
         // Capacity for the worst case: ratio rounded up + converter overhead.
-        let ratio = CaptureSpec.targetSampleRate / buffer.format.sampleRate
+        let ratio = Double(CaptureSpec.targetSampleRate) / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1024)
         guard let out = AVAudioPCMBuffer(pcmFormat: target16kMono, frameCapacity: capacity) else { return }
 
@@ -173,7 +173,8 @@ public final class MicCaptureEngine: @unchecked Sendable {
               let channel = out.floatChannelData?[0] else { return }
         if status == .error { return }
 
-        let samples = Array(UnsafeBufferPointer(start: channel, count: Int(out.frameLength)))
+        let samples = Array(UnsafeBufferPointer<Float>(start: UnsafePointer(channel),
+                                                       count: Int(out.frameLength)))
         // captureTime: when the tap fired (process wall clock, seconds).
         let now = ProcessInfo.processInfo.systemUptime
         pipeline.submit(samples, sampleRate: CaptureSpec.targetSampleRate, captureTime_s: now)

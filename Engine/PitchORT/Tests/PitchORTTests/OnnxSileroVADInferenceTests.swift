@@ -32,7 +32,10 @@ final class OnnxSileroVADInferenceTests: XCTestCase {
 
     private func sine(_ hz: Double, seconds: Double, amplitude: Float = 0.5) -> [Float] {
         let n = Int(seconds * Double(SileroVADSpec.sampleRate))
-        return (0..<n).map { Float(amplitude * sin(2.0 * .pi * hz * Double($0) / Double(SileroVADSpec.sampleRate))) }
+        // Precompute the radian step: the one-liner type-check-timeout-crashes
+        // the compiler (X-013, run 44981256783).
+        let w = 2.0 * Double.pi * hz / Double(SileroVADSpec.sampleRate)
+        return (0..<n).map { i in Float(amplitude) * Float(sin(w * Double(i))) }
     }
 
     func testSilenceGatedAndVoiceDetected() throws {
@@ -53,14 +56,14 @@ final class OnnxSileroVADInferenceTests: XCTestCase {
         // over the same audio with different chunk splits produce identical probs.
         let model = try locateModel()
         let audio = sine(146.83, seconds: 3.0)
-        let s1 = SileroVADStream(inference: OnnxSileroVADInference(modelURL: model))
+        let s1 = SileroVADStream(inference: try OnnxSileroVADInference(modelURL: model))
         var byMic: [Float] = []
         var i = 0
         while i < audio.count {
             byMic += try s1.push(Array(audio[i..<min(i + 640, audio.count)])) // 40 ms mic chunks
             i += 640
         }
-        let s2 = SileroVADStream(inference: OnnxSileroVADInference(modelURL: model))
+        let s2 = SileroVADStream(inference: try OnnxSileroVADInference(modelURL: model))
         var by32ms: [Float] = []
         i = 0
         while i < audio.count {

@@ -37,7 +37,10 @@ final class OnnxSwiftF0InferenceTests: XCTestCase {
 
     private func sine(_ hz: Double, seconds: Double, amplitude: Float = 0.5) -> [Float] {
         let n = Int(seconds * Double(SwiftF0Spec.sampleRate))
-        return (0..<n).map { Float(amplitude * sin(2.0 * .pi * hz * Double($0) / Double(SwiftF0Spec.sampleRate))) }
+        // Precompute the radian step: the one-liner type-check-timeout-crashes
+        // the compiler (X-013, run 44981256783).
+        let w = 2.0 * Double.pi * hz / Double(SwiftF0Spec.sampleRate)
+        return (0..<n).map { i in Float(amplitude) * Float(sin(w * Double(i))) }
     }
 
     func testOnnxSessionDetectsSteadyToneWithin20Cents() throws {
