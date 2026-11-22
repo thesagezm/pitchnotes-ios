@@ -254,7 +254,7 @@ M3+ adds bars/tracks from bundles. J-101 must keep rendering decoupled from
 scheduling: frames arrive on the engine queue; drawing consumes the latest complete
 frame (never queues stale frames — < 100 ms rule).
 
-### 3.9 Ribbon as-built (v0.1, M1 — J-101; supersedes the M1 note above)
+### 3.9 Ribbon as-built (v0.2, M1 — J-101 + J-105 swap; supersedes the M1 note above)
 
 **Supersession:** M1 DOES render reference bars — the MockEngine script provides
 C-2.3 NoteTracks, so bars render whenever a track exists (real bundles from M2
@@ -268,19 +268,49 @@ reference):
 | REFERENCE (default) | the active note of the part's NoteTrack at `t` (`NoteTrackQuery.currentNote`, C-2.3 `midi`+`cents_ref`) | full §3.4 table: inTune/flat/sharp + §3.5 octave badge |
 | TUNER (fallback) | nearest equal-tempered semitone of the sung hz | gap/rest or no track: `|dev| ≤ 50¢` is structural — the nearest semitone re-centers, so out-of-tune flat/sharp CANNOT occur without a reference (tested: `testStandaloneTunerNeverExceedsHalfSemitoneDeviation`) |
 
-**Implementation map** (J-101; logic-tests cover every decision):
+**J-105 swap executed (2026-11-22, on main @6ddc159 base):** the C-6.0 zero-UI
+contract holds — the swap touched sources and glue only; the Canvas, state
+table, mapping, and a11y code are untouched.
+
+- `RibbonFrameSource` (the C-6 seam) now has TWO conformers:
+  - `MockRibbonFrameSource` — scripted MockEngine singer (unchanged).
+  - `LivePitchEngineRibbonSource` — **the REAL causal source**:
+    `LivePitchFacade.ribbonFrame(_:)` ONLY (engine_id `RIBBON_MPM_YIN`,
+    lookahead_ms 0, D-17/D-19 Swift MPM via EngineCore `RibbonEngine`). The
+    SwiftF0 176 ms `gradingSource` is NEVER a live-ribbon source (C-6.0).
+- `RibbonModel.SourceMode` (`demo` | `liveMic`, default `demo`) picks the
+  conformer; the selector sits next to the demo menu in the tuner controls.
+  `liveMic` = TUNER semantics (no reference track — empty NoteTrack, honest
+  free-singing per D-12).
+- Mic chunks flow through `MicChunkProviding` (push seam, hop-aligned 16 kHz
+  chunks): `MicCaptureChunkSource` (Paul's P-104 `MicCaptureEngine` — its doc
+  names `facade.ribbonFrame(chunk)` as the intended body) is compiled behind
+  `#if canImport(MicCapture)` and activates with ZERO code changes when Leto
+  re-wires the package into the app target (X-011a; X-013 compile fixes live
+  on origin/paul). Until then `SilenceMicChunkSource` feeds hop-aligned
+  silence: REAL ribbon DSP cost and RTF, honest unvoiced output — never fake
+  signal.
+- Demo-singer menu: KEPT until X-011a lands (the M1 device demo runs before
+  mic capture wires in); removal is then a one-line change recorded here.
+- `PitchLogic.PartRangePresets` (interim C-6.1 table) is DELETED —
+  `EngineCore.PartRangePresets` (P-105) is the single contract source;
+  `PitchLogic.PartRangeChips` derives the UI rows (chip labels, C-1 order,
+  follow-window center). The verbatim C-6.1 doc-value tests now pin the
+  EngineCore table through the adapter (`LivePitchEngineSwapTests`).
+
+**Implementation map** (J-101 + J-105; logic-tests cover every decision):
 
 - `PitchLogic` (pure, tested): `RibbonMapper` (state table + octave folding +
   unvoiced gate `hz == 0 || confidence < 0.5`; low-confidence flag
-  `0.5 ≤ conf < 0.75`), `PartRangePresets` (C-6.1 verbatim), `NoteTrackQuery`
-  (active note + window), `PitchMath` (cents/fold/note names), `PartDisplay`.
-- `App/Features/Tuner` (render only): `RibbonFrameSource` protocol —
-  **the P-105 swap seam**: `MockRibbonFrameSource` (62.5 Hz wall-clock driver
-  over `MockEngine.livePitch`) today; `LivePitchEngine.ribbonFrame` (D-17
-  causal MPM/YIN) at P-105 with ZERO view changes; the SwiftF0 176 ms
-  `gradingSource` is NEVER a live-ribbon source (C-6.0). `RibbonModel`
-  (reference resolution, 2 s trace, follow window, ≤ 1 Hz VoiceOver summary).
-  `TunerRibbonView` (Canvas; §3.8 wireframe + demo-singer menu).
+  `0.5 ≤ conf < 0.75`), `PartRangeChips` (UI layer over the EngineCore C-6.1
+  table), `NoteTrackQuery` (active note + window), `PitchMath`
+  (cents/fold/note names), `PartDisplay`.
+- `App/Features/Tuner` (render + source glue): `RibbonFrameSource` protocol +
+  the two conformers above (C-6.0 swap DONE); `LivePitchEngineRibbonSource`
+  (facade + `MicChunkProviding`; C-6.0 identity READ OFF FRAMES, never
+  rewritten); `RibbonModel` (reference resolution, 2 s trace, follow window,
+  ≤ 1 Hz VoiceOver summary, source mode). `TunerRibbonView` (Canvas; §3.8
+  wireframe + source/demo menu).
 - `App/Features/Audio` (J-102): `AudioSessionController` (permission/
   interruption/route glue over `MicPermissionFlow`), `MicAccessBanners`,
   `MicMeterRow`, `LatencyStubRow` (§5.8).
@@ -302,7 +332,8 @@ reference):
   are a11y-hidden (the numeric readout is the value).
 - Demo-singer menu (mock scenarios: perfect/flat/sharp/octave/breathy/silent/
   late-onset/vibrato) — the M1 device demo exercises every §3.4 state without
-  a human singing; removed when P-104 real mic lands.
+  a human singing; KEPT while capture is unwired (X-011a pending), removed at
+  that re-wiring (one-line change; J-105 keeps both sources selectable).
 
 ---
 
@@ -637,9 +668,14 @@ IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
    never overlaps chips. Dark mode: palette flips. Reduce Motion: center
    snapping instead of glide.
 9. **Debug screen** (Settings → Developer → Live pitch debug): RTF EMA + worst
-   vs the ≤ 0.3 §8 target line (mock baseline — record the number in QUEUE
-   LOG for BENCHMARKS.md), hz/confidence/loudness strips move, engine selector
-   visible-but-disabled (P-105), device/thermal rows.
+   vs the ≤ 0.3 §8 target line — **J-105: this now measures the REAL ribbon**
+   (RibbonEngine MPM/YIN via `ribbonFrame`, hop-aligned silence input, honest
+   unvoiced strips — record the number in QUEUE LOG for BENCHMARKS.md; Paul's
+   A14 reading). Identity rows show the C-6.0 sources: ribbon `RIBBON_MPM_YIN ·
+   0 ms · live`, grading `SWIFTF0 · 176 ms · post-hoc`; `frame engine_id` /
+   `frame lookahead_ms` read off the real frames (`RIBBON_MPM_YIN` / `0`).
+   hz/confidence/loudness strips move (unvoiced = flat-zero lines until real
+   capture wires in, X-011a), device/thermal rows.
 10. **Airplane mode ON → kill → relaunch**: everything above still works (no
     network, no prompts).
 11. Log PASS/FAIL per step + RTF/latency-feel notes in QUEUE LOG (L-103 gate
