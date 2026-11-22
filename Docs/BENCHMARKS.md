@@ -83,13 +83,28 @@ A14 budget and is not faked.
 
 ## 4. Results — separation (M2: P-201/P-202/P-206)
 
-*Empty — fills at M2. Columns: engine/model | fixture | SDR vocals | NSDR |
-chunk config | wall time (4-min synth) | peak RSS | thermal | env.*
+*Columns: engine/model | fixture | SDR vocals | NSDR | chunk config | wall time
+(4-min synth) | peak RSS | thermal | env. P-201 spike harness:
+`Tests/Spikes/run_spike.py --spike separation` (demucs_real.py) — finite (S3),
+non-silent two-stem (S4), shape (S5), byte-identical runs (S6), RSS < 1.5 GB
+(S8); reconstruction-SDR (mix vs vocals+instrumental) logged non-gated — demucs
+sources do not sum exactly to the mix, so it is a sanity signal, not a quality
+claim. Real SDR/NSDR vs known-truth stems fills when a truth-bearing fixture
+lands (X-311 synthetic SATB prep for M3).*
 
 | Engine | Fixture | SDR | NSDR | Chunk | Time | RSS | Thermal | Env |
 |---|---|---|---|---|---|---|---|---|
+| demucs.cpp htdemucs fp16 ggml (stock serial, DEMUCSCPP_NUM_THREADS unset) | mix44k_short.wav 2.5 s (44.1 kHz mono→stereo, 1 zero-padded segment) | recon-SDR PENDING (weights download in flight) | n/m (no truth stems on fixture) | vendor 7.8 s @ 0.25 | PENDING | PENDING (< 1.5 GB assert in spike) | n/m (CI/dev) | Linux dev box g++ 13.3 -O2; runner sha @2923a9a |
+| demucs.cpp htdemucs + apply_demucs_threading.py (freq∥time pairs, 2 thr) | same | PENDING | n/m | same | PENDING | PENDING | n/m | same; **1-thread == 2-thread stem bytes asserted (bit-identical by construction)** |
+| demucs.cpp htdemucs (4 threads) | same | PENDING | n/m | same | PENDING (pairs are the only free parallelism — expect ≈ 2-thr number, documented honestly) | PENDING | n/m | same |
+| CI-runner row (macOS, separation-spike real path) | mix44k_short.wav | fills at first green real spike run post leto→main merge | n/m | vendor 7.8 s | CI log | CI log | n/m | macOS runner, Xcode clang++; run URL recorded on P-201 row |
 
-## 5. Results — note transcription & assignment (M3: P-301…P-306)
+**Threading patch note (D-32.4):** vendored src has ZERO OpenMP pragmas
+(re-verified on the scratch extraction — 8/8 compile without -fopenmp). The
+patch pairs the independent freq/time encoder+decoder chains (disjoint
+buffers ⇒ bit-identical output, asserted); the per-source mask/ISTFT section
+stays serial (shared stft_buf mutation — deferred by design). Device target:
+≤ 2× song length (stretch ≤ 1×) — A14 rows land at P-603 device runs.
 
 *Empty — fills at M3. Columns: stage | fixture | onset F1@50ms | part-aware macro
 F1 | multi-f0 P/R/F1 | RTF | env. Real-fixture results stated honestly against
@@ -113,3 +128,4 @@ the PawCT 0.225 ceiling.*
 | v1 | 2026-11-21 | P-101/P-103 M1 table filled (local Linux evidence, env-labeled): SwiftF0 accuracy/gating/RTF-threads + silero timing/semantics. CI-runner + A14 rows pending (device numbers via J-103 debug screen). F1@50c proper (P-106 harness v1) fills the column at P-106. |
 | v1.1 | 2026-11-21 | P-105: Swift MPM ribbon RTF measured (0.093 best-of-3, −O, Linux x86_64 — under the 0.1 budget, 3× over the optimistic estimate; honest note recorded + X-009 vendor path validated as the shipping hot path at 0.0014). Latency-relevant: facade ribbon answer ≈ 4 ms per 40 ms chunk on dev box (≪ 100 ms feedback budget; A14 number via J-103/P-603 pending). |
 | v1.2 | 2026-11-21 | P-106: F1@50c column filled by bench harness v1 (Tests/Spikes/bench_f1.py + ribbon_swift_bench/, report artifact bench_report_v1.json, §1 methodology exact: hit iff both voiced AND \|cents\|<50, RPA/RCA alongside, window-center truth pairing). Synthetic-clean AC ≥ 0.75 MET on all 6 engine rows — swiftf0 0.986 voice / 0.764 sweep (note ¹: sine confidence gating, precision 1.000), ribbon-swift 0.982 voice / 0.925 sweep, ribbon-cpp 0.977 voice / 0.896 sweep@1024. RCA == RPA everywhere (zero octave errors on clean synthetic). CI bench job = X-012 (non-blocking, Leto lane). |
+| v1.3 | 2026-11-22 | P-201c: §4 separation table opened — harness contract (S3/S4/S5/S6/S8 incl. RSS < 1.5 GB assert), reconstruction-SDR honesty note, threading-patch methodology (freq∥time pairs, bit-identical assertion, ISTFT serial rationale). Numbers PENDING the htdemucs ggml weights (Meta PRIMARY download stalled on dev box → D-32.6 FALLBACK Retrobear HF dataset in flight with sha256 trust anchor); CI-runner row fills at first green real spike post merge. |

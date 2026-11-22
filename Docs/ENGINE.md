@@ -26,10 +26,15 @@
 │  RibbonEngine (Swift MPM, P-102) · LivePitchFacade (P-105)       │
 │  PartRangePresets (C-6.1) · PitchEngineID (C-6.0)                │
 ├──────────────────────────────────────────────────────────────────┤
+│ M2 separation layer (P-201 — portable pieces Linux-tested)       │
+│  DemucsOutputMapper (4-source → C-1 two-stem, D-9)               │
+│  PCMWavWriter (staging; ALAC at P-204) · ImportProgress (C-8)    │
+├──────────────────────────────────────────────────────────────────┤
 │ Apple/ORT layer                                                  │
 │  Engine/PitchORT pkg (X-008): OnnxSwiftF0 + OnnxSileroVAD        │
 │  AVFoundation I/O (P-104/P-203) · ORT mirror 1.24.2 (D-13)       │
 │  C/C++ vendored: sevagh MPM/YIN (P-102) · demucs.cpp (M2)        │
+│  Engine/Separation: DemucsShim C-ABI + DemucsEngine (X-201)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -120,6 +125,49 @@ to counted drops + contiguous recent audio, never stale feedback.
   verbatim + calibration immutability, MockEngine facade surface, PitchFrame
   v0.0/v0.1 JSON round-trip. EngineCore 79/79 Linux green.
 
+### 1.3 M2 separation stack (P-201, CONTRACTS v1.0)
+
+```
+DemucsEngine (Engine/Separation/DemucsEngine.swift, app target — X-201 wiring)
+  │  ProgressReportingEngine: C-8 emitter (monotonic clamp), Task cancellation
+  │  separate(): PCMWaveReader → shim infer → DemucsOutputMapper → PCM16 staging
+  ▼
+DemucsShim (DemucsShim.h/.cpp, plain-C ABI — no C++/Eigen types cross the seam)
+  │  load/num_sources/set_threads/infer(status codes, finite gate, progress cb)
+  ▼
+vendor/demucs.cpp src/*.cpp (MIT, D-30 Tier A; Eigen headers MPL-2.0, D-32.5)
+  │  htdemucs fp16 ggml → fp32 Eigen tensors; 7.8 s segments @ 0.25 overlap,
+  │  triangular transition weighting; 4-source out (drums, bass, other, vocals)
+  ▼
+DemucsOutputMapper (EngineCore, Linux-tested): vocals = target_3,
+  instrumental = drums+bass+other residual (D-9 always-two-stem); D-8 stems:
+  vocals MONO / instrumental STEREO (PCM16 staging now, ALAC at P-204)
+```
+
+- **Weights (TIER B per D-30, D-32.6):** htdemucs fp16 ggml ~81–84 MB. Provenance
+  chain: Meta .th @e976d93e (PRIMARY, dl.fbaipublicfiles.com) OR Retrobear/demucs.cpp
+  HF dataset (FALLBACK, linked from the demucs.cpp README) — Paul picks operationally;
+  either way sha256 is the trust anchor (D-19.4), the mirror is
+  `thesagezm/pitchnotes-models` via hf_upload.sh, manifest license field = "MIT
+  (Tier B per D-30: training-data risk recorded)", attribution in NOTICE + J-204
+  licenses screen. HUMAN SIGN-OFF before any commercial/App Store distribution;
+  NEVER represented as "clean" (MUSDB18 CC BY-NC-SA + undocumented 800-song set).
+- **Threading (D-32.4):** vendored src has ZERO OpenMP pragmas (verified at
+  intake + re-verified by Paul on the scratch extraction). The port = ADD
+  std::thread parallelism: `Tests/Spikes/apply_demucs_threading.py` pairs the
+  INDEPENDENT freq/time encoder+decoder chains (disjoint buffers, read-only
+  model, deterministic ops ⇒ bit-identical output at any thread count — the
+  benchmark asserts 1-thread == 2-thread bytes). DEMUCSCPP_NUM_THREADS env:
+  unset/1 = exact stock serial baseline, ≥2 = parallel pairs. The per-source
+  mask/ISTFT section stays SERIAL (it mutates the shared stft_buf — thread-local
+  restructuring deliberately deferred). X-201 for Leto: apply to vendor/ +
+  patches.log.
+- **Honest limits:** mid-inference abort is not possible through the vendor API —
+  cancellation is checked before/after `demucs_inference`; segment-boundary
+  cancellation + abort flag arrive with P-202's chunked driver. multiStem mode
+  throws in M2 (per-voice stems are the M3 assignment path). `hasInstrumental`
+  (D-9 near-silence) = P-205.
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -127,7 +175,7 @@ to counted drops + contiguous recent audio, never stale feedback.
 | **SwiftF0** (primary pitch + grading) | lars76/swift-f0 (+ -training) | MIT | 14,386 params (~60 KB) | 16 kHz | 16 ms | F#1–C7 (46.875–2093.75 Hz) | hz, confidence, loudness_db; `segment_notes()`, `export_to_midi()`; streaming 176 ms lookahead | RTF ≪ 0.3 (179.6× RT, 1 core, pitch-benchmark) | bundled ONNX pinned HF rev 7877fba (D-19; HF repo re-host when D-2 lands — sha256 must not change) | **SHIP (M1: ±20c AC met, RTF 0.009–0.016 @1–4 thr)** |
 | **NanoPitch** (zero-lookahead ribbon candidate) | smulelabs/NanoPitch | **VERIFY (D-7)** + weights trained on GTSinger (CC BY-NC-SA) + FSDNoisy18k — see flag X-002-proposed | ~333K (gru96) / ~200K (gru64), ~1.3 MB | 16 kHz | ~? ms causal | 6 octaves, 360 sigmoid bins @20¢ | hz, VAD head; Viterbi (offline+realtime) | RTF 0.1–0.3 WASM ⇒ native ≪ 0.3 | train gru64 on HF smulelabs/NanoPitch-PreExtract → export weights JSON → C array; OR fallback below | **VERIFY → likely FALLBACK** |
 | **sevagh/pitch-detection** (ribbon FALLBACK per D-7) | sevagh/pitch-detection | MIT | DSP only (MPM/YIN/ACF, C++) | any | callback | n/a (per-frame) | hz | zero-lag, ≪ 0.3 | vendor per `vendor/README.md` intake (L-008) | **SHIP (fallback default)** |
-| **demucs.cpp** (separation baseline, M2) | sevagh/demucs.cpp | MIT | htdemucs fp16 ggml **81 MB**; 6s 53 MB; ft bag 4×81 MB; v3 160 MB | 44.1 kHz | windowed (chunk 5–10 s overlap-add) | n/a | 2 stems first (vocals/instrumental, D-9), 4-stem optional | ≤2× song length (stretch ≤1×) | `convert-pth-to-ggml.py` fp16 → HF manifest; OpenMP→std::thread/GCD port | **SHIP** |
+| **demucs.cpp** (separation baseline, M2) | sevagh/demucs.cpp | **MIT (code, Tier A per D-30); WEIGHTS Tier B (D-30: MUSDB18 CC BY-NC-SA + undocumented 800-song set — risk recorded, human sign-off pre-commercial)** | htdemucs fp16 ggml **81–84 MB**; 6s 53 MB; ft bag 4×81 MB; v3 160 MB | 44.1 kHz | windowed (7.8 s segments @ 0.25 overlap, vendor-owned; chunking policy re-benchmarked at P-202 per D-25) | n/a | 2 stems first (vocals/instrumental, D-9), 4-stem optional | ≤2× song length (stretch ≤1×) | D-32.6: Meta .th @e976d93e via pinned `convert-pth-to-ggml.py` (PRIMARY) or Retrobear HF ggml (FALLBACK) → sha256 anchor → HF mirror; std::thread PAIR parallelism via `apply_demucs_threading.py` (D-32.4: zero OpenMP pragmas verified) | **SHIP (M2 in flight: shim+bridge+mapper landed @2923a9a, 112/112 Linux; spike + RTF/RSS/SDR → BENCHMARKS §4)** |
 | **basicpitch.cpp** (note transcription, M3) | sevagh/basicpitch.cpp | MIT; model spotify/basic-pitch nmp.onnx **Apache-2.0** | ~2 MB | 22.05 kHz (resample 44.1k→22.05k) | n/a (note events) | MIDI 24–96 typical | polyphonic note events → MIDI | RTF logged at P-301 | ort-builder: trim ops/types, weights→.c/.h | **SHIP** |
 | **silero-vad** (mic gating, M1) | snakers4/silero-vad | MIT | ~2 MB ONNX | 16 kHz | 30 ms chunks | n/a | speech prob | <1 ms/chunk | official ONNX pinned commit bfdc019 (D-19) → HF manifest | **SHIP (M1: 0.23 ms/chunk, speech-VAD semantics verified)** |
 | **windowed-roformer** (stretch eval, P-206 M2, non-gating) | smulelabs/windowed-roformer | MIT | MB-R-class (large; fp16/int8 + bench) | 44.1 kHz | windowed | n/a | stems | 11.17 dB SDR = 92% of full MB-R, 44.5× fewer attention FLOPs (WSA W=10 S=8) | FlexAttention is CUDA-only → ONNX export must re-express window+sink as additive attention-mask bias (`|i−j|≤W/2 ∨ i<S ∨ j<S`); Bleedless worse (30.14 vs 41.00) in silent segments | **STUDY → P-206 eval only** |
@@ -173,3 +221,4 @@ Matches PLAN §0 targets exactly (live F1@50c ≥ 0.75 synthetic clean; RTF < 0.
 | v0 | 2026-11-21 | P-003: model table + export plan + benchmark plan + open questions + license flags (X-002/X-003 proposed, X-601 referenced). M0 engine state documented (EngineCore + MockEngine + spike harness). |
 | v1 | 2026-11-21 | P-101/P-103: SwiftF0 + silero-vad SHIPPED (portable cores, PitchORT seam, self-upgrading real spikes). Architecture M1 layer + Engine/PitchORT split rationale; SwiftF0 I/O + streaming semantics (176 ms lookahead); silero 512/64/state + speech-VAD semantics; X-002 resolved (D-17/D-19); open questions 2–4 closed by CONTRACTS v0.1. |
 | v1.1 | 2026-11-21 | P-105: LivePitchFacade (C-6.0 verbatim) + C-6.1 presets + MockEngine additive conformance — §1.1 facade semantics (sticky sub-hop, VAD fail-open fusion, V12 clarity clamp, M2 stubs, reset); P-102 Swift MPM noted in the M1 layer diagram. RibbonEngine partial-window crash fixed (Int-division truncation; testTimestampsOnContractGridAndCausal red on CI arm64 + Linux, emitCount guard). |
+| v1.2 | 2026-11-22 | P-201a CONTRACTS v1.0 wired in EngineCore (C-1 += VOCALS sortOrder 10, C-2.1 notesFile optional, V14/V15 era-scoped, C-8 verbatim + ImportProgressEmitter) — 103/103 Linux; P-201c M2 separation stack: §1.3 architecture (shim C-ABI + DemucsEngine bridge + DemucsOutputMapper/PCMWavWriter portable layer), demucs model row → Tier B provenance (D-30/D-32.6) + std::thread pair parallelism spec (D-32.4, apply_demucs_threading.py). EngineCore 112/112 Linux. |
