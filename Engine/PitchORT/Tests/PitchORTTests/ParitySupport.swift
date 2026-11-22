@@ -1,6 +1,7 @@
 import XCTest
 import CryptoKit
 import EngineCore
+import PitchORT
 
 // P-208 (D-24 / CONTRACTS C-7) parity support: C-7 sidecar decoding, raw-bin
 // tensor loading, and the tolerance criterion. macOS-only (PitchORT is the
