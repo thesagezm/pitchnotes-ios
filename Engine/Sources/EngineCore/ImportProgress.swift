@@ -61,6 +61,21 @@ public final class ImportProgressEmitter: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// Starts a NEW import call on this emitter: the monotonic baseline is
+    /// reset so the next import's fractions are not clamped against the
+    /// previous import's 1.0.
+    ///
+    /// The C-8 protocol says the handler is set before every import call (which
+    /// resets the baseline anyway). This explicit entry point exists for the
+    /// case where ONE handler serves a sequence of imports (the app's import
+    /// flow may reuse it): the import orchestrator calls `beginImport()` so
+    /// each import gets its own monotonic window.
+    public func beginImport() {
+        lock.lock()
+        self.highestEmitted = -1
+        lock.unlock()
+    }
+
     /// Emits `progress` (clamped to [0, 1] and monotonic vs. what was already
     /// emitted) if a handler is set. Call sites still own the "at least one call
     /// per stage" obligation.
