@@ -198,7 +198,7 @@ final class MixerPlayer: ObservableObject {
     func applyLaneGain(_ lane: MixerLane?) {
         guard let lane, let node = players[lane.part] else { return }
         let target = mixer.resolvedGain(for: lane.part)
-        let current = lastGainTargets[lane.part] ?? node.volume
+        let current = lastGainTargets[lane.part] ?? Double(node.volume)
         lastGainTargets[lane.part] = target
         // ~15 ms stepped glide (A.1.3): 8 × 2 ms via the deterministic envelope.
         let steps = MixerModel.glideSamples(from: current, to: target)

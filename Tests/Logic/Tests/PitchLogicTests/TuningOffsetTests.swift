@@ -93,13 +93,15 @@ final class TuningOffsetTests: XCTestCase {
     // Fixtures use T1 (a C-1 rawValue on THIS branch) — the M2 two-stem
     // "VOCALS" rawValue decodes only after Paul's Part.vocals merge; the
     // decoder itself is rawValue-agnostic and needs no change then.
+    // notesFile: REQUIRED on this branch's v0-era PartInfo (optional per
+    // C-2.1 only on Paul's unmerged P-201a) — present keys survive that swap.
     private let voicePart = #"""
-        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "noteConfidence": 0.0 }
+        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "notesFile": "notes/T1.json", "noteConfidence": 0.0 }
         """#
 
     private let voiceAndInstrumental = #"""
-        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "noteConfidence": 0.0 },
-        { "part": "INSTRUMENTAL", "stemFile": "stems/INSTRUMENTAL.m4a", "channels": 2, "noteConfidence": 0.0 }
+        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "notesFile": "notes/T1.json", "noteConfidence": 0.0 },
+        { "part": "INSTRUMENTAL", "stemFile": "stems/INSTRUMENTAL.m4a", "channels": 2, "notesFile": "notes/INSTRUMENTAL.json", "noteConfidence": 0.0 }
         """#
 
     func testManifestV1DecodesSharpFlatAndInTune() throws {
