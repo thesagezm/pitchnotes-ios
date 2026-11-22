@@ -141,9 +141,11 @@ struct ImportFlowSheet: View {
     private var progressView: some View {
         VStack(spacing: Token.Spacing.s5) {
             Spacer()
+            engineBadge
             stageList
             progressBar
             detailLine
+            liveMetricsLine
             if model.importContinuesInBackground {
                 Text("Import continues in the background. If iOS suspends the app, this import is discarded — nothing partial is saved.")
                     .font(Token.Fonts.caption)
@@ -155,6 +157,26 @@ struct ImportFlowSheet: View {
             cancelButton
         }
         .padding()
+    }
+
+    /// J-208: says out loud WHICH engine runs — a mock demo must never look
+    /// like a real separation (D-12 honesty; the M2 gate requires the real
+    /// path).
+    private var engineBadge: some View {
+        Text(model.engineKind.statusLine)
+            .font(Token.Fonts.caption)
+            .foregroundStyle(model.engineKind.isReal ? Color.pnTextSecondary : Color.octaveWarn)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, Token.Spacing.s4)
+            .accessibilityLabel("Engine: \(model.engineKind.statusLine)")
+    }
+
+    /// J-206: the live peak footprint while the import runs.
+    private var liveMetricsLine: some View {
+        Text("Peak memory so far: \(ImportMetricsFormatter.residentBytes(model.livePeakResidentBytes))")
+            .font(Token.Fonts.caption)
+            .foregroundStyle(Color.pnTextSecondary)
+            .accessibilityLabel("Peak memory so far: \(ImportMetricsFormatter.residentBytes(model.livePeakResidentBytes))")
     }
 
     private var stageList: some View {
@@ -269,6 +291,25 @@ struct ImportFlowSheet: View {
                 .font(Token.Fonts.caption)
                 .foregroundStyle(Color.pnTextSecondary)
                 .multilineTextAlignment(.center)
+            // J-206: the import-pass numbers the M2 gate records (separation
+            // RTF, peak footprint, thermal). Copyable so the demo script can
+            // paste them into the QUEUE LOG verbatim.
+            if let metrics = model.metrics {
+                VStack(spacing: Token.Spacing.s1) {
+                    Text(ImportMetricsFormatter.summary(metrics))
+                        .font(Token.Fonts.caption)
+                        .foregroundStyle(Color.pnTextSecondary)
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                    Text(model.engineKind.statusLine)
+                        .font(Token.Fonts.caption)
+                        .foregroundStyle(model.engineKind.isReal ? Color.pnTextSecondary : Color.octaveWarn)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, Token.Spacing.s4)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Import metrics: \(ImportMetricsFormatter.summary(metrics))")
+            }
             Spacer()
             Button {
                 model.reset()
