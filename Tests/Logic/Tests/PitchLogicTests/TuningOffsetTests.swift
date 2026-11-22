@@ -90,12 +90,15 @@ final class TuningOffsetTests: XCTestCase {
         """.data(using: .utf8)!
     }
 
-    private let vocalsPart = #"""
-        { "part": "VOCALS", "stemFile": "stems/VOCALS.m4a", "channels": 1, "noteConfidence": 0.0 }
+    // Fixtures use T1 (a C-1 rawValue on THIS branch) — the M2 two-stem
+    // "VOCALS" rawValue decodes only after Paul's Part.vocals merge; the
+    // decoder itself is rawValue-agnostic and needs no change then.
+    private let voicePart = #"""
+        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "noteConfidence": 0.0 }
         """#
 
-    private let vocalsAndInstrumental = #"""
-        { "part": "VOCALS", "stemFile": "stems/VOCALS.m4a", "channels": 1, "noteConfidence": 0.0 },
+    private let voiceAndInstrumental = #"""
+        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "noteConfidence": 0.0 },
         { "part": "INSTRUMENTAL", "stemFile": "stems/INSTRUMENTAL.m4a", "channels": 2, "noteConfidence": 0.0 }
         """#
 
@@ -103,7 +106,7 @@ final class TuningOffsetTests: XCTestCase {
         for (cents, name) in [(32, "sharp"), (-35, "flat"), (0, "in-tune")] {
             let decoded = try ManifestV1.decode(v1JSON(tuning: String(cents),
                                                        hasInstrumental: "false",
-                                                       parts: vocalsPart))
+                                                       parts: voicePart))
             XCTAssertEqual(decoded.tuning_cents, cents, name)
             XCTAssertEqual(decoded.channels, 2)
             XCTAssertFalse(decoded.hasInstrumental)
@@ -132,32 +135,32 @@ final class TuningOffsetTests: XCTestCase {
     }
 
     func testManifestV1RejectsOutOfRangeFields() {
-        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(channels: "3", parts: vocalsPart))) { error in
+        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(channels: "3", parts: voicePart))) { error in
             XCTAssertEqual(error as? ManifestV1DecodeError, .rangeViolation("channels 3"))
         }
-        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(tuning: "80", parts: vocalsPart))) { error in
+        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(tuning: "80", parts: voicePart))) { error in
             XCTAssertEqual(error as? ManifestV1DecodeError, .rangeViolation("tuning_cents 80"))
         }
     }
 
     func testManifestV1EnforcesV15InstrumentalConsistency() {
         // hasInstrumental true but no INSTRUMENTAL entry → V15 violation.
-        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(parts: vocalsPart))) { error in
+        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(parts: voicePart))) { error in
             XCTAssertEqual(error as? ManifestV1DecodeError, .instrumentalInconsistent)
         }
         // INSTRUMENTAL entry but hasInstrumental false → V15 violation.
         XCTAssertThrowsError(
-            try ManifestV1.decode(v1JSON(hasInstrumental: "false", parts: vocalsAndInstrumental))
+            try ManifestV1.decode(v1JSON(hasInstrumental: "false", parts: voiceAndInstrumental))
         ) { error in
             XCTAssertEqual(error as? ManifestV1DecodeError, .instrumentalInconsistent)
         }
         // Consistent pairs decode fine.
-        XCTAssertNoThrow(try ManifestV1.decode(v1JSON(parts: vocalsAndInstrumental)))
-        XCTAssertNoThrow(try ManifestV1.decode(v1JSON(hasInstrumental: "false", parts: vocalsPart)))
+        XCTAssertNoThrow(try ManifestV1.decode(v1JSON(parts: voiceAndInstrumental)))
+        XCTAssertNoThrow(try ManifestV1.decode(v1JSON(hasInstrumental: "false", parts: voicePart)))
     }
 
     func testManifestV1RejectsV0EraManifest() {
-        let v0 = v1JSON(parts: vocalsPart, contractVersion: "v0.0")
+        let v0 = v1JSON(parts: voicePart, contractVersion: "v0.0")
         XCTAssertThrowsError(try ManifestV1.decode(v0)) { error in
             XCTAssertEqual(error as? ManifestV1DecodeError, .notV1(found: "v0.0"))
         }
@@ -165,7 +168,7 @@ final class TuningOffsetTests: XCTestCase {
     }
 
     func testTuningCentsConvenienceReturnsEstimate() {
-        XCTAssertEqual(ManifestV1.tuningCents(in: v1JSON(parts: vocalsPart)), 32)
+        XCTAssertEqual(ManifestV1.tuningCents(in: v1JSON(parts: voicePart)), 32)
         XCTAssertNil(ManifestV1.tuningCents(in: Data("not json".utf8)))
     }
 
