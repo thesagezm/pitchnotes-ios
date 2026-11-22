@@ -111,12 +111,55 @@ final class ImportKitTests: XCTestCase {
         return (samples: staged.frames, sampleRate: staged.sampleRate, channels: staged.channels)
     }
 
+    /// The P-203 acceptance leg: THE FORMAT IMPORTS. This assertion does NOT
+    /// depend on ffmpeg — it proves that AVAudioFile decodes the container and
+    /// that the staged mix is well-formed (rate/channels/duration/finite
+    /// non-silent audio).
+    ///
+    /// It used to be folded into the ffmpeg comparison tests, which SKIP when
+    /// ffmpeg is missing — and the macOS CI runner has NO ffmpeg, so the
+    /// import leg never actually ran (the skip happened before the decode).
+    /// The comparison is now a SEPARATE, additive test; the import itself is
+    /// always proven.
+    private func assertImports(fixtureName: String, frameTolerance: Int = 2,
+                               file: StaticString = #filePath, line: UInt = #line) throws {
+        let dir = tempDir(fixtureName)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let mix = try AVAudioFileDecoder().decodeToMix(source: fixture(fixtureName), workDir: dir)
+
+        XCTAssertEqual(mix.sampleRate, 44100, "\(fixtureName): D-8 sample rate", file: file, line: line)
+        XCTAssertEqual(mix.channels, 1, "\(fixtureName): source fixture is mono", file: file, line: line)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: mix.url.path),
+                      "\(fixtureName): staged mix missing", file: file, line: line)
+        XCTAssertEqual(mix.duration_s, 2.5,
+                       accuracy: max(1 / 44100.0 + 1e-3, Double(frameTolerance) / 44100.0),
+                       "\(fixtureName): staged duration", file: file, line: line)
+
+        let (samples, sr, ch) = try stagedSamples(mix)
+        XCTAssertEqual(sr, 44100, file: file, line: line)
+        XCTAssertEqual(ch, 1, file: file, line: line)
+        XCTAssertEqual(samples.count, Int(2.5 * 44100), accuracy: frameTolerance,
+                       "\(fixtureName): staged frame count", file: file, line: line)
+        for (i, v) in samples.enumerated() where !v.isFinite {
+            XCTFail("\(fixtureName): non-finite sample at \(i)", file: file, line: line)
+            break
+        }
+        // The fixture carries a real signal (melody + chord) — a decode that
+        // silently yields silence would otherwise pass the checks above.
+        let peak = samples.map { abs($0) }.reduce(0, max)
+        XCTAssertGreaterThan(peak, 0.3, "\(fixtureName): decoded audio is silent (peak \(peak))",
+                             file: file, line: line)
+    }
+
     /// Bit-identity of a lossless container's staged mono mix vs ffmpeg's
     /// decode. Source fixtures are 44.1 kHz mono → staging passthrough, so the
     /// staged samples ARE the decoded samples.
+    ///
+    /// SKIPS when the runner has no ffmpeg — the import leg is proven by
+    /// `assertImports` regardless; this is the ADDITIVE cross-decoder check.
     private func assertLosslessBitIdentical(fixtureName: String, file: StaticString = #filePath, line: UInt = #line) throws {
         guard let ref = try ffmpegDecode(fixture(fixtureName)) else {
-            throw XCTSkip("ffmpeg/ffprobe not available on this runner — lossless bit-identity unproven (honest skip)")
+            throw XCTSkip("ffmpeg/ffprobe not available on this runner — lossless bit-identity unproven (honest skip; the IMPORT leg is proven separately)")
         }
         let dir = tempDir(fixtureName)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -142,7 +185,31 @@ final class ImportKitTests: XCTestCase {
         }
     }
 
-    // MARK: - Lossless bit-identity
+    // MARK: - The P-203 acceptance leg: each committed format fixture IMPORTS
+    // (no ffmpeg dependency — these always run on the macOS runner).
+
+    func testWavFixtureImports() throws {
+        try assertImports(fixtureName: "mix44k_short.wav")
+    }
+
+    func testMP3FixtureImports() throws {
+        // Lossy: the decoder may keep the encoder's padding frames (MP3 pads
+        // to a 1152-frame boundary) — the frame count is therefore allowed to
+        // differ by up to one MP3 frame; the DURATION assertion above still
+        // pins the decoded length to the source within 1/44100 s.
+        try assertImports(fixtureName: "mix44k_short.mp3", frameTolerance: 1152)
+    }
+
+    func testFLACFixtureImports() throws {
+        try assertImports(fixtureName: "mix44k_short.flac")
+    }
+
+    func testALACFixtureImports() throws {
+        try assertImports(fixtureName: "mix44k_short_alac.m4a")
+    }
+
+    // MARK: - Lossless bit-identity (additive cross-decoder check; skips
+    // without ffmpeg — the import leg above is the ac)
 
     func testWavDecodeBitIdenticalToFFmpeg() throws {
         try assertLosslessBitIdentical(fixtureName: "mix44k_short.wav")
