@@ -72,6 +72,24 @@ struct MockImportEngineFactory: ImportEngineFactory {
 
 // MARK: - Resolver (which engine runs)
 
+/// Whether THIS BUILD contains the real separation engine (compile-time fact).
+///
+/// The same guard the resolver uses, expressed as a value so the import
+/// screen can say BEFORE an import starts what the next import will do
+/// (UX §10.2 step 0: the human reads the badge to confirm the real path is
+/// armed — a badge that only appears after the import is useless for that
+/// check).
+enum RealEngineBuild {
+    /// TRUE when the real separation engine is compiled into this build.
+    static var isCompiledIn: Bool {
+        #if canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
+        return true
+        #else
+        return false
+        #endif
+    }
+}
+
 /// Chooses the engine for an import.
 ///
 /// THE HONEST RULE (D-34 GAP 1 + Leto 21:55Z §1c): the mock path does NOT

@@ -57,6 +57,11 @@ final class ImportModel: ObservableObject {
     /// it, so a mock demo can never be mistaken for a real separation
     /// (D-12 honesty; Leto 21:55Z §1c: the M2 gate requires the REAL path).
     @Published private(set) var engineKind: ImportEngineKind = .mock
+    /// What the NEXT import will do, BEFORE it runs (J-208, session 6): the
+    /// real engine compiled in? the weights on the device? The demo script
+    /// (UX §10.2 step 0) reads the badge BEFORE the import, so this must not
+    /// wait for an import to have happened.
+    @Published private(set) var availability: ImportEngineAvailability = .mockOnly
     /// The import-pass metrics of the LAST import (J-206): separation RTF,
     /// peak resident footprint, thermal start→end. nil until an import has
     /// run (never zeros — "not measured" must not read as "measured 0").
@@ -89,6 +94,7 @@ final class ImportModel: ObservableObject {
     init(engineFactory: ImportEngineFactory? = nil) {
         self.engineFactory = engineFactory
             ?? ImportEngineResolver.factory(modelURL: ModelCache.verifiedModelURL(named: "htdemucs"))
+        refreshAvailability()
         Task.detached(priority: .userInitiated) { [weak self] in
             let store = try? BundleStore.makeDefault()
             await MainActor.run { [weak self] in
@@ -97,6 +103,17 @@ final class ImportModel: ObservableObject {
             }
         }
         observeThermal()
+    }
+
+    /// Re-reads the engine availability (compile-time flag + the weights on
+    /// disk). Called when the import screen appears — the human's path is
+    /// Settings → Models (download) → Import, so the badge must catch up
+    /// when they come back.
+    func refreshAvailability() {
+        let modelPresent = ModelCache.verifiedModelURL(named: "htdemucs") != nil
+        availability = ImportEngineAvailability.resolve(
+            compiledIn: RealEngineBuild.isCompiledIn,
+            modelPresent: modelPresent)
     }
 
     deinit {

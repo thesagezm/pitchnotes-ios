@@ -28,6 +28,10 @@ struct ImportFlowSheet: View {
                 }
             }
             .background(Color.pnBackground)
+            // J-208: the badge must reflect reality when the human comes back
+            // from Settings → Models with the weights downloaded (UX §10.2
+            // step 0 checks the badge BEFORE the import).
+            .onAppear { model.refreshAvailability() }
             .navigationTitle("Import song")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -78,6 +82,15 @@ struct ImportFlowSheet: View {
                       systemImage: "music.note.2")
                     .font(Token.Fonts.caption)
                     .foregroundStyle(Color.pnTextSecondary)
+                // J-208: the badge the demo reads BEFORE the import (UX §10.2
+                // step 0 — "the badge must read 'Real engine'"). It says what
+                // the NEXT import will actually do, so a mock demo can never
+                // be dressed up as a real one and a real build never looks
+                // like a mock one (D-12 honesty in BOTH directions).
+                Text(model.availability.statusLine)
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(model.availability.isReal ? Color.pnTextSecondary : Color.octaveWarn)
+                    .accessibilityLabel("Engine: \(model.availability.statusLine)")
             } header: {
                 Text("What happens")
             }

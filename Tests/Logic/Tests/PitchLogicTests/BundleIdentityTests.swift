@@ -120,4 +120,47 @@ final class BundleIdentityTests: XCTestCase {
         XCTAssertTrue(ImportEngineKind.real.isReal)
         XCTAssertEqual(ImportEngineKind.real.statusLine, "Real engine (htdemucs fp16).")
     }
+
+    // MARK: - The PRE-import badge (J-208, session 6 — UX §10.2 step 0)
+
+    func testAvailabilitySaysReadyWhenTheRealEngineAndTheWeightsAreThere() {
+        let availability = ImportEngineAvailability.resolve(compiledIn: true, modelPresent: true)
+        XCTAssertEqual(availability, .realReady)
+        XCTAssertTrue(availability.isReal)
+        XCTAssertTrue(availability.statusLine.contains("Real engine"),
+                      "the demo badge must read 'Real engine': \(availability.statusLine)")
+        XCTAssertTrue(availability.statusLine.contains("ready"), availability.statusLine)
+    }
+
+    func testAvailabilitySaysTheModelIsMissingWhenOnlyTheWeightsAreAbsent() {
+        let availability = ImportEngineAvailability.resolve(compiledIn: true, modelPresent: false)
+        XCTAssertEqual(availability, .realModelMissing)
+        XCTAssertTrue(availability.isReal, "the real engine IS in the build — only the model is missing")
+        XCTAssertTrue(availability.statusLine.contains("Settings"), availability.statusLine)
+    }
+
+    func testAvailabilitySaysMockWhenNeitherTheEngineNorTheWeightsAreThere() {
+        let availability = ImportEngineAvailability.resolve(compiledIn: false, modelPresent: false)
+        XCTAssertEqual(availability, .mockOnly)
+        XCTAssertFalse(availability.isReal)
+        XCTAssertTrue(availability.statusLine.contains("DEMO ENGINE (mock)"), availability.statusLine)
+    }
+
+    func testAvailabilityDoesNotPromiseAMockWhenTheWeightsAreAlreadyOnTheDevice() {
+        let availability = ImportEngineAvailability.resolve(compiledIn: false, modelPresent: true)
+        XCTAssertEqual(availability, .realUnavailable)
+        XCTAssertFalse(availability.isReal)
+        XCTAssertTrue(availability.statusLine.contains("fail"),
+                      "the import FAILS in this world — the badge must not imply a mock runs: \(availability.statusLine)")
+    }
+
+    func testAvailabilityNeverUsesZeroLikeWording() {
+        for availability in [ImportEngineAvailability.realReady,
+                             .realModelMissing,
+                             .mockOnly,
+                             .realUnavailable] {
+            XCTAssertFalse(availability.statusLine.isEmpty)
+            XCTAssertFalse(availability.statusLine.contains("0.00"), availability.statusLine)
+        }
+    }
 }

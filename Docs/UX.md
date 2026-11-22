@@ -755,6 +755,15 @@ IPA: artifact of the first ALL-GREEN `build-ipa` carrying the M2 Jess lane
    - **Then turn AIRPLANE MODE ON and leave it on for the rest of the demo.**
    - The import sheet must show the **"Real engine (htdemucs fp16)"** badge
      (J-208). A "DEMO ENGINE (mock)" badge means the demo is not a gate demo.
+   - **CHECK THE BADGE BEFORE YOU IMPORT (as-built, session 6):** the import
+     sheet's setup screen now states what the NEXT import will do, before it
+     runs — **"Real engine (htdemucs fp16) — ready."** when the engine is in
+     the build and the weights are on the device; **"… the model is not on this
+     device yet (Settings → Models)."** when only the weights are missing; and
+     the mock line when this build has no real engine. After the import the
+     badge switches to the engine that ACTUALLY ran (the same words as before).
+     So the human can verify the demo will run the real path *before* the
+     first import, and a mock build can never pass as a real one.
 1. **Import a real SDA FLAC** (a short hymn, airplane mode ON): Library (+) →
    Files picker (FLAC selectable) → Import sheet shows title prefilled.
 2. **Staged progress**: the three C-8 stages light in order — Decode ✓ →
