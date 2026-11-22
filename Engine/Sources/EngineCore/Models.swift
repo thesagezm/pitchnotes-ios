@@ -118,19 +118,22 @@ public struct PartInfo: Codable, Equatable, Sendable {
     public var part: Part
     /// Path inside the bundle, e.g. `stems/BASS.m4a`.
     public var stemFile: String
-    /// V3: 1 (voice stems, D-8 mono) or 2 (INSTRUMENTAL, D-8 stereo).
+    /// V3: 1 (voice + VOCALS stems, D-8 mono) or 2 (INSTRUMENTAL, D-8 stereo).
     public var channels: Int
-    /// Path inside the bundle, e.g. `notes/BASS.json`.
-    public var notesFile: String
-    /// OPTIONAL in contract v0.0 — omitted (key absent) when the engine wrote no
-    /// pitch track for this part.
+    /// Path inside the bundle, e.g. `notes/BASS.json`. OPTIONAL since contract
+    /// v1.0 (C-2.1: "notesFile/pitchFile keys OPTIONAL (M3+)") — M2 two-stem
+    /// manifests omit it; v0.x-era manifests that carry it keep decoding.
+    public var notesFile: String?
+    /// OPTIONAL — omitted (key absent) when the engine wrote no pitch track for
+    /// this part.
     public var pitchFile: String?
     /// Mean note confidence of this part's NoteTrack, [0,1]; parts without a
     /// NoteTrack use 0.0.
     public var noteConfidence: Double
 
-    public init(part: Part, stemFile: String, channels: Int, notesFile: String,
-                pitchFile: String? = nil, noteConfidence: Double) {
+    public init(part: Part, stemFile: String, channels: Int,
+                notesFile: String? = nil, pitchFile: String? = nil,
+                noteConfidence: Double) {
         self.part = part
         self.stemFile = stemFile
         self.channels = channels
@@ -148,7 +151,7 @@ public struct PartInfo: Codable, Equatable, Sendable {
         part = try c.decode(Part.self, forKey: .part)
         stemFile = try c.decode(String.self, forKey: .stemFile)
         channels = try c.decode(Int.self, forKey: .channels)
-        notesFile = try c.decode(String.self, forKey: .notesFile)
+        notesFile = try c.decodeIfPresent(String.self, forKey: .notesFile)
         pitchFile = try c.decodeIfPresent(String.self, forKey: .pitchFile)
         noteConfidence = try c.decode(Double.self, forKey: .noteConfidence)
     }
@@ -158,7 +161,7 @@ public struct PartInfo: Codable, Equatable, Sendable {
         try c.encode(part, forKey: .part)
         try c.encode(stemFile, forKey: .stemFile)
         try c.encode(channels, forKey: .channels)
-        try c.encode(notesFile, forKey: .notesFile)
+        try c.encodeIfPresent(notesFile, forKey: .notesFile)
         try c.encodeIfPresent(pitchFile, forKey: .pitchFile)
         try c.encode(noteConfidence, forKey: .noteConfidence)
     }
@@ -170,8 +173,12 @@ public struct ConfidenceSummary: Codable, Equatable, Sendable {
 }
 
 /// `song.json` manifest (C-2.1). One SongBundle directory per song, named by `id`.
+/// v1.0 FROZEN (L-203, 2026-11-22): generators emit `"v1.0"` from the freeze
+/// onward (C-2.2); v0.x manifests remain permanently valid (back-compat, V14/V15
+/// are era-scoped to v1.x).
 public struct SongManifest: Codable, Equatable, Sendable {
-    /// String `"v<major>.<minor>"`; consumers reject unknown MAJOR.
+    /// String `"v<major>.<minor>"`; consumers reject unknown MAJOR (enforced by
+    /// the manifest validator as a V1 violation).
     public var contractVersion: String
     /// Free string, engine-authored, monotonic per engine.
     public var engineVersion: String
@@ -183,13 +190,26 @@ public struct SongManifest: Codable, Equatable, Sendable {
     public var duration_s: Double
     /// V4: must be 44100 (D-8).
     public var sampleRate: Int
+    /// v1.0 NEW REQUIRED (C-2.1): channel count of the DECODED MIX (1 or 2) —
+    /// describes the SOURCE mix, not the stems (stem channels live in `parts[]`).
+    /// Optional at decode: nil on v0.x-era manifests (back-compat); V14 requires
+    /// it present-and-in-range for v1.x.
+    public var channels: Int?
+    /// v1.0 REQUIRED (D-22): estimated offset of the recording's tuning reference
+    /// from A440 ET, clamped [−50, +50] (+ = sharp); 0 when weak salience or
+    /// <10c. Optional at decode: nil on v0.x-era manifests; V14 requires it
+    /// present-and-in-range for v1.x. Consumers (D-22): grading offsets the
+    /// REFERENCE (J-401/J-205); M3 transcription retunes in memory (P-308);
+    /// stored audio is NEVER resampled.
+    public var tuning_cents: Int?
     /// D-9: two-stem separation always runs; near-silent instrumental ⇒ false and
-    /// NO `stems/INSTRUMENTAL.m4a` exists.
+    /// NO `stems/INSTRUMENTAL.m4a` exists (V15 ⇔ parts[] has no INSTRUMENTAL
+    /// entry, era-scoped v1.x).
     public var hasInstrumental: Bool
     public var parts: [PartInfo]
     public var confidenceSummary: ConfidenceSummary
 
-    public static let currentContractVersion = "v0.0"
+    public static let currentContractVersion = "v1.0"
 
     public init(contractVersion: String = SongManifest.currentContractVersion,
                 engineVersion: String,
@@ -198,6 +218,8 @@ public struct SongManifest: Codable, Equatable, Sendable {
                 sourceHash: SourceHash,
                 duration_s: Double,
                 sampleRate: Int = 44100,
+                channels: Int? = nil,
+                tuning_cents: Int? = nil,
                 hasInstrumental: Bool,
                 parts: [PartInfo],
                 confidenceSummary: ConfidenceSummary) {
@@ -208,6 +230,8 @@ public struct SongManifest: Codable, Equatable, Sendable {
         self.sourceHash = sourceHash
         self.duration_s = duration_s
         self.sampleRate = sampleRate
+        self.channels = channels
+        self.tuning_cents = tuning_cents
         self.hasInstrumental = hasInstrumental
         self.parts = parts
         self.confidenceSummary = confidenceSummary
