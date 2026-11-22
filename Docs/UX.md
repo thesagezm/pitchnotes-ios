@@ -652,7 +652,7 @@ spoken state cadence is the M1 minimum, refinement tracked in M4.
 | **X-002** | Ratify MockEngine named scenarios (perfect / flat −30¢ / sharp +35¢ / octave error / silent / breathy / late onset / vibrato) as C-3 additive note | deterministic ribbon/grading previews (J-002) | **STRUCK (D-16)**: satisfied by P-001 `MockScenario` |
 | **X-003** | Wire Paul's Engine into `project.yml` when P-001 lands: app target needs EngineAPI+MockEngine; PitchLogic needs contract Codable types WITHOUT ONNX Runtime (proposal: pure `PitchEngineContracts` target vs `PitchEngine` target) | J-002/J-004 consume; schema tests import Paul's models | **DONE (L-009 + X-006)**: EngineCore wired in project.yml; Tests/Logic path dep `../../Engine`; JSON shim deleted |
 | — | Portable logic-test package | **already satisfied** (PitchLogic Package.swift, `swift test` on CI) | ✓ |
-| **X-021** | Add `UIBackgroundModes` = `[audio]` to project.yml app target (Info.plist) — one key, value `audio`, no other entitlement changes | J-203 background playback + lock-screen transport (§5.3, §11 A.1): without it mixer audio dies on background and lock-screen controls cannot appear | **OPEN (filed 2026-11-22, Jess)** — Leto applies in project.yml (Jess may not edit it) |
+| **X-021** | Add `UIBackgroundModes` = `[audio]` to project.yml app target (Info.plist) — one key, value `audio`, no other entitlement changes | J-203 background playback + lock-screen transport (§5.3, §11 A.1): without it mixer audio dies on background and lock-screen controls cannot appear | **LANDED (2026-11-22, Leto — early rulings merge @af1e504)**: key present in project.yml; MixerPlayer's runtime `hasBackgroundAudioMode` detection stays as a plist drift guard (honest notice self-disappears on builds with the key); lock-screen transport verifiable on device at the M2 demo (§10.2 step 6b) |
 
 ## 10. M0 device demo checklist (human runs; log results in QUEUE LOG)
 
@@ -739,6 +739,11 @@ otherwise the ScriptedImportEngine mock path demonstrates the same UX).
    open mixer → focus preset default (target unity, others −12 dB — "others
    quieter", never "solo"); MUTE mutes; SOLO isolates honestly (label copy);
    seek is instant; region loop (A/B) holds.
+6b. **Background + lock-screen transport** (J-203 + X-021, landed): start
+   playback → background the app (home screen, then lock) → audio continues;
+   lock-screen controls appear (title/pause/seek) and respond. If the built
+   plist ever lost the `audio` background mode, the mixer shows the honest
+   foreground-only notice instead (runtime drift guard).
 7. **Storage usage**: Settings → Storage shows per-song + total; delete the
    imported song (swipe + confirm) → total drops by the song's shown size;
    original file in Files untouched.
