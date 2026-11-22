@@ -66,7 +66,7 @@ public struct MixerModel: Equatable, Sendable {
     public init(parts: [Part], focusTarget: Part? = nil) {
         self.lanes = parts.map { MixerLane(part: $0) }
         self.focusTarget = focusTarget
-        applyFocus()
+        applyFocus(to: focusTarget)
     }
 
     // MARK: - Presets
@@ -216,7 +216,7 @@ public struct TransportModel: Equatable, Sendable {
     public mutating func seek(to seconds: Double) {
         let clamped = min(max(seconds, 0), duration_s)
         position_s = clamped
-        if let loop, !loop.contains(clamped) {
+        if let current = loop, !current.contains(clamped) {
             // Seeking outside the region releases the loop (predictable).
             loop = nil
         }
