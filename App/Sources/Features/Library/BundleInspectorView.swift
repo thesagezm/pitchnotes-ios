@@ -16,6 +16,7 @@ struct BundleInspectorView: View {
 
     var body: some View {
         List {
+            mixerEntry
             manifestSection
             provenanceSection
             tuningSection
@@ -27,6 +28,23 @@ struct BundleInspectorView: View {
         .background(Color.pnBackground)
         .navigationTitle("Bundle Inspector")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Mixer entry (J-203)
+
+    @ViewBuilder
+    private var mixerEntry: some View {
+        if song.bundleDirectory != nil {
+            Section {
+                NavigationLink {
+                    MixerView(song: song)
+                } label: {
+                    Label("Listen (mixer)", systemImage: "slider.horizontal.3")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityHint("Per-stem faders, focus mix, transport with region loop")
+            }
+        }
     }
 
     // MARK: - Tuning reference (J-205, D-22)

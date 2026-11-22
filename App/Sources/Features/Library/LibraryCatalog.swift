@@ -38,6 +38,9 @@ struct LibrarySong: Identifiable {
     /// manifest (nil = v0-era/unknown — the lane-local ManifestV1 decoder
     /// rejects v0.x; callers treat nil as "no estimate yet").
     let tuningCents: Int?
+    /// J-203: the bundle directory (stems live here) — nil only for failed
+    /// rows with nothing playable.
+    let bundleDirectory: URL?
 
     var id: String { manifest.id }
     var allReportsValid: Bool { reports.allSatisfy(\.isValid) }
@@ -194,7 +197,8 @@ enum LibraryCatalog {
             scenarioCaption: caption,
             record: record,
             bytesOnDisk: bytesOnDisk,
-            tuningCents: tuningCents)
+            tuningCents: tuningCents,
+            bundleDirectory: dir)
     }
 
     /// Materialization itself failed — one red report row, no crash.
@@ -202,7 +206,8 @@ enum LibraryCatalog {
     /// demo, "bundle no longer readable" for a real import that went bad).
     private static func failedSong(id: String, error: Error, caption: String = "",
                                    record: BundleRecord? = nil, bytesOnDisk: Int64 = 0,
-                                   tuningCents: Int? = nil) -> LibrarySong {
+                                   tuningCents: Int? = nil,
+                                   bundleDirectory: URL? = nil) -> LibrarySong {
         let manifest = SongManifest(
             engineVersion: "unavailable",
             id: id,
@@ -222,6 +227,7 @@ enum LibraryCatalog {
             scenarioCaption: caption,
             record: record,
             bytesOnDisk: bytesOnDisk,
-            tuningCents: tuningCents)
+            tuningCents: tuningCents,
+            bundleDirectory: bundleDirectory)
     }
 }
