@@ -16,6 +16,153 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-30 | 2026-11-22 UTC | Leto | RULED (M2 session; uniform WEIGHTS PROVENANCE policy — resolves the D-17/D-21 vs demucs inconsistency)
+**Context:** D-17 banned NanoPitch's GTSinger-trained weights and D-21.3 banned
+grouper/drums outright, while M2 ships htdemucs weights that are trained on MUSDB18 —
+under the same "NC training data" logic M2's own model would be banned. Per-model
+improvisation is not a policy. Ruling needed BEFORE P-201 lands weights in the HF
+repo. All facts below verified against primary sources this session (never the
+dossier), D-19.1 precedent.
+**Ruling — the three-tier WEIGHTS PROVENANCE POLICY (applies to every model/weights
+decision from M2 on):**
+1. **TIER A — SHIP (clean):** explicit permissive license on code AND weights +
+   commercially clean / CC / permissive training data, or no training data (pure
+   DSP). Examples: SwiftF0, silero-vad, basic-pitch (Apache-2.0 + clean), dettato
+   transcriber + evidence (Apache-2.0 + clean synthetic training — NOTICE obligation
+   D-26.2 stands), demucs.cpp CODE, sevagh/pitch-detection (no training data).
+2. **TIER B — SHIP WITH RECORDED RISK:** weights carry an EXPLICIT permissive
+   license, but upstream training data has NC terms or is undocumented.
+   Requirements: provenance + risk recorded in DECISIONS; **HUMAN SIGN-OFF before
+   any commercial / App Store distribution** (v1 stays sideload-first per D-3, so
+   Tier B is shippable for sideload builds); NEVER represented as "clean" — the
+   licenses screen states the honest provenance line.
+3. **TIER C — REFUSE:** no explicit license, explicitly NC-licensed weights, OR
+   weights WE would train ourselves on NC data. The last is why D-7's
+   NanoPitch-trained-on-GTSinger fallback stays banned: that is us CREATING
+   encumbered weights — a different act from using upstream permissively-licensed
+   ones. Unknown license = Tier C (verify-before-use, D-15, unchanged).
+
+**M2 classification (demucs / htdemucs):**
+- **demucs.cpp CODE = TIER A.** MIT © 2023 Sevag H verified VERBATIM at pinned
+  HEAD `4edae497a114de1ccb17ac9b4a2b8fc0144714d7` (2026-11-06) — standard MIT
+  text, no non-standard terms. Vendor intake per L-008 executes in this session
+  (Leto lane, D-19.2 M1 precedent; P-201 = Paul's bridge/port/spike).
+- **htdemucs WEIGHTS = TIER B.** facebookresearch/demucs @`e976d93ecc3865e5757426930257e200846a520a`
+  (2023-11-16): MIT © Meta Platforms Inc. and affiliates — LICENSE read verbatim
+  AND the README License section states blanket MIT for the release; the same
+  README states htdemucs was "Trained on MUSDB HQ + an extra training dataset of
+  800 songs" (lines 30/222) — MUSDB18 audio = CC BY-NC-SA (verified verbatim
+  2026-11-21, D-21/X-310 forensics) and the 800-song extra set is undocumented.
+  → Ships in M2 under Tier B: provenance + risk recorded HERE; human sign-off
+  required before commercial distribution; sideload builds unaffected; licenses
+  screen copy: "htdemucs weights © Meta (MIT); trained on MUSDB18 (CC BY-NC-SA)
+  + additional data — training-data risk recorded (D-30)."
+- **dettato grouper/drums: reclassified banned → TIER B** (weights carry an
+  explicit Apache-2.0 license; training data MUSDB18/IRMAS NC — verified
+  verbatim). FUNCTIONAL OUTCOME UNCHANGED: still not shipped in v1 (author
+  admits weakest stage; 73 GM instrument classes; needs our synthetic-SATB
+  retrain per D-21/X-301). D-21's benchmark/retrain plan stands.
+- **NanoPitch weights: remain effectively TIER C** until the weights' own license
+  is verified explicit-permissive (never done — D-7) AND human sign-off. Moot in
+  practice: D-17's outcome (vendored MPM/YIN ribbon) is final for shipped v1.
+- **Community RoFormer checkpoints (BS-Roformer-SW, MVSep 53-stem, viperx,
+  KimberleyJensen, UVR/MDX): TIER B only if an explicit permissive weight license
+  is verified (X-310 pending); TIER C otherwise.** Verify-before-use unchanged.
+
+**Affects:** P-201..P-205, D-15 (baseline list gains the tier lens), D-17.2/D-21.3
+(superseded ONLY in phrasing: blanket NC ban → Tier B process for upstream
+explicit-permissive weights; self-trained-NC stays banned), AGENTS §9/§11
+(amended by this ruling, separate commit), Models/manifest.json `license` fields
+(Tier B entries must say so), J-204 licenses screen, L-602/L-603 (commercial
+distribution gate = human sign-off checkpoint), X-310.
+
+---
+
+## D-31 | 2026-11-22 UTC | Leto | RULED (P-206 scope move)
+**Context:** Paul carries 7 GATING M2 tasks (P-201..P-205, P-207, P-208). P-206
+(windowed-roformer ONNX export + benchmark vs demucs.cpp) is an L-size R&D item
+with no M2 gate dependency: htdemucs two-stem satisfies the M2 quality bar (§0
+SDR ≥ 8 dB synthetic vocals), and a RoFormer swap is only decision-relevant when
+the M6 quality-mode question is live (P-605, itself gated on X-310).
+**Ruling:**
+1. **P-206 MOVES from M2 (stretch) to M6** alongside P-605. PLAN.md tables updated
+   by this ruling (M2 row removed; M6 gains it, non-gating stretch, deps:
+   P-601 + shipped P-201 engine). AC unchanged: evaluation report in
+   BENCHMARKS.md; swap proposal ONLY via a DECISIONS ruling. It can never threaten
+   the M2 gate now.
+2. **PAUL: do not claim P-206 during M2.** The QUEUE row (Paul's section — lane
+   rule) stays where seeded; the M2 milestone header records DEFERRED→M6 (D-31)
+   and the M3/M6 pre-seed block already shows it as non-gating. PLAN.md is the
+   task source (AGENTS §0/§2) — PLAN is authoritative over the stale row text.
+3. Flex note: if demucs.cpp SDR/RSS badly misses §0 targets at P-202, Paul files
+   an X-task to pull P-206's EVAL (export-only, no ship) forward — Leto rules on
+   the X-task; the default remains M6.
+**Affects:** PLAN.md M2/M6 tables, QUEUE M2 header, P-206, P-605, M2/M6 gates.
+
+---
+
+## D-32 | 2026-11-22 UTC | Leto | RULED (M2 consolidation — L-201; confirms carry-overs, rules vendor split + weights source + Eigen)
+**Context:** Dispatch asked for rulings labeled "D14" (tuning default), "D17"
+(chunking), and confirmation of M0 carry-overs — those letters are taken (D-14
+bootstrap exception; D-17 NanoPitch). Mapping: dispatch-D14 = **D-22, ALREADY
+RULED** (2026-11-21); dispatch-D17 = **D-25, ALREADY RULED**. Confirmed here as
+final for M2; no re-litigation.
+**Ruling (consolidation):**
+1. **Tuning default = D-22 CONFIRMED, FINAL:** estimate `tuning_cents` at import
+   (P-207); grading offsets the REFERENCE (J-401 adds tuning_cents before
+   deviation math) and the ribbon's note-name mapping adjusts; **stored
+   audio/stems are NEVER resampled/retuned** (fidelity + artifact avoidance);
+   retune happens transiently, in memory, ENGINE-SIDE, only for M3 transcription
+   (P-308) when |tuning_cents| ≥ 10, times mapped back. UI indicator + user
+   override = J-205. Matches the dispatch recommendation verbatim.
+2. **Chunking = D-25 CONFIRMED, AUTHORIZED:** P-202 benchmarks Muskey's shipping
+   recipe (4.5 s windows / 1 s overlap / crossfade) against our §8 5–10 s plan;
+   decide by MEASURED SDR + RTF + RSS logged in BENCHMARKS.md, not preference.
+   §8 text stands until the benchmark rules.
+3. **M0 carry-overs CONFIRMED holding for M2:** D-2 (HF repo — EXECUTED via D-20,
+   `thesagezm/pitchnotes-models` public, no token needed; weights URL swaps never
+   change sha256), D-3 (bundle id `com.thesagezm.pitchnotes`, iOS 16.0,
+   sideload-first), D-4 (JSON index v0 for M2 J-202; GRDB in M4), D-8 (44.1 kHz;
+   voice stems MONO, INSTRUMENTAL STEREO), D-9 (always run two-stem; near-silent
+   instrumental ⇒ `hasInstrumental=false`). No gaps found; progress/cancel
+   callback shape is CONTRACT work → L-203 (v1.0 freeze), not a ruling.
+4. **Vendor-intake split for P-201 (D-19.2 M1 precedent):** LETO performs the
+   demucs.cpp vendor intake (license verification, pin, LICENSE + intake README +
+   patches.log) — executing this session; PAUL's P-201 = C++17→Swift bridge
+   (`Engine/Separation/DemucsEngine`), threading work, spike, benchmarks. Intake
+   scope: upstream `src/**` + Eigen headers only; EXCLUDED (logged in
+   patches.log): `cli-apps/` + `vendor/libnyquist` (CLI audio I/O — AVFoundation
+   replaces it), `vendor/googletest` (tests), `vendor/demucs` (sevagh's Python
+   conversion fork — Linux-side tooling, never compiled into the app).
+   **Verified fact recorded: demucs.cpp `src/` (8,640 lines) contains ZERO OpenMP
+   pragmas** — "OpenMP requirement" is Eigen's optional parallelism (absent
+   `-fopenmp` it runs serial); the CLI multithreading already uses std::thread.
+   P-201's port = add std::thread/GCD parallelism around Eigen ops + benchmark.
+5. **Eigen = SHIP-SAFE (new license class, D-15 procedure):** header-only MPL-2.0
+   verified at demucs.cpp's pinned submodule `dd8c71e62852b2fe429edb6682ac91fd1c578a26`
+   (COPYING.README: "primarily MPL2"; some files BSD/MPL2-compatible). File-level
+   copyleft binds only modified files; we vendor unmodified headers at the pin
+   and keep LICENSE notices (licenses screen via intake). MPL-2.0 joins the
+   ship-safe list for this and future intakes.
+6. **WEIGHTS SOURCE for htdemucs fp16 ggml:** PRIMARY = convert from the OFFICIAL
+   Meta .pth (host `https://dl.fbaipublicfiles.com/demucs/`, demucs/pretrained.py:20
+   @e976d93e) using demucs.cpp's `convert-pth-to-ggml.py` at the pinned commit —
+   authoritative provenance chain (D-26.1 precedent: convert from upstream
+   ourselves). FALLBACK = pin `Retrobear/demucs.cpp` HF dataset
+   `ggml-model-htdemucs-4s-f16.bin` (84 MB, MIT-tagged repo, linked from the
+   demucs.cpp README itself) with the SHA256 trust anchor. Either path: mirror to
+   `thesagezm/pitchnotes-models` via `scripts/models/hf_upload.sh` (D-20 flow —
+   sha256 pinned at first verification, never changes), `Models/manifest.json`
+   `license` field reads "MIT (Tier B per D-30: training-data risk recorded)",
+   attribution lands in NOTICE + the J-204 licenses screen. Paul picks the path
+   operationally; the trust requirements above are mandatory either way.
+7. dettato "±35c → F1 0.81→0.96" remains VERIFICATION PENDING (human-reported;
+   not M2-relevant — P-307/P-308 will measure our own number).
+**Affects:** L-201, P-201..P-207, P-202 (D-25 execution), P-308/J-205/J-401 (D-22
+execution), vendor/demucs.cpp intake, Models/manifest.json, J-204, X-310.
+
+---
+
 ## D-29 | 2026-11-22 UTC | Leto | RULED (executes X-014; amends D-13)
 **Context:** X-013 forensics (paul, 2026-11-22T04:45Z): the ORT mirror's ObjC
 element-type table (`kElementTypeInfos`, ort_enums.mm) lacks `double`, so SwiftF0's
@@ -210,16 +357,40 @@ unverified.
    (MUSDB18/IRMAS). File map: Docs/RESEARCH.md owner = Leto. Edits committed separately.
 **Affects:** AGENTS.md §9/§12, P-309/P-605, X-310, NOTICE file (M6), J-204 licenses screen.
 
-## X-310 | 2026-11-21 UTC | Leto | OPEN (Leto owns)
+## X-310 | 2026-11-21 UTC | Leto | OPEN (Leto owns) — UPDATED 2026-11-22: (c)+(d) RULED
 **Question:** LICENSE VERIFICATION BUNDLE (verify-before-use, per D-15/D-26): (a) confirm
 dettato transcriber + evidence Apache-2.0 + exact NOTICE text — **transcriber DONE
 (verified 2026-11-21), evidence DONE (card verified: Apache-2.0, synthetic-only training)
 — residual: the ~20 "soundfont babies" soundfonts' file licenses**; (b) confirm grouper
-NC terms — **DONE (MUSDB18 academic/CC BY-NC-SA + IRMAS CC BY-NC-SA confirmed verbatim;
-weights NEVER ship)**; (c) BS-Roformer-SW checkpoint license — PENDING (needed before any
-P-605 quality-mode ship); (d) MVSep 53-stem checkpoint license — PENDING (same gate);
-(e) drums NC — **DONE (README confirms)**. Record each verdict here.
-**Affects:** D-21.4, P-309, P-605, M6.
+NC terms — **DONE (MUSDB18 academic/CC BY-NC-SA + IRMAS CC BY-NC-SA 3.0 confirmed verbatim;
+weights NEVER ship)**; (c) BS-Roformer-SW checkpoint license — **RULED 2026-11-22 (below)**;
+(d) MVSep 53-stem checkpoint license — **RULED 2026-11-22 (below)**; (e) drums NC —
+**DONE (README confirms)**. Record each verdict here.
+**2026-11-22 verdicts (Leto, primary sources, D-30 tier lens):**
+- **(c) BS-Roformer-SW = TIER C (REFUSE) as of today.** HF mirrors
+  (FractalSurfer/BS-RoFormer-SW-6stem — byte-for-byte mirror of
+  enerjazzer/BS-ROFO-SW-Fixed) carry license tag "unknown" with the card stating
+  verbatim: "Upstream declares no license (license: unknown). This mirror grants no
+  additional rights." Original author jarredou's HF account is DELETED; no
+  authoritative license statement exists anywhere in the chain; training data
+  undocumented. P-605's BS-RoFormer-SW path CANNOT ship. Re-classification path: only
+  if an authoritative author statement (surfacing author or rights holder) grants an
+  explicit permissive license → then Tier B at best (training data still undocumented).
+  P-605's live path: windowed-roformer (Smule MIT — weight-availability/license
+  verified when P-605 opens) and/or demucs.cpp Tier B baseline.
+- **(d) MVSep Mega 53-stem (ZFTurbo MSST) = TIER C (REFUSE) as of today.** MSST CODE
+  repo is MIT (verified) — but that covers CODE; the 53-stem CHECKPOINT carries NO
+  author license declaration (canonical repo shares checkpoints via releases/issues
+  "with no license terms attached"; docs/pretrained_models.md has no license column).
+  Third-party mirrors (e.g. Audante int8) tag MIT "as the source" while stating
+  "All rights to the model remain with its authors" — derivative tags, not
+  authoritative. Training data undocumented. Re-classification path: an explicit
+  license statement by ZFTurbo (active, contactable) in the repo/release → Tier B at
+  best (training data still undocumented). Muskey's MVSep-53-stem woodwind route
+  (RESEARCH A.2.2) is unusable for us.
+- **Residual (a) soundfont-babies file licenses: still PENDING** — gates X-301 (M3
+  prep) and P-309/P-605 indirectly; not an M2 gate item.
+**Affects:** D-21.4, D-30 (tier lens), P-309, P-605, M6, X-301.
 
 ## X-311 | 2026-11-21 UTC | Leto | OPEN (Paul owns; M3 prep, NON-GATING)
 **Question:** Read dettato's published "soundfont babies" soundfont-morphing technique
