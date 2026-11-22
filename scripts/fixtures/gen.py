@@ -189,20 +189,27 @@ def gen_noise_burst() -> np.ndarray:
     return buf
 
 
-def _mix_mixture(sr: int, melody_amp: float, chord_amp: float, seed: int) -> np.ndarray:
-    """Shared 2.5 s melody+chord mixture at the given sample rate (P-203/P-201
-    fixtures): melody C4-A3-B3-C4 with a -12-cent flat singer + sustained chord."""
+def _mix_mixture(sr: int, melody_amp: float, chord_amp: float, seed: int,
+                 flat_cents: float = -12.0, detune_cents: float = 0.0) -> np.ndarray:
+    """Shared 2.5 s melody+chord mixture at the given sample rate (P-203/P-201/P-207
+    fixtures): melody C4-A3-B3-C4 with a -12-cent flat singer + sustained chord.
+    `detune_cents` shifts the WHOLE mixture (melody + chord, varispeed style) and
+    REPLACES the flat-singer offset — used for the P-207 tuning-estimator fixtures
+    where every note must sit at exactly ±detune from A440 ET. With the default
+    args the arithmetic is bit-identical to the pre-parameterization mix44k."""
     dur = 2.5
     n = int(sr * dur)
     buf = np.zeros(n, dtype=np.float64)
     melody = [(0.0, 60), (0.625, 57), (1.25, 59), (1.875, 60)]  # C4 A3 B3 C4
+    mel_shift = (flat_cents + detune_cents) / 1200.0
+    ch_shift = detune_cents / 1200.0
     for start, midi in melody:
-        f = midi_hz(midi) * 2.0 ** (-12.0 / 1200.0)  # slight flat singer (-12 cents)
+        f = midi_hz(midi) * 2.0 ** mel_shift
         place(buf, start, sr, tone(f, int(0.55 * sr), sr, amp=melody_amp,
                                    harmonics=((1, 1.0), (2, 0.35), (3, 0.2))))
     # Backing sustained chord C3/E3/G3 under the melody.
     for midi in (48, 52, 55):
-        place(buf, 0.0, sr, tone(midi_hz(midi), int(dur * sr), sr, amp=chord_amp,
+        place(buf, 0.0, sr, tone(midi_hz(midi) * 2.0 ** ch_shift, int(dur * sr), sr, amp=chord_amp,
                                  harmonics=((1, 1.0), (2, 0.2))))
     rng = np.random.default_rng(seed)
     buf += 0.001 * rng.standard_normal(n)
@@ -213,6 +220,17 @@ def gen_mix44k() -> np.ndarray:
     """2.5 s 44.1 kHz mono melody+chord mixture (spike input for M2 separation / M3
     transcription)."""
     return _mix_mixture(SR_HIGH, 0.35, 0.15, 0x4411)
+
+
+def gen_mix44k_detuned_plus35() -> np.ndarray:
+    """P-207 tuning fixture: the whole mixture sits +35 cents from A440 (varispeed;
+    flat-singer offset replaced). TuningEstimator must recover ~+35 (±5 c AC)."""
+    return _mix_mixture(SR_HIGH, 0.35, 0.15, 0x7135, flat_cents=0.0, detune_cents=35.0)
+
+
+def gen_mix44k_detuned_minus35() -> np.ndarray:
+    """P-207 tuning fixture: the whole mixture sits −35 cents from A440."""
+    return _mix_mixture(SR_HIGH, 0.35, 0.15, 0x7136, flat_cents=0.0, detune_cents=-35.0)
 
 
 def gen_mix48k_stereo() -> tuple[np.ndarray, np.ndarray]:
@@ -279,6 +297,8 @@ FIXTURES = [
     ("silence_16k.wav", gen_silence, SR),
     ("noise_burst_16k.wav", gen_noise_burst, SR),
     ("mix44k_short.wav", gen_mix44k, SR_HIGH),
+    ("mix44k_detuned_plus35.wav", gen_mix44k_detuned_plus35, SR_HIGH),
+    ("mix44k_detuned_minus35.wav", gen_mix44k_detuned_minus35, SR_HIGH),
     ("mix48k_stereo.wav", gen_mix48k_stereo, SR_48K),  # stereo (L, R)
 ]
 
