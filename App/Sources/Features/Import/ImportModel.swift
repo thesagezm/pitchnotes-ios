@@ -54,7 +54,12 @@ final class ImportModel: ObservableObject {
     /// Editable display title (prefilled from the filename at pick time).
     @Published var setupTitle = ""
 
-    static let supportedTypes: [UTType] = [.mp3, .flac, .wav, .mpeg4Audio, .aiff]
+    // FLAC has no static UTType member (UniformTypeIdentifiers ships
+    // .mp3/.wav/.mpeg4Audio/.aiff); the system-declared UTI is org.xiph.flac,
+    // which AVAudioFile decodes natively. .audio keeps the picker usable if
+    // the identifier is ever unavailable.
+    static let flac = UTType("org.xiph.flac") ?? .audio
+    static let supportedTypes: [UTType] = [.mp3, flac, .wav, .mpeg4Audio, .aiff]
 
     private var store: BundleStore?
     private var importTask: Task<Void, Never>?
@@ -227,7 +232,7 @@ final class ImportModel: ObservableObject {
 
     private func observeThermal() {
         thermalObserver = NotificationCenter.default.addObserver(
-            forName: .NSProcessInfoThermalStateDidChange, object: nil, queue: .main
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in self?.refreshThermalAdvice() }
         }

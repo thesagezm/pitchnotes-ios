@@ -13,8 +13,8 @@ import EngineCore
 // What v1.0 freezes (C-8):
 //   · ImportStage {decoding, separating, assembling} — rawValues stable.
 //   · ImportProgress {stage, fraction, detail} — fraction is the OVERALL
-//     import fraction in [0, 1], MONOTONIC within one import call, 1.0 only at
-//     completion (P-202 AC).
+//     import fraction in [0, 1] (the ENGINE weights its own stages), MONOTONIC
+//     within one import call, 1.0 only at completion (P-202 AC).
 //   · ImportProgressHandler — called on an ARBITRARY thread/queue; must not
 //     block or touch UI directly. Last handler wins.
 //   · ProgressReportingEngine — additive conformance over EngineAPI; the
@@ -62,50 +62,34 @@ public protocol ProgressReportingEngine: EngineAPI {
 
 // MARK: - ImportProgressTracker (UI-side enforcement of the C-8 guarantees)
 
-/// Turns raw per-stage engine events into the UI's OVERALL monotonic fraction.
+/// Guards the OVERALL fraction the engine reports before it reaches the UI.
 ///
-/// C-8 makes the ENGINE responsible for monotonicity; this tracker is the
-/// UI-side defense that upholds the contract even if an engine build regresses
-/// — a non-monotonic or out-of-order event is clamped/rejected and COUNTED
-/// (surfaced on the debug screen, never silently swallowed: D-12 honesty).
+/// C-8 makes the ENGINE responsible for monotonicity and the 1.0-only-at-
+/// completion rule; this tracker is the UI-side defense that upholds the
+/// contract even if an engine build regresses — a non-monotonic, out-of-range,
+/// or out-of-order event is clamped/rejected and COUNTED (surfaced on the
+/// debug screen, never silently swallowed: D-12 honesty).
 public struct ImportProgressTracker: Sendable, Equatable {
 
-    /// Stage weights for the overall fraction. Standard: decode 10% (cheap),
-    /// separation 75% (the A14-long pole, AGENTS §8), assembly 15% (ALAC
-    /// encode ~5–6 MB/min/stem). Weights sum to exactly 1.
-    public struct Weights: Sendable, Equatable {
-        public let decoding: Double
-        public let separating: Double
-        public let assembling: Double
-
-        public init(decoding: Double, separating: Double, assembling: Double) {
-            self.decoding = decoding
-            self.separating = separating
-            self.assembling = assembling
-        }
-
-        public static let standard = Weights(decoding: 0.10, separating: 0.75, assembling: 0.15)
-    }
-
+    /// Just-under-full cap for pre-completion events (the UI bar must only
+    /// read "done" on the completion event).
     public static let preCompletionCap = 0.999
 
     public private(set) var snapshot: ImportProgress?
     public private(set) var isComplete = false
-    /// Events clamped because they would have decreased the overall fraction.
+    /// Events clamped because they would have decreased the overall fraction
+    /// or hit 1.0 before completion.
     public private(set) var clippedNonMonotonicEvents = 0
     /// Events rejected outright (backwards stage, or fed after completion).
     public private(set) var rejectedEvents = 0
 
-    private let weights: Weights
     private var highestStageIndex = -1
     private var lastOverall: Double = 0
 
-    public init(weights: Weights = .standard) {
-        self.weights = weights
-    }
+    public init() {}
 
-    /// Feed one raw engine event; returns the enforced snapshot
-    /// (unchanged when the event is rejected).
+    /// Feed one raw engine event (`fraction` = OVERALL, per C-8); returns the
+    /// enforced snapshot (unchanged when the event is rejected).
     @discardableResult
     public mutating func feed(stage: ImportStage, fraction: Double, detail: String?) -> ImportProgress {
         if isComplete {
@@ -119,12 +103,7 @@ public struct ImportProgressTracker: Sendable, Equatable {
         }
         highestStageIndex = index
 
-        let stageFraction = min(max(fraction, 0), 1)
-        let stagesBefore = ImportStage.allCases[..<index]
-        let weightBefore = stagesBefore.reduce(0.0) { total, s in
-            total + weight(of: s)
-        }
-        var overall = weightBefore + stageFraction * weight(of: stage)
+        var overall = min(max(fraction, 0), 1)
 
         // C-8: 1.0 only at completion. A pre-completion 1.0 (or overshoot) is
         // capped just under full so the UI bar reads "almost done", not done.
@@ -153,13 +132,5 @@ public struct ImportProgressTracker: Sendable, Equatable {
         lastOverall = 1.0
         snapshot = ImportProgress(stage: stage, fraction: 1.0, detail: detail)
         return snapshot!
-    }
-
-    private func weight(of stage: ImportStage) -> Double {
-        switch stage {
-        case .decoding: return weights.decoding
-        case .separating: return weights.separating
-        case .assembling: return weights.assembling
-        }
     }
 }

@@ -9,21 +9,17 @@ import EngineCore
 
 final class ImportProgressTrackerTests: XCTestCase {
 
-    // MARK: Weights + overall fraction
+    // MARK: Overall fraction passthrough (C-8: the engine weights its stages)
 
-    func testStandardWeightsSumToOne() {
-        let w = ImportProgressTracker.Weights.standard
-        XCTAssertEqual(w.decoding + w.separating + w.assembling, 1.0, accuracy: 1e-12)
-    }
-
-    func testOverallFractionWithinStageUsesStageWeights() {
+    func testOverallFractionPassesThroughWithinStage() {
         var t = ImportProgressTracker()
-        t.feed(stage: .decoding, fraction: 0.5, detail: nil)
-        XCTAssertEqual(t.snapshot?.fraction ?? 0, 0.05, accuracy: 1e-9) // 0.5 × 0.10
-        t.feed(stage: .separating, fraction: 0.5, detail: nil)
-        XCTAssertEqual(t.snapshot?.fraction ?? 0, 0.475, accuracy: 1e-9) // 0.10 + 0.5 × 0.75
-        t.feed(stage: .assembling, fraction: 0.5, detail: nil)
-        XCTAssertEqual(t.snapshot?.fraction ?? 0, 0.925, accuracy: 1e-9) // 0.85 + 0.5 × 0.15
+        t.feed(stage: .decoding, fraction: 0.05, detail: nil)
+        XCTAssertEqual(t.snapshot?.fraction ?? 0, 0.05, accuracy: 1e-12)
+        t.feed(stage: .separating, fraction: 0.475, detail: nil)
+        XCTAssertEqual(t.snapshot?.fraction ?? 0, 0.475, accuracy: 1e-12)
+        XCTAssertEqual(t.snapshot?.stage, .separating)
+        t.feed(stage: .assembling, fraction: 0.925, detail: nil)
+        XCTAssertEqual(t.snapshot?.fraction ?? 0, 0.925, accuracy: 1e-12)
     }
 
     func testOverallStaysInUnitInterval() {
@@ -136,8 +132,9 @@ final class ImportFailureMappingTests: XCTestCase {
             XCTFail("cocoa 640 must not map to disk full")
         }
 
-        let denied = NSError(domain: NSCocoaErrorDomain,
-                             code: NSFileReadNoPermissionDenied, userInfo: nil)
+        // 257 = NSFileReadNoPermissionDenied (literal — the named constant is
+        // not in scope in this SPM target on CI; same precedent as ImportFlowRules).
+        let denied = NSError(domain: NSCocoaErrorDomain, code: 257, userInfo: nil)
         XCTAssertEqual(ImportFailure.cause(from: denied), .permissionDenied)
     }
 
