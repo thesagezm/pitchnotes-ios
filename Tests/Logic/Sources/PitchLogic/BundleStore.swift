@@ -82,7 +82,13 @@ public struct BundleStore: Sendable {
     public func loadIndex() -> [BundleRecord] {
         guard let data = try? Data(contentsOf: indexURL) else { return [] }
         do {
-            return try JSONDecoder().decode(BundleIndexFile.self, from: data).records
+            // MUST mirror saveIndex's .iso8601 date strategy — a decoder on the
+            // default strategy throws on ISO-8601 dates and silently quarantines
+            // a perfectly good index (every record would "vanish" on relaunch;
+            // caught by CI r3, run 45011496301).
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try decoder.decode(BundleIndexFile.self, from: data).records
         } catch {
             let corrupt = indexURL.deletingLastPathComponent()
                 .appendingPathComponent("index.corrupt")
