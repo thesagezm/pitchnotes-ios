@@ -743,8 +743,11 @@ otherwise the ScriptedImportEngine mock path demonstrates the same UX).
    M3 on, when note tracks exist (amber < 60%).
    [P: two-stem bundle with INSTRUMENTAL when source has backing.]
 5. **Inspector**: Import section (source/added/size), Tuning section shows the
-   D-22 estimate ("+32c sharp — reference adjusted" when P-207 landed; v0-era
-   shows the honest "—" line), per-file V-rules PASS.
+   D-22 estimate ("+32c sharp — reference adjusted" when P-207 landed; a
+   manifest with no usable estimate shows the honest "— (no usable estimate in
+   this manifest)" line — v0-era, or a v1.x manifest whose estimate is
+   missing/out-of-range, with the V14/V15 violation named in Validation),
+   per-file V-rules PASS.
 6. **Mixer solo/focus/mute/loop** (J-203; skip if not merged at demo time):
    open mixer → focus preset default (target unity, others −12 dB — "others
    quieter", never "solo"); MUTE mutes; SOLO isolates honestly (label copy);

@@ -73,7 +73,12 @@ struct BundleInspectorView: View {
                 }
                 .accessibilityElement(children: .combine)
             } else {
-                field("Tuning estimate", "— (v0-era manifest; estimate arrives with P-207)")
+                // Honest about WHY there is no estimate: a v0-era manifest
+                // that predates `tuning_cents`, OR a v1.x manifest whose
+                // estimate is missing/out-of-range (V14) or whose parts
+                // disagree with `hasInstrumental` (V15) — the Validation
+                // section below shows those violations by name.
+                field("Tuning estimate", "— (no usable estimate in this manifest)")
             }
 
             if song.record != nil {
