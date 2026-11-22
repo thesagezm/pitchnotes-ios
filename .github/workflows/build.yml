@@ -98,6 +98,24 @@ jobs:
           cd Engine/MicCapture
           swift test 2>&1 | tee ../miccapture-tests.log
 
+      # X-204 (P-203 ac leg, BLOCKING where present): ImportKit format-import
+      # tests — 3 lossless BIT-IDENTITY vs ffmpeg reference (loud XCTSkip if
+      # ffmpeg missing, never fake-pass), 1 MP3 tolerance (CoreAudio vs ffmpeg
+      # differ sample-wise; ±2048-frame alignment, max|Δ|<0.02), 1 48k→44.1k
+      # structural, 2 error-contract. Fixtures committed; tests #filePath-
+      # relative. BRANCH-STATE CONDITIONAL: Engine/ImportKit lands on main at
+      # the M2 gate merge (paul has it now) — Paul's "committed on ALL
+      # branches" premise verified FALSE (ls-tree origin/main empty), so a
+      # plain project.yml package entry would hard-fail SPM resolve on main
+      # (X-201 r1 class). Package+dep wiring defers to the gate merge; this
+      # step proves the ac where the package exists and skips where it can't.
+      - name: Run ImportKit package tests (X-204 BLOCKING where present)
+        if: ${{ hashFiles('Engine/ImportKit/Package.swift') != '' }}
+        run: |
+          set -o pipefail
+          cd Engine/ImportKit
+          swift test 2>&1 | tee ../importkit-tests.log
+
       - name: Run PitchLogic package tests
         run: |
           set -o pipefail
@@ -136,6 +154,14 @@ jobs:
           name: miccapture-tests-log
           path: miccapture-tests.log
           if-no-files-found: warn
+
+      - name: Upload ImportKit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: importkit-tests-log
+          path: importkit-tests.log
+          if-no-files-found: ignore
 
       - name: Show failure summary
         if: failure()
