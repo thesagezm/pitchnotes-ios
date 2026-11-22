@@ -157,7 +157,7 @@ final class TuningOffsetTests: XCTestCase {
     }
 
     func testManifestV1RejectsV0EraManifest() {
-        let v0 = v1JSON(contractVersion: "v0.0", parts: vocalsPart)
+        let v0 = v1JSON(parts: vocalsPart, contractVersion: "v0.0")
         XCTAssertThrowsError(try ManifestV1.decode(v0)) { error in
             XCTAssertEqual(error as? ManifestV1DecodeError, .notV1(found: "v0.0"))
         }
