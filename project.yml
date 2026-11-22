@@ -127,7 +127,7 @@ targets:
         # NOT add -fopenmp); Eigen headers incl. unsupported/Eigen/CXX11/Tensor;
         # SWIFT_INCLUDE_PATHS resolves `import DemucsShim` via
         # Engine/Separation/module.modulemap (paul branch until gate merge).
-        CLANG_CXX_LANGUAGE_STANDARD: GNU++17
+        CLANG_CXX_LANGUAGE_STANDARD: gnu++17
         HEADER_SEARCH_PATHS:
           - "$(SRCROOT)/Engine/Separation"
           - "$(SRCROOT)/vendor/demucs.cpp/src"
