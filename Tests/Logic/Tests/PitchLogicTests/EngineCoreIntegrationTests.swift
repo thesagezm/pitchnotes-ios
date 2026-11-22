@@ -37,9 +37,10 @@ final class EngineCoreIntegrationTests: XCTestCase {
 
     func testPartSortOrderAndComparableMatchContract() {
         // C-1 numeric sortOrder (UI/display): soprano < alto < t1 < t2 <
-        // baritenor < baritone < bass < vp < lead < instrumental. Comparable
-        // uses sortOrder (v0.0.1 clarification D-18.4).
-        let expected: [Part] = [.soprano, .alto, .t1, .t2, .baritenor, .baritone, .bass, .vp, .lead, .instrumental]
+        // baritenor < baritone < bass < vp < lead < instrumental < vocals
+        // (vocals = v1.0 C-1/L-203, sortOrder 10, appended — additive rule).
+        // Comparable uses sortOrder (v0.0.1 clarification D-18.4).
+        let expected: [Part] = [.soprano, .alto, .t1, .t2, .baritenor, .baritone, .bass, .vp, .lead, .instrumental, .vocals]
         XCTAssertEqual(Part.allCases.sorted(), expected)
         XCTAssertTrue(Part.t1 < Part.bass, "Comparable is display order, NOT pitch order")
     }

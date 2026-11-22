@@ -129,6 +129,8 @@ def run_silero(report: sc.CheckReport) -> None:
 
 
 def run_separation(report: sc.CheckReport) -> None:
+    if _try_real("separation", report) is True:
+        return
     out = mm.mock_separation()
     r2 = sc.CheckReport()
     stems = [out["stem0"], out["stem1"]]
@@ -180,7 +182,8 @@ def _try_real(name: str, report: sc.CheckReport) -> bool | None:
     # not landed yet → mock fallback (loud banner).
     real_runners = {"swiftf0": ("swiftf0_real", "run_real"),
                     "ribbon": ("ribbon_real", "run_ribbon"),
-                    "silero-vad": ("silero_real", "run_silero")}
+                    "silero-vad": ("silero_real", "run_silero"),
+                    "separation": ("demucs_real", "run_separation_real")}
     if name not in real_runners:
         return None
     mod_name, fn_name = real_runners[name]
@@ -201,8 +204,8 @@ def _try_real(name: str, report: sc.CheckReport) -> bool | None:
                 f"{name}: real mode required (PITCHNOTES_SPIKE_REAL=required) but "
                 "onnxruntime is not importable — add it to the spike venv")
         LAST_MODE[name] = "mock"
-        print(f"  [{name}] onnxruntime unavailable → deterministic mock fallback "
-              "(Tests/Spikes/README.md: add `onnxruntime` to the spike venv for the real model)")
+        print(f"  [{name}] real path unavailable ({name}: onnxruntime / vendored sources / model) "
+              "→ deterministic mock fallback (Tests/Spikes/README.md: real-path prerequisites)")
         return None
     try:
         getattr(sreal, fn_name)(report)
