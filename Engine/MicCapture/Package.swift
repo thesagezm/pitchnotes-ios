@@ -11,7 +11,11 @@ import PackageDescription
 // Wired into the app target via project.yml (Leto: X-011).
 let package = Package(
     name: "MicCapture",
-    platforms: [.iOS(.v15), .macOS(.v14)],
+    // iOS floor .v16 (Leto, gate run 44987823995): EngineCore (the dependency)
+    // declares .iOS(.v16) — consumer cannot declare a lower iOS floor than its
+    // dependency; app target is iOS 16.0 (D-3). macOS stays .v14. Flagged for
+    // Paul's ratification (same lane-exception class as d16fe86).
+    platforms: [.iOS(.v16), .macOS(.v14)],
     products: [
         .library(name: "MicCapture", targets: ["MicCapture"]),
     ],

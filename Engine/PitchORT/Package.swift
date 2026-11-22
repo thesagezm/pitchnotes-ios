@@ -8,7 +8,12 @@ import PackageDescription
 // AGENTS §0). Wired into the app target via project.yml (Leto X-008).
 let package = Package(
     name: "PitchORT",
-    platforms: [.iOS(.v15), .macOS(.v14)],
+    // iOS floor .v16 (Leto, gate run 44987823995): EngineCore (the dependency)
+    // declares .iOS(.v16) — a consumer product must not declare a LOWER iOS
+    // floor than its dependency, and the app target is iOS 16.0 (D-3) anyway.
+    // macOS stays .v14 (runner tests). Flagged for Paul's ratification (X-014
+    // session lane exception, same class as the d16fe86 path fix).
+    platforms: [.iOS(.v16), .macOS(.v14)],
     products: [
         .library(name: "PitchORT", targets: ["PitchORT"]),
     ],
