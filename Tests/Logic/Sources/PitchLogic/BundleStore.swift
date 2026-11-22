@@ -230,6 +230,14 @@ public struct BundleStore: Sendable {
         return removed
     }
 
+    /// How many stray `<id>.tmp` staging dirs exist right now (Settings →
+    /// Storage's "interrupted imports" row; cleanup reuses the clear method).
+    public func strayStagingDirectoryCount() -> Int {
+        let fm = FileManager.default
+        guard let children = try? fm.contentsOfDirectory(atPath: root.path) else { return 0 }
+        return children.filter { $0.hasSuffix(".tmp") }.count
+    }
+
     /// Deletes one song: bundle directory first, then the index entry. If the
     /// process dies between the two, `scan`/`reconcile` heal the index (the
     /// record points at a missing dir and is pruned). Never deletes anything

@@ -23,15 +23,42 @@ struct SettingsView: View {
             section(
                 "Audio",
                 rows: [
-                    Row(title: "Latency calibration", detail: "Loopback test and manual offset for live feedback.", milestone: "M1"),
+                    // J-102 ships the latency stub in the tuner; the real
+                    // loopback procedure is M4 (UX §5.8).
+                    Row(title: "Latency calibration", detail: "Loopback test and manual offset — stub lives in the tuner today.", milestone: "M4"),
+                    Row(title: "Headphone policy", detail: "Guided to headphones for feedback; banners handle routing (J-102).", milestone: "M2"),
                 ]
             )
-            section(
-                "Storage",
-                rows: [
-                    Row(title: "Song bundles", detail: "Stem storage use and per-song deletion.", milestone: "M2"),
-                ]
-            )
+            Section("Storage") {
+                NavigationLink {
+                    StorageScreen()
+                } label: {
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text("Song bundles")
+                            .font(Token.Fonts.body)
+                        Text("Per-song and total storage, delete all, interrupted-import cleanup.")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                    }
+                    .padding(.vertical, Token.Spacing.s1)
+                }
+                .accessibilityHint("Bundle storage management (J-204)")
+            }
+            Section("Models") {
+                NavigationLink {
+                    ModelsScreen()
+                } label: {
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text("Model manifest")
+                            .font(Token.Fonts.body)
+                        Text("Sizes, status, offline promise — download once, never again.")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                    }
+                    .padding(.vertical, Token.Spacing.s1)
+                }
+                .accessibilityHint("On-device model status (J-204)")
+            }
             Section("Developer") {
                 NavigationLink {
                     DebugPitchView()
@@ -97,6 +124,13 @@ struct SettingsView: View {
 
     private var aboutSection: some View {
         Section("About") {
+            NavigationLink {
+                LicensesView()
+            } label: {
+                Text("Licenses")
+                    .font(Token.Fonts.body)
+            }
+            .accessibilityHint("Every shipped dependency and its license, with honest provenance tiers (J-204)")
             HStack {
                 Text("Version")
                 Spacer()

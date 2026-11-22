@@ -153,8 +153,10 @@ final class BundleStoreTests: XCTestCase {
                 at: root.appendingPathComponent("\(id).tmp", isDirectory: true),
                 withIntermediateDirectories: true)
         }
+        XCTAssertEqual(store.strayStagingDirectoryCount(), 2, "count before cleanup (Settings row)")
         XCTAssertEqual(store.clearStrayStagingDirectories(), 2)
         XCTAssertEqual(store.clearStrayStagingDirectories(), 0, "idempotent")
+        XCTAssertEqual(store.strayStagingDirectoryCount(), 0)
         XCTAssertEqual(store.scan().map(\.id), ["01JLLLLLLLLLLLLLLLLLLLLLLL"], "real bundle untouched")
     }
 
