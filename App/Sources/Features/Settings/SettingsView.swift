@@ -32,12 +32,33 @@ struct SettingsView: View {
                     Row(title: "Song bundles", detail: "Stem storage use and per-song deletion.", milestone: "M2"),
                 ]
             )
-            section(
-                "Developer",
-                rows: [
-                    Row(title: "Bundle inspector", detail: "Validate SongBundle files against the contract schemas.", milestone: "M0"),
-                ]
-            )
+            Section("Developer") {
+                NavigationLink {
+                    DebugPitchView()
+                } label: {
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text("Live pitch debug")
+                            .font(Token.Fonts.body)
+                        Text("Raw frames, RTF meter, engine identity — read latency for BENCHMARKS.md.")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                    }
+                    .padding(.vertical, Token.Spacing.s1)
+                }
+                .accessibilityHint("Live pitch debug measurements (J-103)")
+                HStack {
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text("Bundle inspector")
+                            .font(Token.Fonts.body)
+                        Text("Validate SongBundle files against the contract schemas (Library tab → song).")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, Token.Spacing.s1)
+                .accessibilityElement(children: .combine)
+            }
             aboutSection
         }
         .scrollContentBackground(.hidden)

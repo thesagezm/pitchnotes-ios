@@ -1,6 +1,8 @@
 # Docs/UX.md — PitchNotes UX spec (Jess)
 
-> **Owner:** Jess. **Version:** v0 (M0, J-003). Companion docs: `AGENTS.md`,
+> **Owner:** Jess. **Version:** v0.1 (M1, J-104 — ribbon finalized as built;
+> M4 session storyboard expanded; latency spec added; M1 device demo §10.1).
+> v0 (M0, J-003) is the baseline. Companion docs: `AGENTS.md`,
 > `PLAN.md`, `CONTRACTS.md` (schemas/engine types referenced here), `Docs/RESEARCH.md`
 > (evidence pack), `Docs/CONTENT.md` (content schemas & licensing).
 > **Change protocol:** edits land as `jess:` commits on branch `jess`; anything that
@@ -252,6 +254,87 @@ M3+ adds bars/tracks from bundles. J-101 must keep rendering decoupled from
 scheduling: frames arrive on the engine queue; drawing consumes the latest complete
 frame (never queues stale frames — < 100 ms rule).
 
+### 3.9 Ribbon as-built (v0.2, M1 — J-101 + J-105 swap; supersedes the M1 note above)
+
+**Supersession:** M1 DOES render reference bars — the MockEngine script provides
+C-2.3 NoteTracks, so bars render whenever a track exists (real bundles from M2
+onward reuse the same path). The "no reference bars in M1" note in §3.8 is void.
+
+**Two reference modes** (the §3.4 state table only means something against a
+reference):
+
+| Mode | Reference | Semantics |
+|---|---|---|
+| REFERENCE (default) | the active note of the part's NoteTrack at `t` (`NoteTrackQuery.currentNote`, C-2.3 `midi`+`cents_ref`) | full §3.4 table: inTune/flat/sharp + §3.5 octave badge |
+| TUNER (fallback) | nearest equal-tempered semitone of the sung hz | gap/rest or no track: `|dev| ≤ 50¢` is structural — the nearest semitone re-centers, so out-of-tune flat/sharp CANNOT occur without a reference (tested: `testStandaloneTunerNeverExceedsHalfSemitoneDeviation`) |
+
+**J-105 swap executed (2026-11-22, on main @6ddc159 base):** the C-6.0 zero-UI
+contract holds — the swap touched sources and glue only; the Canvas, state
+table, mapping, and a11y code are untouched.
+
+- `RibbonFrameSource` (the C-6 seam) now has TWO conformers:
+  - `MockRibbonFrameSource` — scripted MockEngine singer (unchanged).
+  - `LivePitchEngineRibbonSource` — **the REAL causal source**:
+    `LivePitchFacade.ribbonFrame(_:)` ONLY (engine_id `RIBBON_MPM_YIN`,
+    lookahead_ms 0, D-17/D-19 Swift MPM via EngineCore `RibbonEngine`). The
+    SwiftF0 176 ms `gradingSource` is NEVER a live-ribbon source (C-6.0).
+- `RibbonModel.SourceMode` (`demo` | `liveMic`, default `demo`) picks the
+  conformer; the selector sits next to the demo menu in the tuner controls.
+  `liveMic` = TUNER semantics (no reference track — empty NoteTrack, honest
+  free-singing per D-12).
+- Mic chunks flow through `MicChunkProviding` (push seam, hop-aligned 16 kHz
+  chunks): `MicCaptureChunkSource` (Paul's P-104 `MicCaptureEngine` — its doc
+  names `facade.ribbonFrame(chunk)` as the intended body) is compiled behind
+  `#if canImport(MicCapture)` and activates with ZERO code changes when Leto
+  re-wires the package into the app target (X-011a; X-013 compile fixes live
+  on origin/paul). Until then `SilenceMicChunkSource` feeds hop-aligned
+  silence: REAL ribbon DSP cost and RTF, honest unvoiced output — never fake
+  signal.
+- Demo-singer menu: KEPT until X-011a lands (the M1 device demo runs before
+  mic capture wires in); removal is then a one-line change recorded here.
+- `PitchLogic.PartRangePresets` (interim C-6.1 table) is DELETED —
+  `EngineCore.PartRangePresets` (P-105) is the single contract source;
+  `PitchLogic.PartRangeChips` derives the UI rows (chip labels, C-1 order,
+  follow-window center). The verbatim C-6.1 doc-value tests now pin the
+  EngineCore table through the adapter (`LivePitchEngineSwapTests`).
+
+**Implementation map** (J-101 + J-105; logic-tests cover every decision):
+
+- `PitchLogic` (pure, tested): `RibbonMapper` (state table + octave folding +
+  unvoiced gate `hz == 0 || confidence < 0.5`; low-confidence flag
+  `0.5 ≤ conf < 0.75`), `PartRangeChips` (UI layer over the EngineCore C-6.1
+  table), `NoteTrackQuery` (active note + window), `PitchMath`
+  (cents/fold/note names), `PartDisplay`.
+- `App/Features/Tuner` (render + source glue): `RibbonFrameSource` protocol +
+  the two conformers above (C-6.0 swap DONE); `LivePitchEngineRibbonSource`
+  (facade + `MicChunkProviding`; C-6.0 identity READ OFF FRAMES, never
+  rewritten); `RibbonModel` (reference resolution, 2 s trace, follow window,
+  ≤ 1 Hz VoiceOver summary, source mode). `TunerRibbonView` (Canvas; §3.8
+  wireframe + source/demo menu).
+- `App/Features/Audio` (J-102): `AudioSessionController` (permission/
+  interruption/route glue over `MicPermissionFlow`), `MicAccessBanners`,
+  `MicMeterRow`, `LatencyStubRow` (§5.8).
+
+**As-built constants** (§3.2/§3.3 values confirmed; refine only via this doc):
+
+- `pps` 90 px/s · playhead 30% from left · window 3 s history / 7 s look-ahead ·
+  `barH` 22 px scaled by `min(22, height/24)` · trace 2 s (unvoiced = break) ·
+  follow-window re-center ≈ 100 ms exponential (snap under Reduce Motion; the
+  §1.3 250 ms ceiling holds) · held window dims to 85%.
+- Tolerance presets ±50/±25/±10 (segmented control; default ±50, C-5).
+- Colors/states exactly per §1.1/§3.4; 8va/8vb badge in `octaveWarn`, never
+  color-only (arrow + words accompany).
+- Part chips: C-1 display order, selected chip shows "Bass E2–G3" (C-6.1
+  `displayName`); 44 pt hit targets.
+- VoiceOver: ribbon exposes ONE element whose label is the spoken summary
+  ("E3, 23 cents flat, sing higher" / "C4, in tune, one octave up" /
+  "unvoiced") refreshed at ≤ 1 Hz with `.updatesFrequently`; the canvas plots
+  are a11y-hidden (the numeric readout is the value).
+- Demo-singer menu (mock scenarios: perfect/flat/sharp/octave/breathy/silent/
+  late-onset/vibrato) — the M1 device demo exercises every §3.4 state without
+  a human singing; KEPT while capture is unwired (X-011a pending), removed at
+  that re-wiring (one-line change; J-105 keeps both sources selectable).
+
 ---
 
 ## 4. Design tokens → screens map (J-001 wiring)
@@ -312,18 +395,64 @@ Presets: Focus (default) · All voices · Custom. "Focus" never hard-mutes other
 AirPlay/lock-screen playback via UIBackgroundModes [audio] (Info.plist, L-003).
 ```
 
-### 5.4 Learner session (M4, J-402) — state machine
+### 5.4 Learner session (M4, J-402) — full storyboard (implementable without re-design)
+
+**Data flow (CONTRACTS, no new interfaces):** reference `NoteTrack` (C-2.3,
+optionally J-302-corrected) + live `PitchFrame`s from `gradingSource`
+(P-401 aligns `lookahead_ms`) + `GradingConfig` (C-5: tolerance, octave
+equivalence, onset grace 80–120 ms, breath gate on `loudness_db`) → per-note
+`{centsDeviation, coverage, sustain, hit}` → phrase score → `SessionResult`
+(schema CONTRACTS v1.2 / L-401). The M1 ribbon (§3.9) renders unchanged
+inside the session — same components, different frame source.
+
+**State machine** (one `SessionModel: ObservableObject`; states are a Swift
+enum; every transition user-visible within 100 ms):
 
 ```
-READY: part chip + tolerance + count-in picker (0/2/4 beats) + [Start]
-COUNT-IN: 4 visual/haptic beats (configurable; mic NOT grading during count-in)
-ACTIVE: ribbon §3; transport minimal (pause only); guide level slider reachable
-PAUSED: freeze both timelines; [Resume] [Restart phrase] [Quit]
-PHRASE-END: micro-summary banner (phrase score + worst note), no modal
-DONE → Results (§6.3): grade + heatmap + [Retry weak phrases] [Retry all] [History]
-Latency screen (Settings→Audio→Calibrate): loopback test — play click, mic hears it,
-  reports round-trip ms, sets offset; manual slider 0–300 ms always available.
+READY     sheet over song detail: part chip (C-6.1 presets) · tolerance picker
+          (±50/±25/±10, default from J-405 config) · octave-equivalence toggle ·
+          count-in picker (0/2/4 beats) · latency badge (§5.8: "calibrated ±N ms"
+          or "uncalibrated") · [Start] · honesty caption ("focus mix, not solo;
+          unison passages can't be isolated — §3.7")
+COUNT-IN  metronome clicks + visual beat ring (1 beat = 1 pulse, .light haptic);
+          mic input IS captured but NOT graded (frames buffered, scoring starts
+          at beat 0); configurable 0 (off) → no ring, straight to ACTIVE
+ACTIVE    ribbon §3.9 full-bleed, controls collapsed to ONE row (pause + guide
+          level): reference bars + lyrics (lrc) scroll right→left at pps; the
+          live cursor traces over them; per-note real-time hit marker — dot
+          lands on the bar when the note's window closes: green (hit) /
+          orange (miss, ±cents shown) / hollow (unvoiced-coverage miss);
+          phone call / backgrounding → PAUSED (§ J-102 interruption path)
+PAUSED    both timelines freeze; [Resume] [Restart phrase] [Quit (discard)];
+          banner "graded frames held — latency unchanged"
+PHRASE-END  non-modal micro-banner 2 s: phrase score + worst note ("82 · E3 −34¢");
+            no navigation, ribbon keeps rolling
+DONE      auto after last note + 1 s tail → Results (§6.3)
 ```
+
+**Results screen (§6.3)** — grade letter + triad meters (Pitch/Rhythm/Sustain) +
+per-note heatmap strip (one cell per note, colored by hit/deviation, tap →
+Note Detail §6.1) + weakest-phrase list (≤ 3) + actions: [Retry weak phrases]
+(queues only phrases scoring < threshold) · [Retry all] · [History] (§5.5) ·
+"Latency felt early/late?" → Calibrate (§5.8).
+
+**Components to build (M4):** `SessionLauncherView` (the READY sheet),
+`SessionView` (hosts `TunerRibbonView` + transport + hit markers),
+`PhraseBanner`, `ResultsView`, `HeatmapStrip`, `NoteDetailView` (§6.1),
+`HistoryView` (§5.5, GRDB per D-4), `SessionModel` state machine, `ScoringEngine`
+(J-401, pure Swift, logic-tests — consumes C-5 IO, emits v1.2 schema).
+
+**Edge cases (design now, cheap in M4):** unvoiced long stretches → coverage
+miss, no crash, ribbon holds (§3.3); late onsets → onset grace window from
+config; vibrato → mean-centered wobble forgiven (config, J-405); octave errors
+→ config-driven folding (§3.5 semantics shared with the ribbon); unison
+passages → chip + softened grading expectation text (§3.7, honesty); wrong
+reference notes → Note Detail correction entry (J-302) — user fixes win over
+engine confidence; interruption mid-session → session preserved, resume
+re-aligns time via latency offset (§5.8).
+
+**Persistence:** session rows per D-4 (JSON v0 until GRDB in M4); config per
+J-405; tolerance/octave defaults shared with the ribbon (one `GradingConfig`).
 
 ### 5.5 History (M4, J-404 — GRDB per D-4)
 
@@ -360,6 +489,50 @@ Progress: per-exercise-type streaks, no leaderboards.
 Content: BarbershopTags = LINK-OUT ONLY until license verified (D-11); in-app
   content per Docs/CONTENT.md policy.
 ```
+
+### 5.8 Latency compensation (M1 stub → M4 J-403)
+
+**Why:** perceived feedback latency = mic capture + engine inference + render +
+output path. AGENTS §8 budgets < 100 ms end-to-end; the compensation OFFSET
+aligns the reference timeline with what the user actually heard, which matters
+most on speaker mode (acoustic path) and Bluetooth headphones (variable buffer).
+
+**M1 (J-102, shipped as a stub):** manual slider 0–300 ms in 10 ms steps
+(`LatencyStubRow`, Settings disclosure + tuner), persisted locally
+(`@AppStorage`), **NOT applied** — P-104 wires real capture; grading consumes
+the offset from J-403. UI states the stub plainly ("Real loopback calibration
+ships in M4").
+
+**M4 (J-403) loopback calibration procedure:**
+
+```
+Settings → Audio → Calibrate latency
+1. Quiet-room check: input level meter (J-102) below threshold? → proceed, else
+   "find a quieter room" guidance (honest failure, not a fake number)
+2. The app plays N=8 clicks (200 ms apart) through the CURRENT output route and
+   records the mic simultaneously (P-104 capture path)
+3. Onset detect each click on the mic signal (energy threshold on the raw tap;
+   no ML); round-trip_i = t_detect_i − t_play_i
+4. offset = median(round-trip) − known output buffer latency (AVAudioSession
+   outputLatency + IOBufferDuration, read live per route)
+5. Confidence: median absolute deviation ≤ 15 ms → AUTO-ACCEPT ("±N ms" badge);
+   else → show measured value + "use anyway" / "calibrate again"; never write
+   an untrusted number silently
+6. Acceptance test (J-403 AC): loopback result within ±10 ms of a known delay
+   fixture; re-run after route change (headphones ↔ speaker) prompts
+```
+
+**Manual slider always wins:** 0–300 ms, adjustable without calibration,
+persisted per device (never in the bundle — C-6.1 calibration rule). The
+session (§5.4) shows a latency badge; tapping it deep-links here.
+
+**Consumption (grading):** `GradingConfig` carries `latencyOffsetMs`; P-401
+aligns live `PitchFrame.captureTime_s` against reference note times with the
+offset before coverage/hit math. The RIBBON does not shift (visual honesty —
+only scoring compensates).
+
+---
+
 
 ---
 
@@ -441,12 +614,12 @@ spoken state cadence is the M1 minimum, refinement tracked in M4.
 
 ## 9. Open questions / X-task index (Jess → Leto)
 
-| ID | Asks | Why UI needs it |
-|---|---|---|
-| **X-001** | Ratify part vocal-range presets (§3.6 table) + per-part calibration field as CONTRACTS C-1 additive block | part chips + follow-window + engine `fmin/fmax` ranges |
-| **X-002** | Ratify MockEngine named scenarios (perfect / flat −30¢ / sharp +35¢ / octave error / silent / breathy / late onset / vibrato) as C-3 additive note | deterministic ribbon/grading previews (J-002) |
-| **X-003** | Wire Paul's Engine into `project.yml` when P-001 lands: app target needs EngineAPI+MockEngine; PitchLogic needs contract Codable types WITHOUT ONNX Runtime (proposal: pure `PitchEngineContracts` target vs `PitchEngine` target) | J-002/J-004 consume; schema tests import Paul's models |
-| — | Portable logic-test package | **already satisfied** (PitchLogic Package.swift, `swift test` on CI) |
+| ID | Asks | Why UI needs it | Status |
+|---|---|---|---|
+| **X-001** | Ratify part vocal-range presets (§3.6 table) + per-part calibration field as CONTRACTS C-1 additive block | part chips + follow-window + engine `fmin/fmax` ranges | **RESOLVED → L-102**: C-6.1 ratified (v0.1); PitchLogic `PartRangePresets` consumed (EngineCore home at P-105) |
+| **X-002** | Ratify MockEngine named scenarios (perfect / flat −30¢ / sharp +35¢ / octave error / silent / breathy / late onset / vibrato) as C-3 additive note | deterministic ribbon/grading previews (J-002) | **STRUCK (D-16)**: satisfied by P-001 `MockScenario` |
+| **X-003** | Wire Paul's Engine into `project.yml` when P-001 lands: app target needs EngineAPI+MockEngine; PitchLogic needs contract Codable types WITHOUT ONNX Runtime (proposal: pure `PitchEngineContracts` target vs `PitchEngine` target) | J-002/J-004 consume; schema tests import Paul's models | **DONE (L-009 + X-006)**: EngineCore wired in project.yml; Tests/Logic path dep `../../Engine`; JSON shim deleted |
+| — | Portable logic-test package | **already satisfied** (PitchLogic Package.swift, `swift test` on CI) | ✓ |
 
 ## 10. M0 device demo checklist (human runs; log results in QUEUE LOG)
 
@@ -460,3 +633,50 @@ spoken state cadence is the M1 minimum, refinement tracked in M4.
 7. **Airplane mode ON → kill app → relaunch: still boots, no network prompts.**
 8. Settings → About shows version 0.1.0 (build 1).
 9. Log PASS/FAIL per step in QUEUE LOG (Leto records gate result).
+
+### 10.1 M1 device demo checklist (human runs after billing fix + green build-ipa)
+
+IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
+(≥ 61fc0c1 — ribbon + audio UX + debug screen included).
+
+1. Install via LiveContainer/SideStore; app boots to 5 tabs; **Learn tab now
+   shows the tuner ribbon** (mock singer scrolling, bars + cursor + readout).
+2. **Demo singer menu** (bottom-right): cycle Perfect → Flat −30¢ → Sharp +35¢
+   → Octave error → Breathy → Silent → Vibrato. Expect:
+   Perfect = green "in tune" · Flat/Sharp @ ±50 = still in-tune, switch the
+   tolerance picker to ±10 → orange ↑ "sing higher" / purple ↓ "sing lower" ·
+   Octave error with **8va fold ON** = green + red "8va" badge; fold OFF =
+   plain sharp ↓ · Breathy = dashed/dimmed trace (low-confidence honesty) ·
+   Silent = hollow gray cursor, "unvoiced" readout · Vibrato = wobble around
+   the bar.
+3. **Part chips**: select Bass → follow window re-centers to E2–G3; chip reads
+   "Bass E2–G3". All five chips (T1…Bass) present, C-1 order.
+4. **Octave-equivalence toggle** ("8va fold") flips the §3.5 behavior live
+   (step 2 octave case).
+5. **Mic permission flow**: the mic UX appears on Learn — first visit shows
+   "Enable microphone" prompt card. DENY it → denied card with [Open Settings]
+   (no crash — AC). Grant later from Settings → re-open app → card gone, level
+   meter animates (mock level until P-104).
+6. **Headphone banner**: with no headphones connected (granted state) → orange
+   speaker guidance banner; plug in wired/BT headphones → banner disappears
+   (route-change observer).
+7. **Interruption**: start a phone call (or Siri) while the tuner is up →
+   "Audio paused — interrupted" banner; end call → auto-resume note or
+   [Resume] per the .shouldResume option.
+8. **VoiceOver**: focus the ribbon → spoken state ≤ 1 Hz ("E3, 23 cents flat,
+   sing higher" / "unvoiced"). Dynamic Type largest: all text scales, readout
+   never overlaps chips. Dark mode: palette flips. Reduce Motion: center
+   snapping instead of glide.
+9. **Debug screen** (Settings → Developer → Live pitch debug): RTF EMA + worst
+   vs the ≤ 0.3 §8 target line — **J-105: this now measures the REAL ribbon**
+   (RibbonEngine MPM/YIN via `ribbonFrame`, hop-aligned silence input, honest
+   unvoiced strips — record the number in QUEUE LOG for BENCHMARKS.md; Paul's
+   A14 reading). Identity rows show the C-6.0 sources: ribbon `RIBBON_MPM_YIN ·
+   0 ms · live`, grading `SWIFTF0 · 176 ms · post-hoc`; `frame engine_id` /
+   `frame lookahead_ms` read off the real frames (`RIBBON_MPM_YIN` / `0`).
+   hz/confidence/loudness strips move (unvoiced = flat-zero lines until real
+   capture wires in, X-011a), device/thermal rows.
+10. **Airplane mode ON → kill → relaunch**: everything above still works (no
+    network, no prompts).
+11. Log PASS/FAIL per step + RTF/latency-feel notes in QUEUE LOG (L-103 gate
+    evidence).
