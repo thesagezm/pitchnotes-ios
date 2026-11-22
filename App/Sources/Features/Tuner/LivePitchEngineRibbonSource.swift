@@ -13,13 +13,15 @@ import EngineCore
 // READ OFF THE FRAMES (engine_id/lookahead_ms — C-6.0 discipline, v0.1 fields).
 //
 // Mic chunks flow through MicChunkProviding (below). The capture TAP itself is
-// Paul's MicCapture package (P-104) — NOT wired into the app target yet
-// (X-013 compile fixes live on origin/paul; Leto's X-008b/X-011a re-wiring
-// lands the package). The adapter here is written against MicCaptureEngine's
-// documented API behind #if canImport so the re-wiring activates real mic
-// capture with ZERO further code changes (its doc states the intended body:
-// "facade.ribbonFrame(chunk)"). Until then the real ribbon runs on hop-aligned
-// silence chunks — real DSP cost and RTF, honest unvoiced output (hz 0).
+// Paul's MicCapture package (P-104), wired into the app target by Leto's
+// X-008b/X-011a re-wiring (X-013 seam fixes landed + merged; jess→main 7c98a41).
+// The adapter here is written against MicCaptureEngine's documented API behind
+// #if canImport + a conditional `import MicCapture` (added at the jess→main
+// integration — canImport alone does not bring the type into scope), so real
+// mic capture activates with ZERO further code changes (its doc states the
+// intended body: "facade.ribbonFrame(chunk)"). Without the package in a target,
+// the real ribbon runs on hop-aligned silence chunks — real DSP cost and RTF,
+// honest unvoiced output (hz 0).
 
 /// Push-style 16 kHz MicChunk producer (hop-aligned). `start` installs the
 /// handler and begins producing; `stop` must be idempotent and thread-safe.
@@ -71,6 +73,7 @@ final class SilenceMicChunkSource: MicChunkProviding, @unchecked Sendable {
 }
 
 #if canImport(MicCapture)
+import MicCapture
 /// Real capture (P-104) the moment MicCapture joins the app target (X-011a):
 /// AVAudioEngine tap → 48 kHz→16 kHz conversion → CapturePipeline → hop-aligned
 /// MicChunks on the engine's callback queue. Config mirrors MicCaptureEngine's
