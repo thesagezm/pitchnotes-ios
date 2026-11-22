@@ -16,6 +16,52 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-34 | 2026-11-22 UTC | Leto | RULED (M2 gate session 7; the bundle-identity seam + two demo-blocking gaps closed by ruling)
+**Context:** Gate review for L-204 surfaced two facts that would have failed the M2 device
+demo on the day, both found by reading the code rather than the rows:
+(1) The app's import flow (J-201 `ImportModel`) hard-wires `ScriptedImportEngine` — there
+is NO app-side path to the real engine, so "import a real SDA FLAC → stems → mixer" is
+impossible as the code stands; and the fact the app needs from a real engine
+(`importedBundleID`) is NOT in the frozen C-3 `EngineAPI` (`separate` returns raw stem
+URLs). (2) `DemucsEngine.init(modelPath:threads:)` needs the 84 MB htdemucs ggml weights
+on device, and **no runtime model downloader exists anywhere in the app** — the manifest
+cache scheme (`SwiftF0ModelStore.modelURL`) is only a LOCATOR; the actual fetch lives in
+`scripts/models/download.py` (Python, CI-only). The M1 demo passed because the live ribbon
+(MPM/YIN) needs no weights — so this gap was never exercised. Meanwhile AGENTS §0/§6 make
+runtime model download a HARD rail ("models download once, then never needed again";
+"App and CI download once, cache locally, verify SHA256, then run fully offline").
+**Ruling:**
+1. **C-9 `BundleProducingEngine` ADDED (CONTRACTS v1.0.1, no signature changed).** The
+   bundle-identity fact travels in a NEW additive protocol over C-8, not in a changed
+   `EngineAPI`. `importedBundleID` is set ONLY after the atomic publish (C-2.2 rename;
+   `song.json` = completion marker) and is nil on cancel/failure. The consumer MAY derive
+   the bundle dir from a stem URL's parent when an engine does not conform (C-9 rule 3) —
+   so C-9 can never become a new blocker; it exists to make an existing dependency explicit.
+   Both lanes ack C-9 in their next LOG line (L-006/L-102 precedent).
+2. **The M2 device demo REQUIRES a runtime model-download path — assigned, gate-relevant.**
+   No weights in git, no weights in the IPA (the 8 MB/21 MB size guard stays), no network
+   at runtime beyond the one-time model download (that IS the rail). Download = URLSession +
+   SHA256 verify + the EXISTING cache filename scheme (`<name>-<sha256[:16]>`, so
+   `SwiftF0ModelStore.modelURL` keeps working) + a Models-screen action + on-demand/first-run
+   trigger. Fallback so the demo cannot stall: the human may place the ggml file into the
+   app's Files container — SHA256 is still verified before use; I add the two Info.plist keys
+   (`UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`) at gate step 5.
+3. **The app-side real-engine swap is a named deliverable, not an implicit hope.** The app
+   must construct the real engine behind a factory/seam (mock retained for previews and
+   tests), with ZERO UI change — the J-105 precedent applied to the import flow.
+4. **P-204's contract surface (Paul's lane, gate row):** the assembled engine must publish
+   `importedBundleID` (C-9), decode MP3/FLAC through ImportKit (his own scope note says
+   `importAudio` is WAV-only today), write ALAC stems + `song.json` v1.0 atomically, and
+   accept the htdemucs cache path from the manifest entry (`name: "htdemucs"`).
+5. **This ruling does NOT re-open D-30..D-33 and does not change the merge order.** The
+   runbook stands: paul→main → Jess swap seam #1 (+ the two new J-rows) → jess→main →
+   leto→main (adapter removal + ImportKit package/dep entries + Info.plist fallback keys) →
+   main gate run ALL 8 → human device demo → Tier B ask → tag m2 → open M3.
+**Affects:** CONTRACTS.md (C-9 + changelog v1.0.1), QUEUE (J-206/J-207/J-208 to be filed by
+Jess in her section; P-204 addenda), L-204 gate runbook step 5, project.yml (Info.plist
+keys), Docs/UX.md §10.2 (demo script gains the one-time download step), AGENTS §0 (rail now
+has an owner).
+
 ## D-33 | 2026-11-22 UTC | Leto | RULED (M2 session; OPTIONAL notesFile semantics — resolves the Paul/Jess round-2 counter-check dispute)
 **Context:** Paul's round-2 lane exception (@7df00ba, fixing the 5 C-2.1 `notesFile → String?`
 compile-fallout sites) chose `p.notesFile ?? ""` in LibraryCatalog — appendingPathComponent("")

@@ -513,6 +513,47 @@ UI resets to idle on the thrown error.
 
 ---
 
+## C-9 · Bundle-producing import — NEW v1.0.1 (L-204, D-34, ADDITIVE)
+
+M2 made the app depend on a fact the frozen C-3 `EngineAPI` cannot carry:
+**which SongBundle an import produced.** `separate` returns raw stem URLs, and
+`EngineAPI` is FROZEN at v1.0 (additive-only, L-203) — so the fact travels in a
+NEW additive protocol instead of a changed signature. Zero existing conformer
+breaks; v0.x/v1.0 engines that do not implement it keep working.
+
+```swift
+/// Additive conformance over ProgressReportingEngine (C-8). Implemented by an
+/// engine that ASSEMBLES a SongBundle (M2: P-204 real engine) and by the mock
+/// engines (J-201's ScriptedImportEngine already exposes the same property).
+public protocol BundleProducingEngine: ProgressReportingEngine {
+    /// Bundle id = the bundle DIRECTORY name under the library root. Set ONLY
+    /// after the atomic publish completes (C-2.2: the rename is the publish,
+    /// `song.json` inside it is the completion marker) — never mid-staging.
+    /// nil when no bundle has been produced by this engine instance.
+    var importedBundleID: String? { get }
+}
+```
+
+**Rules:**
+1. `importedBundleID` is set **after** the bundle is complete and visible at
+   its final path; a cancelled/failed import leaves it `nil` (no partial bundle
+   — C-2.2) and must not leave a stale id pointing at a staging directory.
+2. The consumer (J-201 import flow) MUST prefer `BundleProducingEngine`.
+3. **Derivation fallback (permitted, never required):** if an engine does not
+   conform to C-9, the consumer MAY derive the bundle directory from the
+   parent directory of a returned stem URL. This keeps a non-conforming engine
+   usable and keeps C-9 from becoming a new blocker; the protocol exists so the
+   fact is EXPLICIT, not implied.
+4. The id is a directory name only (no path separators, no `..`); consumers join
+   it to the library root themselves.
+
+**Acks:** PAUL + JESS — ack C-9 in your next LOG line (L-006/L-102 precedent).
+Both lanes already depend on this fact (Paul's P-204 engine must publish it;
+Jess's J-201 flow already reads `importedBundleID`), so this ratifies an
+existing seam rather than inventing one.
+
+---
+
 ## Change log
 
 | Version | Date (UTC) | Change | Ruled by |
@@ -523,3 +564,4 @@ UI resets to idle on the thrown error.
 | v0.1.1 | 2026-11-21 | ADDITIVE (D-22/D-24): C-2.1 song.json gains OPTIONAL `tuning_cents` (int, [−50,+50], default 0; REQUIRED at the v1.0 freeze per L-203 pre-staging) — no V-rule yet, validators accept v0.0 bundles unchanged; NEW C-7 optional spike-fixture parity/reference metadata (sidecar, never in SongBundles; P-208). LivePitchEngine facade + PitchFrame semantics UNTOUCHED. | Leto |
 | **v0.1** | 2026-11-21 | **RATIFIED (L-102, additive over v0.0/v0.0.1):** C-3 PitchFrame gains `engine_id` (String) + `lookahead_ms` (Int) with decoding defaults ("", 0) — v0.0 JSON stays valid, no new V-rule; C-2.4 schema documents the optional keys; NEW C-6: `PitchEngineID` enum (RIBBON_MPM_YIN / SWIFTF0, rawValues stable forever) + `LivePitchEngine` facade (ribbonSource causal zero-lookahead vs gradingSource post-hoc 176 ms) + C-6.1 part range presets (X-001/UX §3.6 table verbatim, calibratable). EngineAPI signatures unchanged. | Leto |
 | **v1.0** | 2026-11-22 | **RATIFIED (L-203, M2 SongBundle manifest FREEZE — additive-only after this):** C-2.1 manifest v1.0 fields all REQUIRED — `tuning_cents` REQUIRED (was optional per v0.1.1/D-22) with NEW **V14** (v1.0 required-fields + ranges); top-level `channels` (decoded mix) NEW REQUIRED; `hasInstrumental` REQUIRED with NEW **V15** (INSTRUMENTAL entry ⇔ hasInstrumental, D-9); example shows the M2 two-stem shape. C-1 += `vocals = "VOCALS"` (structural, isSingableVoice false, sortOrder 10 appended — no pre-existing value changed). C-2.2 = freeze notes: stem naming (M2: VOCALS/INSTRUMENTAL; per-voice names M3+), atomic bundle write semantics (`<id>.tmp` staging + rename; song.json = complete marker), permanent v0.x back-compat. NEW C-8: ImportStage/ImportProgress/ImportProgressHandler + `ProgressReportingEngine` additive protocol + Task-cancellation contract (CancellationError, no partial bundles). EngineAPI signatures unchanged; C-5/C-6/C-7 untouched. | Leto |
+| **v1.0.1** | 2026-11-22 | **RATIFIED (L-204, D-34 — ADDITIVE, no signature changed):** NEW C-9 `BundleProducingEngine` (over C-8) carrying `importedBundleID` — the fact "which bundle did this import publish" — because C-3 is frozen and `separate` returns raw stem URLs. Set only AFTER the atomic publish (C-2.2), nil on cancel/failure; consumer MAY derive the bundle dir from a stem URL's parent when an engine does not conform (C-9 rule 3), so it can never become a blocker. EngineAPI signatures unchanged; C-1/C-2/C-3/C-5/C-6/C-7/C-8 untouched. | Leto |
