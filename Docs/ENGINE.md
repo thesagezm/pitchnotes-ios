@@ -158,10 +158,14 @@ DemucsOutputMapper (EngineCore, Linux-tested): vocals = target_3,
   INDEPENDENT freq/time encoder+decoder chains (disjoint buffers, read-only
   model, deterministic ops ⇒ bit-identical output at any thread count — the
   benchmark asserts 1-thread == 2-thread bytes). DEMUCSCPP_NUM_THREADS env:
-  unset/1 = exact stock serial baseline, ≥2 = parallel pairs. The per-source
+  unset/1 = exact stock serial baseline, ≥2 = parallel pairs (explicit 4 caps
+  to 2 — pairs are the only free parallelism today). The per-source
   mask/ISTFT section stays SERIAL (it mutates the shared stft_buf — thread-local
-  restructuring deliberately deferred). X-201 for Leto: apply to vendor/ +
-  patches.log.
+  restructuring deliberately deferred). X-202 DONE: Leto applied to vendor/
+  @d007780 (+ patches.log) with one ternary correction (`? 2 : n` → `? 1 : 2` —
+  the emitted text had inverted env semantics); `apply_demucs_threading.py`
+  mirrors it byte-for-byte (verified by diff vs origin/leto @d007780), so
+  revert+re-apply on vendor reproduces the committed text exactly.
 - **Honest limits:** mid-inference abort is not possible through the vendor API —
   cancellation is checked before/after `demucs_inference`; segment-boundary
   cancellation + abort flag arrive with P-202's chunked driver. multiStem mode
