@@ -8,15 +8,34 @@
 //
 // Usage:
 //   demucs_runner <model-ggml> <input-wav-44k1> <outdir> [--threads N]
+//                 [--chunk-window S] [--chunk-overlap S]
 // The --threads flag sets DEMUCSCPP_NUM_THREADS for the patched vendor build
 // (std::thread parallelism around Eigen ops — threading patch is Paul's, Leto
 // applies to vendor/ with patches.log entry per D-32.4). The unpatched build
 // ignores it (single-threaded); the benchmark records both.
 //
+// CHUNKED MODE (P-202 L3, D-25 benchmark): with --chunk-window/--chunk-overlap
+// the runner drives the vendor PER WINDOW and blends the overlap regions
+// LINEARLY — a MIRROR of the Swift `ChunkedSeparationDriver` (EngineCore,
+// portable, unit-proven separately). The window plan and the blend are copied
+// from that driver verbatim:
+//   - window plan: starts advance by `hop = window - overlap` while a full
+//     window fits; the LAST window is truncated (still ≥ the accumulated
+//     overlap, so the blend never has a gap);
+//   - blend: for i in 0..<actualOverlap, t = i / actualOverlap,
+//     out[s+i] = out[s+i]*(1-t) + windowOut[i]*t (linear, NOT equal-power:
+//     correlated content ⇒ linear weights sum to exactly 1).
+// The MIRROR is honest and explicit: the vendor compute per window is
+// identical either way (the same vendor call on the same samples); the Swift
+// driver's own blend math is proven by the EngineCore unit suite, and this C++
+// mirror is proven by agreement with it on the same inputs (see
+// Tests/Spikes/demucs_chunk_bench.py --assert-mirror).
+//
 // stdout metric lines (driver parses; progress chatter goes to stderr):
 //   SAMPLES\t<N>\t<SR>\t<CHANNELS-IN>
 //   N_SOURCES\t<N>
 //   SEGMENTS\t<N>
+//   WINDOWS\t<N>                 external windows (chunked mode; = 1 otherwise)
 //   MODEL_LOAD_S\t<f>
 //   RTF\t<f>                     inference wall / audio duration
 //   RSS_KB\t<peak>
@@ -46,8 +65,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <sys/resource.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -174,6 +195,72 @@ std::size_t peak_rss_kb() {
 #endif
 }
 
+// Captures the vendor's stdout chatter so the runner can count how many
+// INTERNAL vendor segments (7.8 s each, stride 5.85 s) a run consumed — the
+// number that actually drives the compute cost. The vendor prints one
+// "apply model w/ split" line per internal chunk.
+class StdoutCapture {
+public:
+	void begin() {
+		std::cout.flush();
+		std::fflush(stdout);
+		saved_ = dup(STDOUT_FILENO);
+		tmp_ = std::tmpfile();
+		if (saved_ < 0 || !tmp_) die("stdout capture setup failed");
+		dup2(fileno(tmp_), STDOUT_FILENO);
+	}
+	// Ends the capture and returns the number of occurrences of `needle`.
+	long end_and_count(const char* needle) {
+		std::cout.flush();
+		std::fflush(stdout);
+		dup2(saved_, STDOUT_FILENO);
+		close(saved_);
+		saved_ = -1;
+		std::fseek(tmp_, 0, SEEK_SET);
+		std::string all;
+		char buf[4096];
+		std::size_t got;
+		while ((got = std::fread(buf, 1, sizeof(buf), tmp_)) > 0)
+			all.append(buf, got);
+		std::fclose(tmp_);
+		tmp_ = nullptr;
+		long count = 0;
+		std::size_t pos = 0;
+		while ((pos = all.find(needle, pos)) != std::string::npos) {
+			++count;
+			pos += std::strlen(needle);
+		}
+		return count;
+	}
+	~StdoutCapture() {
+		if (saved_ >= 0) {
+			dup2(saved_, STDOUT_FILENO);
+			close(saved_);
+		}
+		if (tmp_) std::fclose(tmp_);
+	}
+
+private:
+	int saved_ = -1;
+	std::FILE* tmp_ = nullptr;
+};
+
+// Window plan — MIRROR of ChunkedSeparationDriver.run (EngineCore).
+std::vector<int> plan_window_starts(std::size_t frames, int window, int hop) {
+	std::vector<int> starts;
+	if (frames <= std::size_t(window)) {
+		starts.push_back(0);
+		return starts;
+	}
+	std::size_t s = 0;
+	while (s + std::size_t(window) < frames) {
+		starts.push_back(int(s));
+		s += std::size_t(hop);
+	}
+	starts.push_back(int(s)); // tail window (truncated)
+	return starts;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -187,8 +274,16 @@ int main(int argc, char** argv) {
 	const char* wav_path = argv[2];
 	std::string outdir = argv[3];
 	int threads = 1;
+	double chunk_window_s = 0.0;
+	double chunk_overlap_s = 0.0;
 	for (int i = 4; i + 1 < argc; i += 2) {
-		if (std::strcmp(argv[i], "--threads") == 0) threads = std::atoi(argv[i + 1]);
+		if (std::strcmp(argv[i], "--threads") == 0) {
+			threads = std::atoi(argv[i + 1]);
+		} else if (std::strcmp(argv[i], "--chunk-window") == 0) {
+			chunk_window_s = std::atof(argv[i + 1]);
+		} else if (std::strcmp(argv[i], "--chunk-overlap") == 0) {
+			chunk_overlap_s = std::atof(argv[i + 1]);
+		}
 	}
 	// Threading seam for the patched vendor build (D-32.4: ADD parallelism).
 	// The unpatched vendor ignores this env; the patch reads it per loop.
@@ -224,6 +319,9 @@ int main(int argc, char** argv) {
 	std::printf("MODEL_LOAD_S\t%.3f\n", load_s);
 	int nb_sources = model.is_4sources ? 4 : 6;
 	std::printf("N_SOURCES\t%d\n", nb_sources);
+	// The source-name table below covers the 4-source htdemucs order only; fail
+	// loudly instead of writing a mislabelled stem for a 6-source model.
+	if (nb_sources != 4) die("runner supports the 4-source htdemucs model only");
 
 	// Progress -> stderr (keeps stdout machine-parseable).
 	demucscpp::ProgressCallback cb = [](float progress, const std::string& msg) {
@@ -231,23 +329,92 @@ int main(int argc, char** argv) {
 	};
 
 	const auto t0 = std::chrono::steady_clock::now();
-	Eigen::Tensor3dXf out = demucscpp::demucs_inference(model, full_audio, cb);
+	std::vector<std::vector<float>> interl(nb_sources);
+	long vendor_segments = 0;
+	int windows = 1;
+	{
+		// The vendor prints its "apply model w/ split" chatter to stdout; capture
+		// it so the metric stream stays machine-parseable AND the internal
+		// segment count (the real cost driver) is measured, not estimated.
+		StdoutCapture capture;
+		capture.begin();
+		if (chunk_window_s > 0.0) {
+			const int window = int(chunk_window_s * wav.sample_rate);
+			const int overlap = int(chunk_overlap_s * wav.sample_rate);
+			if (window <= overlap || overlap < 0) die("chunk window must exceed overlap");
+			const int hop = window - overlap;
+			const std::vector<int> starts = plan_window_starts(n, window, hop);
+			windows = int(starts.size());
+			std::printf("CHUNK_WINDOW_S\t%.3f\n", chunk_window_s);
+			std::printf("CHUNK_OVERLAP_S\t%.3f\n", chunk_overlap_s);
+
+			std::vector<std::vector<float>> acc(nb_sources);
+			std::size_t acc_len = 0; // frames already accumulated
+			for (std::size_t wi = 0; wi < starts.size(); ++wi) {
+				const int s = starts[wi];
+				const int wlen =
+				    int(std::min<std::size_t>(std::size_t(window), n - std::size_t(s)));
+				Eigen::MatrixXf win(2, wlen);
+				for (int i = 0; i < wlen; ++i) {
+					float l = wav.samples[(std::size_t(s + i)) * wav.channels];
+					float r = wav.channels == 2
+					              ? wav.samples[(std::size_t(s + i)) * wav.channels + 1]
+					              : l;
+					win(0, i) = l;
+					win(1, i) = r;
+				}
+				Eigen::Tensor3dXf wout = demucscpp::demucs_inference(model, win, cb);
+				// MIRROR of ChunkedSeparationDriver's blend (linear crossfade):
+				//   actualOverlap = accLen - s;  t = i / actualOverlap;
+				//   acc[s+i] = acc[s+i]*(1-t) + windowOut[i]*t
+				const int actual_overlap =
+				    acc_len > std::size_t(s) ? int(acc_len - std::size_t(s)) : 0;
+				for (int src = 0; src < nb_sources; ++src) {
+					if (acc[src].empty()) acc[src].assign(2 * n, 0.0f);
+					for (int i = 0; i < wlen; ++i) {
+						const std::size_t g = std::size_t(s + i);
+						const float l = wout(src, 0, i);
+						const float r = wout(src, 1, i);
+						if (i < actual_overlap) {
+							const double t = double(i) / double(actual_overlap);
+							acc[src][2 * g] = float(acc[src][2 * g] * (1.0 - t) + l * t);
+							acc[src][2 * g + 1] =
+							    float(acc[src][2 * g + 1] * (1.0 - t) + r * t);
+						} else {
+							acc[src][2 * g] = l;
+							acc[src][2 * g + 1] = r;
+						}
+					}
+				}
+				acc_len = std::size_t(s + wlen);
+			}
+			for (int src = 0; src < nb_sources; ++src)
+				interl[src] = acc[src];
+		} else {
+			Eigen::Tensor3dXf out = demucscpp::demucs_inference(model, full_audio, cb);
+			for (int src = 0; src < nb_sources; ++src) {
+				interl[src].resize(2 * n);
+				for (std::size_t i = 0; i < n; ++i) {
+					interl[src][2 * i] = out(src, 0, int(i));
+					interl[src][2 * i + 1] = out(src, 1, int(i));
+				}
+			}
+		}
+		vendor_segments = capture.end_and_count("apply model w/ split");
+	}
 	const auto t1 = std::chrono::steady_clock::now();
 	double wall_s = std::chrono::duration<double>(t1 - t0).count();
 	double audio_s = double(n) / double(wav.sample_rate);
+	std::printf("WINDOWS\t%d\n", windows);
+	std::printf("SEGMENTS\t%ld\n", vendor_segments);
+	std::printf("WALL_S\t%.3f\n", wall_s);
 	std::printf("RTF\t%.4f\n", wall_s / audio_s);
 	std::printf("RSS_KB\t%zu\n", peak_rss_kb());
 
 	// Dump raw stems (interleaved stereo float32) + compose the two-stem pair.
 	// 4-source target order: 0 drums, 1 bass, 2 other, 3 vocals (intake README).
 	const char* names[4] = {"drums", "bass", "other", "vocals"};
-	std::vector<std::vector<float>> interl(nb_sources);
 	for (int s = 0; s < nb_sources; ++s) {
-		interl[s].resize(2 * n);
-		for (std::size_t i = 0; i < n; ++i) {
-			interl[s][2 * i] = out(s, 0, int(i));
-			interl[s][2 * i + 1] = out(s, 1, int(i));
-		}
 		std::string p = outdir + "/stem_" + names[s] + ".f32";
 		std::ofstream f(p, std::ios::binary);
 		if (!f) die("cannot write stem f32");
