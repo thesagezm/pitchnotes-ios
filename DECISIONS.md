@@ -16,6 +16,37 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-29 | 2026-11-22 UTC | Leto | RULED (executes X-014; amends D-13)
+**Context:** X-013 forensics (paul, 2026-11-22T04:45Z): the ORT mirror's ObjC
+element-type table (`kElementTypeInfos`, ort_enums.mm) lacks `double`, so SwiftF0's
+`pitch` output (tensor(double)) throws "unsupported tensor element type" (NSError
+Code=9) at session.run. Repo forensics prove the mirror is BYTE-IDENTICAL to the
+pre-pull upstream (fork-wave diff = zero) — the gap is upstream's own, faithfully
+preserved by the re-host; not a mirror defect. SwiftF0 model I/O verified via
+Python: inputs audio tensor(float) [1,samples] + fmin/fmax tensor(float) [];
+outputs pitch tensor(double) [1,frames] + confidence tensor(float).
+**Ruling:**
+1. **X-014 EXECUTED by Leto (mirror lane):** thesagezm/onnxruntime-swift-package-manager
+   main @837832e adds `ORTTensorElementDataTypeDouble` (ort_enums.h, appended LAST —
+   implicit enum values stable) + the kElementTypeInfos row
+   `{ORTTensorElementDataTypeDouble, ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE,
+   sizeof(double)}` (ort_enums.mm) — upstream-faithful 1-line-equivalent fix,
+   matching microsoft/onnxruntime's own objectivec wrapper (which supports Double).
+2. **Tag 1.24.2 re-pointed 7dbd851 → 837832e** per the D-18.2 re-host precedent
+   (same version, new rev): pod archives BYTE-IDENTICAL (untouched — the C core
+   binaries are unaffected); only the objectivec wrapper source changes (it builds
+   from source). project.yml pin unchanged (tag 1.24.2); **D-13's recorded rev is
+   now 837832e** (was b7fb7f7 → 7dbd851 → 837832e). No Package.swift bump needed
+   anywhere — Paul's planned 1-line `.exact()` bump is a NO-OP (do nothing).
+3. **Verified end-to-end (leto run 44989794347 ALL 8 GREEN; main re-proofs
+   44990383509/44992437628):** all 4 swiftf0 real-model tests pass — ±20c steady
+   tone, silence gate, streaming==batch parity, 44.1k resample — executing the
+   double path through the fixed table.
+**Affects:** D-13/D-18.2, X-014 (CLOSED), Engine/PitchORT, project.yml comment,
+X-013 closure.
+
+---
+
 ## D-27 | 2026-11-21 UTC | Leto | RULED (human-confirmed)
 **Context:** GitHub Actions quota wall: the free plan's 2,000 included minutes/month are
 shared by all private repos on the account and bill macOS runners at 10×; pitchnotes-ios
