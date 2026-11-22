@@ -3,16 +3,17 @@ import EngineCore
 import PitchLogic
 import UIKit
 
-// DebugPitchView (J-103) — live pitch debug screen for the M1 device demo and
-// Paul's BENCHMARKS.md readings: raw hz / confidence / loudness plots, RTF
-// meter, engine identity (C-6.0 ribbonSource vs gradingSource), thread + device
-// info. A human reads latency/RTF straight off it (AC).
+// DebugPitchView (J-103, swapped at J-105) — live pitch debug screen for the
+// M1 device demo and Paul's BENCHMARKS.md readings: raw hz / confidence /
+// loudness plots, RTF meter, engine identity (C-6.0), thread + device info.
+// A human reads latency/RTF straight off it (AC).
 //
-// M1 honesty: the engine under measurement is the MOCK (P-001) — RTF numbers
-// are a real baseline of the mock path, and the P-105 facade swaps the real
-// engines in behind the same seam with zero view changes. engine_id /
-// lookahead_ms display placeholders until the v0.1 PitchFrame fields exist in
-// EngineCore (they arrive with P-105).
+// J-105 honesty: the engine under measurement is the REAL LivePitchFacade
+// ribbon path (RibbonEngine MPM/YIN, P-102/P-105) on hop-aligned silence
+// chunks — real DSP cost, honest unvoiced output, identity read off the
+// frames themselves. Real mic capture joins when MicCapture wires into the
+// app target (Leto's X-011a re-wiring, X-013 fixes on origin/paul); the
+// grading source (SwiftF0, 176 ms) is post-hoc only — never a live path.
 
 struct DebugPitchView: View {
     @StateObject private var debug = DebugPitchModel()
@@ -32,31 +33,27 @@ struct DebugPitchView: View {
         .onDisappear { debug.stop() }
     }
 
-    // MARK: - Engine (C-6.0 facade selector — activates at P-105)
+    // MARK: - Engine (C-6.0 identity — real facade, J-105)
 
     private var engineSection: some View {
         Section {
-            Picker("Source", selection: .constant(DebugPitchModel.Source.ribbon)) {
-                Text("Ribbon (causal)").tag(DebugPitchModel.Source.ribbon)
-                Text("Grading (SwiftF0)").tag(DebugPitchModel.Source.grading)
-            }
-            .pickerStyle(.segmented)
-            .disabled(true) // P-105: facade swap — both sources exist behind RibbonFrameSource
-            LabeledRow("engine_id", debug.engineIDDisplay)
-            LabeledRow("lookahead_ms", debug.lookaheadDisplay)
+            LabeledRow("ribbon source (live)", debug.ribbonSourceRow)
+            LabeledRow("grading source", debug.gradingSourceRow)
+            LabeledRow("frame engine_id", debug.engineIDDisplay)
+            LabeledRow("frame lookahead_ms", debug.lookaheadDisplay)
             LabeledRow("hop", "16 ms grid (C-2.4)")
             LabeledRow("budget", "< 100 ms end-to-end (§8)")
         } header: {
             Text("Engine")
         } footer: {
-            Text("M1 measures the MockEngine path (P-001). The selector and engine_id/lookahead_ms fields populate when the LivePitchEngine facade (P-105, contract v0.1 C-6) lands.")
+            Text("J-105: the real LivePitchFacade (P-105) drives this screen — the RTF below is the REAL ribbon (MPM/YIN) call on hop-aligned silence chunks; real mic capture joins when MicCapture wires into the target (X-011a). The grading source is post-hoc only — never a live path (C-6.0).")
         }
     }
 
     // MARK: - RTF meter (read off the screen for BENCHMARKS.md)
 
     private var rtfSection: some View {
-        Section("Real-time factor (engine call ÷ 16 ms hop)") {
+        Section("Real-time factor (ribbon call ÷ 16 ms hop)") {
             LabeledRow("RTF (EMA)", String(format: "%.3f", debug.rtfEMA))
             LabeledRow("RTF (worst, window)", String(format: "%.3f", debug.rtfWorst))
             LabeledRow("engine call (EMA)", String(format: "%.3f ms", debug.callEMA_ms))
@@ -171,11 +168,6 @@ struct PlotStrip: View {
 @MainActor
 final class DebugPitchModel: ObservableObject {
 
-    enum Source: String {
-        case ribbon = "RIBBON_MPM_YIN"   // C-6.0 rawValue — causal, D-17
-        case grading = "SWIFTF0"         // C-6.0 rawValue — 176 ms lookahead
-    }
-
     struct Sample {
         let t: Double
         let hz: Double
@@ -184,16 +176,28 @@ final class DebugPitchModel: ObservableObject {
         let callMs: Double
     }
 
+    /// The REAL live engine (J-105). The grading seam is the honest zero
+    /// placeholder until PitchORT wires the ORT inference (X-008) — the
+    /// grading path is post-hoc only (C-6.0) and never runs in this loop.
+    private let facade = LivePitchFacade(swiftf0Inference: PlaceholderSwiftF0Inference(),
+                                         vadInference: nil)
+
     @Published private(set) var samples: [Sample] = []
     @Published private(set) var rtfEMA: Double = 0
     @Published private(set) var rtfWorst: Double = 0
     @Published private(set) var callEMA_ms: Double = 0
     @Published private(set) var framesPerSec: Double = 0
+    /// C-6.0 identity read off the REAL frames (v0.1 fields).
+    @Published private(set) var engineID = ""
+    @Published private(set) var lookaheadMs: Int?
 
     var sampleCount: Int { samples.count }
-    /// C-6.0 identity: populates from real frames at P-105 (v0.1 fields).
-    var engineIDDisplay: String { "— (P-105)" }
-    var lookaheadDisplay: String { "— (P-105: 0 ms ribbon / 176 ms grading)" }
+    /// Declared C-6.0 sources (facade props — the contract identity).
+    var ribbonSourceRow: String { "\(facade.ribbonSource.rawValue) · 0 ms · live" }
+    var gradingSourceRow: String { "\(facade.gradingSource.rawValue) · \(LivePitchFacade.gradingLookaheadMs) ms · post-hoc (M2/M4)" }
+    /// Observed identity (last real frame; declared values until frames flow).
+    var engineIDDisplay: String { engineID.isEmpty ? facade.ribbonSource.rawValue : engineID }
+    var lookaheadDisplay: String { lookaheadMs.map { "\($0) ms" } ?? "0 ms (declared)" }
 
     /// Plot series (last ~8 s, ~500 samples).
     var hzSeries: [Double] { samples.suffix(500).map(\.hz) }
@@ -205,19 +209,21 @@ final class DebugPitchModel: ObservableObject {
 
     func start() {
         guard consumeTask == nil else { return }
-        // Own loop (not MockRibbonFrameSource) so the ENGINE CALL itself is
-        // timed: RTF = livePitch duration ÷ 16 ms hop — the number a human
-        // reads for BENCHMARKS.md. Mock calls are array-index cheap (< 1 ms);
-        // the real engines (P-105) swap in behind the same measurement.
-        let engine = MockEngine(scenario: .vibrato, seed: 0x5103, referencePart: .t2)
+        // Own loop (not RibbonFrameSource) so the ENGINE CALL itself is timed:
+        // RTF = ribbonFrame duration ÷ 16 ms hop — the number a human reads
+        // for BENCHMARKS.md. J-105: this measures the REAL RibbonEngine NSDF
+        // (one hop of silence per call — real work, honest unvoiced frames).
+        let facade = self.facade
+        let silence = [Float](repeating: 0, count: Int(RibbonSpec.hop))
         let started = Date()
         consumeTask = Task { [weak self] in
             var lastIngest = started
             while !Task.isCancelled {
                 let t0 = Date()
-                let chunk = MicChunk(samples: [], sampleRate: 16000,
+                let chunk = MicChunk(samples: silence, sampleRate: RibbonSpec.sampleRate,
                                      captureTime_s: t0.timeIntervalSince(started))
-                let frame = engine.livePitch(chunk)
+                // C-6.0: the CAUSAL ribbon call — never the grading path.
+                let frame = facade.ribbonFrame(chunk)
                 let callMs = Date().timeIntervalSince(t0) * 1000
                 let hopWall = t0.timeIntervalSince(lastIngest)
                 lastIngest = t0
@@ -241,6 +247,8 @@ final class DebugPitchModel: ObservableObject {
                               loudness_db: frame.loudness_db,
                               callMs: callMs))
         if samples.count > 700 { samples.removeFirst(samples.count - 700) }
+        engineID = frame.engine_id
+        lookaheadMs = frame.lookahead_ms
 
         rtfEMA = rtfEMA == 0 ? rtf : rtfEMA * 0.9 + rtf * 0.1
         rtfWorst = max(rtfWorst * 0.995, rtf) // decayed window max
