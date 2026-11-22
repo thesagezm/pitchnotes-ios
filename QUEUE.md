@@ -28,9 +28,10 @@ Task row format (one line per task, keep it short):
   (iPhone 12 Pro Max 2026-11-22: A14 RTF 0.094 EMA / 0.100 worst ≪ 0.3, engine call
   ~1.5 ms, real-mic chain verified on device), `m1` tagged (sha/tag in LOG).
   Contract target: v1.0 (L-203 — SongBundle manifest FREEZE, tuning_cents REQUIRED).
-- Gate (PLAN.md M2): P-201…P-205, J-201…J-204, L-201…L-204 DONE (P-206 stretch
-  excluded); separation-spike REAL green; logic-tests green; build-ipa green;
-  RSS/thermal/RTF logged; contracts v1.0; `m2` tagged.
+- Gate (PLAN.md M2): P-201…P-205, P-207, P-208, J-201…J-205, L-201…L-204 DONE
+  (P-206 DEFERRED→M6 per D-31 — Paul, do NOT claim it in M2); separation-spike
+  REAL green; logic-tests green; build-ipa green; RSS/thermal/RTF logged;
+  contracts v1.0; D-22/D-25/D-30/D-31/D-32 ruled; `m2` tagged.
 - Device Demo M2: import a real SDA FLAC → staged progress → vocals/instrumental
   stems → mixer solo/focus mix/mute/loop → storage usage. Human logs results here.
 - CI this milestone: `separation-spike` goes REAL at gate (P-201, L-202);

@@ -174,7 +174,6 @@ check training at checkpoint, not by waiting.
 | P-203 | Paul | Import/decode: AVAudioFile/ExtAudioFile MP3/FLAC/WAV/ALAC; security-scoped bookmarks; SR policy (D8: 44.1k); mono/stereo policy (D8); BLAKE3 source hash; manifest fields. **AC:** each format fixture imports; hash stable; manifest v1 populated. | P-201, L-203 | M |
 | P-204 | Paul | ALAC stem writer + SongBundle assembler: `stems/<part>.m4a` (native ALAC encoder), `song.json` manifest v1, atomic bundle write, cache index. **AC:** bundle validates against CONTRACTS; ALAC decodes natively; sizes logged (~5–6 MB/min/stem). | P-202, P-203, L-203 | M |
 | P-205 | Paul | Instrumental-presence logic (D9): always run two-stems; if instrumental stem near-silent → flag `hasInstrumental=false` (acapella); expose mode. **AC:** heuristic unit-tested; manifest flag correct on synthetic acapella vs mixed fixtures. | P-204 | S |
-| P-206 | Paul | **STRETCH, non-gating:** windowed-roformer (MIT, Smule) ONNX export (replace FlexAttention with additive window+sink mask bias), fp16, benchmark vs demucs.cpp. **AC:** evaluation report in BENCHMARKS.md; swap proposal only via DECISIONS (Leto). | P-201 | L |
 | J-201 | Jess | Import flow UI: document picker (MP3/FLAC), Files integration, progress screen (decode→separate→assemble), cancel, error states, recent imports. **AC:** end-to-end with mock then real; progress/cancel tested; accessibility. | P-001, J-001 | M |
 | J-202 | Jess | Library + bundle detail: song list (title/duration/parts/confidence badge), inspector, storage usage, delete bundle. **AC:** persists (JSON index v0; D4); delete frees space; empty states. | P-204, J-201 | M |
 | J-203 | Jess | Stem mixer/player: per-part faders (mute/solo/focus mix −12 dB others), transport (play/pause/seek/loop), AVAudioEngine multi-player sync. **AC:** plays real stems in sync; focus preset works; seek/loop stable; CPU logged. | P-204, J-202 | M |
@@ -195,8 +194,9 @@ stems appear → mixer: solo vocals, focus mix, mute instrumental → loop a sec
 check storage usage. Log RTF/RSS/thermal.
 **Parallelization M2:** Paul: push P-201 → dispatch separation-spike → start P-203 decode
 (independent of separation). Jess: build J-201/J-202 against mock bundle → swap real at
-P-204. Leto: rule D-items early so lanes don't stall. P-206 stretch fires after P-201,
-never blocks gate.
+P-204. Leto: rule D-items early so lanes don't stall. (P-206 moved to M6 by D-31 —
+never an M2 item; X-task to Leto if demucs.cpp misses §0 targets badly enough to
+warrant pulling the eval forward.)
 
 ---
 
@@ -317,6 +317,7 @@ NDK compile job (compile-only); `build-ipa` RC. **Contract:** v1.4 (final additi
 | P-603 | Paul | On-device benchmark report (human-assisted A14 run): RTF/RSS/thermal/battery all models vs CI runner → BENCHMARKS.md final; regression gates. **AC:** report committed; budgets met or Leto-ruled exceptions. | P-601, P-602 | M |
 | P-604 | Paul | Optional heavy model manager: RMVPE (~180 MB, X-601 license), windowed-roformer (if P-206 positive) as user-selectable downloads with license+size labels; engine auto-selects best available fallback chain. **AC:** download/verify/delete flows; fallback chain documented. | P-206, X-601, L-005 | M |
 | P-605 | Paul | **STRETCH, license-gated on X-310 (PENDING):** BS-RoFormer-SW CoreML quality-mode separation (Muskey's shipping stack, D-26-clean re-implementation only); benchmark vs demucs.cpp/windowed-roformer. **AC:** evaluation report in BENCHMARKS.md; swap proposal ONLY via a DECISIONS ruling. | P-601, X-310 | L |
+| P-206 | Paul | **STRETCH, non-gating (moved from M2 per D-31):** windowed-roformer (MIT, Smule) ONNX export (replace FlexAttention with additive window+sink mask bias), fp16, benchmark vs demucs.cpp. **AC:** evaluation report in BENCHMARKS.md; swap proposal only via DECISIONS (Leto). | P-601, P-201 | L |
 | X-601 | Paul | RMVPE/FCPE weight license verification + optional offline reference pitch integration if OK. **AC:** verdict in DECISIONS; if OK spike+manifest; if not SwiftF0 remains reference. | L-007 | M |
 | J-601 | Jess | Model manager UI: list (size/license/status), download/delete, storage budget, core-vs-optional labels, offline guarantee copy. **AC:** flows work; airplane-mode after download verified. | P-604, J-204 | M |
 | J-602 | Jess | Polish & accessibility: VoiceOver throughout, dynamic type, contrast, haptics, onboarding (import→pick part→sing), empty/error states, iPad layout bonus. **AC:** accessibility audit pass; onboarding tested. | J-402, J-504 | M |
