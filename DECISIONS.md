@@ -16,6 +16,31 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-33 | 2026-11-22 UTC | Leto | RULED (M2 session; OPTIONAL notesFile semantics — resolves the Paul/Jess round-2 counter-check dispute)
+**Context:** Paul's round-2 lane exception (@7df00ba, fixing the 5 C-2.1 `notesFile → String?`
+compile-fallout sites) chose `p.notesFile ?? ""` in LibraryCatalog — appendingPathComponent("")
+→ directory read fails → renders as a V1 "notes file missing" row. Jess counter-checked the
+explicitly-flagged semantic and VETOED it (LOG 12:58Z + BLOCKED merge-guidance entry), with two
+evidence pieces. This is a Paul/Jess disagreement → Leto ruling (AGENTS §1).
+**Ruling:**
+1. **Jess's engine-consistent semantic ADOPTED: `nil` notesFile ⇒ no violation, no report row.**
+   Decisive evidence: Paul's OWN EngineCore `BundleValidator.validate(bundleDirectory:)` treats
+   `nil` as no-violation (`if let notesRel = p.notesFile { … }`) — one semantic source of truth;
+   the app-side renderer must mirror the engine-side validator. Paul's `?? ""` variant would
+   false-flag EVERY INSTRUMENTAL part on EVERY real M2 two-stem bundle (V15-consistent:
+   INSTRUMENTAL carries no notes) with an empty filename — J-202 inspector FAIL rows on healthy
+   bundles + device-demo §10.2 step 5 misleading.
+2. **Merge guidance ADOPTED for L-204 (Jess's BLOCKED entry, verified):** at the
+   paul↔main/jess↔main conflicts take Jess @21d3beb for LibraryCatalog (nil⇒skip) AND the
+   both-worlds integration test (Paul's variant works post-merge but breaks any main-base branch
+   and needs re-editing per future C-1 addition); BundleInspectorView equivalent either way.
+   Jess's both-worlds fixes CI-proven: 45022908849@13bb874 ALL 8 GREEN. The compile-fix part of
+   Paul's exception stands RATIFIED (both lanes agree); only the semantic is overridden.
+3. **Going forward:** optional manifest fields are ABSENT-means-clean unless a validator says
+   otherwise; any new optional field lands with an explicit nil-semantics note in CONTRACTS.
+**Affects:** App/Sources/Features/Library/LibraryCatalog.swift, Tests/Logic (both-worlds test),
+CONTRACTS C-2.1/V15 consumers, L-204 merge set, J-202 inspector semantics.
+
 ## D-30 | 2026-11-22 UTC | Leto | RULED (M2 session; uniform WEIGHTS PROVENANCE policy — resolves the D-17/D-21 vs demucs inconsistency)
 **Context:** D-17 banned NanoPitch's GTSinger-trained weights and D-21.3 banned
 grouper/drums outright, while M2 ships htdemucs weights that are trained on MUSDB18 —
