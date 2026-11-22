@@ -46,7 +46,13 @@ struct LibraryView: View {
         )) {
             ImportFlowSheet(model: importModel)
         }
-        .onChange(of: scenePhase) { importModel.scenePhaseChanged($0) }
+        .onChange(of: scenePhase) { phase in
+            importModel.scenePhaseChanged(phase)
+            // Coming back from Settings → Models (the human downloaded the
+            // weights there): the notice must disappear, and the import
+            // sheet's badge must read "Real engine — ready".
+            importModel.refreshAvailability()
+        }
         // Import completed → disk truth changed → reload (new bundle appears).
         .onChange(of: importModel.phase) { phase in
             if case .completed = phase {
@@ -75,6 +81,13 @@ struct LibraryView: View {
         List {
             if let error = model.loadErrorMessage {
                 errorBanner(error)
+            }
+            // J-207/J-208: the on-demand trigger for the one-time model
+            // download — a plain, non-modal notice (never a modal that would
+            // interrupt a demo), shown only when this build HAS the real
+            // engine and the weights are simply not on the device yet.
+            if importModel.availability == .realModelMissing {
+                modelNeededBanner
             }
             storageHeader
             if model.songs.isEmpty {
@@ -106,6 +119,29 @@ struct LibraryView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.pnBackground)
+    }
+
+    /// The one-time model download notice (J-207) — honest, non-modal, and
+    /// gone the moment the weights are on the device.
+    private var modelNeededBanner: some View {
+        Section {
+            Label {
+                VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                    Text("Separation model not downloaded yet")
+                        .font(Token.Fonts.body)
+                        .fontWeight(.semibold)
+                    Text("Imports need the htdemucs weights (84 MB, one time). Download them in Settings → Models; the checksum is verified and the file is cached for offline use.")
+                        .font(Token.Fonts.caption)
+                        .foregroundStyle(Color.pnTextSecondary)
+                }
+            } icon: {
+                Image(systemName: "arrow.down.circle")
+                    .font(.title3)
+                    .foregroundStyle(Color.pnAccent)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Separation model not downloaded yet. Imports need the htdemucs weights, one time. Download them in Settings, Models. The checksum is verified and the file is cached for offline use.")
     }
 
     // MARK: - Header, error, empty
