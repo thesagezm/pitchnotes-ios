@@ -199,19 +199,26 @@ AVAudioFileDecoder (Engine/ImportKit — APPLE-ONLY package, AVFoundation)
   `Engine/Sources/EngineCore` (Foundation-only / Linux-clean by AGENTS §0). **P-204
   extends `Engine/ImportKit`** (no new package ⇒ no new identity surprise at the gate);
   exact product name `ImportKit` for `project.yml`.
-- **MP3 GAPLESS BEHAVIOUR (measured, macOS runner 45076895490):** `AVAudioFile` does NOT
-  apply the LAME gapless tag, so an imported MP3 keeps the encoder delay + trailing
-  padding: the 2.5 s fixture decodes to **111744 frames (97 MPEG frames × 1152) =
-  2.534 s**, while ffmpeg (which honours the tag) returns exactly 110250 frames. The
-  extra frames are codec padding, not duplicated source audio — the import leg asserts
-  the count is a whole number of MPEG frames and that the decode agrees with the source
-  WAV (SNR ≥ 18 dB; locally measured 26.0 dB, max |Δ| 0.045) once the ~1105-sample
-  encoder delay is removed. **Consequence for the manifest:** `duration_s` for an MP3
-  import is up to ~51 ms longer than the true song length (delay 1105 + ≤1152 frames);
-  negligible for a 4-minute track, and NOT silently "fixed" by trimming (a trailing-
-  silence heuristic would truncate quiet real endings). WAV/FLAC/ALAC are exact
-  (bit-identical to ffmpeg's decode, verified locally: ffmpeg's f32 output is bit-for-bit
-  `s16/32768`).
+- **MP3 GAPLESS BEHAVIOUR (measured, macOS runner 45076895490 + 45078702137):**
+  `AVAudioFile` does NOT apply the LAME gapless tag, so an imported MP3 keeps the
+  encoder delay + trailing padding: the 2.5 s fixture decodes to **111744 frames
+  (97 MPEG frames × 1152) = 2.534 s**, while ffmpeg (which honours the tag) returns
+  exactly 110250 frames. The extra frames are codec padding, not duplicated source
+  audio — the import leg asserts the count is a whole number of MPEG frames and that
+  the decode agrees with the source WAV (SNR ≥ 18 dB; locally measured 26.0 dB,
+  max |Δ| 0.045) once the encoder delay is removed. **TWO decoder delay conventions
+  (measured, both):** the gapless delay is 1105 samples = 576 (encoder side) + 529
+  (decoder side); ffmpeg's RAW decode (Info/LAME tag neutralised locally) aligns with
+  the source at **1105**, while CoreAudio/AVAudioFile (measured on the runner) applies
+  the 529-sample decoder-side delay but not the gapless trim ⇒ it aligns at
+  **1105 − 529 = 576**. The test accepts both (window 512…1216) and the SNR
+  assertion is the real guarantee (a wrong offset scores ≈ −2 dB, not 26 dB).
+  **Consequence for the manifest:** `duration_s` for an MP3 import is up to ~51 ms
+  longer than the true song length (delay 1105 + ≤1152 frames); negligible for a
+  4-minute track, and NOT silently "fixed" by trimming (a trailing-silence heuristic
+  would truncate quiet real endings). WAV/FLAC/ALAC are exact (bit-identical to
+  ffmpeg's decode — **PROVEN on the macOS runner**, run 45078702137: ffmpeg's f32
+  output is bit-for-bit `s16/32768`).
 
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 

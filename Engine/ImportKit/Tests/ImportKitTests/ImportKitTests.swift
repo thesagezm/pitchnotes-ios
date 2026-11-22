@@ -161,6 +161,21 @@ final class ImportKitTests: XCTestCase {
         return (snr, maxDiff, hi - lo)
     }
 
+    /// The accepted encoder-delay window, in samples at 44.1 kHz.
+    ///
+    /// The MP3 gapless delay accounting is 1105 samples = 576 (encoder side)
+    /// + 529 (decoder side), and the two decoders we compare against apply
+    /// DIFFERENT parts of it:
+    ///   - ffmpeg's RAW decode (Info/LAME tag neutralised, verified locally):
+    ///     the whole 1105 → aligns with the source WAV at offset 1105.
+    ///   - CoreAudio/AVAudioFile (measured on the macOS runner, run
+    ///     45078702137): it applies the 529-sample decoder-side delay but NOT
+    ///     the LAME gapless trim → it aligns at 1105 − 529 = **576**.
+    /// The window brackets both conventions. The SNR assertion below is the
+    /// real guarantee (a wrong offset scores ≈ −2 dB, not 26 dB); the window
+    /// is a sanity check that the delay stays in a plausible range.
+    private static let mp3DelayWindow = 512...1216
+
     private func stagedSamples(_ mix: DecodedAudio) throws -> (samples: [Float], sampleRate: Int, channels: Int) {
         // PCMF32Wav.read labels its first element `frames`; this helper's
         // contract calls it `samples` (the ffmpeg reference's label) — remap
@@ -292,8 +307,8 @@ final class ImportKitTests: XCTestCase {
         XCTAssertGreaterThan(ours.count, ref.count,
                              "CoreAudio is expected to keep the MP3 encoder delay (no LAME gapless trim)")
         let (offset, _) = bestAlignmentOffset(ours, ref, maxOffset: 2400)
-        XCTAssertTrue((768...1536).contains(offset),
-                      "expected the LAME encoder delay (~1105 samples) at the head of the decode, got \(offset)")
+        XCTAssertTrue(Self.mp3DelayWindow.contains(offset),
+                      "expected the MP3 encoder delay at the head of the decode (CoreAudio ~576, ffmpeg ~1105), got \(offset)")
         let stats = alignmentStats(ours, ref, offset: offset)
         XCTAssertGreaterThan(stats.frames, Int(2.0 * 44100), "aligned overlap too small")
         XCTAssertGreaterThan(stats.snrDB, 18.0,
@@ -351,8 +366,8 @@ final class ImportKitTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(ours.count, ref.samples.count,
                                     "expected CoreAudio's untrimmed decode to be at least as long as ffmpeg's")
         let (offset, _) = bestAlignmentOffset(ours, ref.samples, maxOffset: 2400)
-        XCTAssertTrue((768...1536).contains(offset),
-                      "expected the LAME encoder delay (~1105 samples) at the head of the decode, got \(offset)")
+        XCTAssertTrue(Self.mp3DelayWindow.contains(offset),
+                      "expected the MP3 encoder delay at the head of the decode (CoreAudio ~576, ffmpeg ~1105), got \(offset)")
         let stats = alignmentStats(ours, ref.samples, offset: offset)
         XCTAssertGreaterThan(stats.frames, Int(2.0 * Double(ref.sampleRate)),
                              "aligned overlap too small (\(stats.frames) frames)")
