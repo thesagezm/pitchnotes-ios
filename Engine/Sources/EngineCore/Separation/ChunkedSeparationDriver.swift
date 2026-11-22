@@ -19,6 +19,14 @@ import Foundation
 // output state the caller could mistake for a bundle on cancel — outputs are
 // returned only on success; staging/bundle discipline stays with the caller
 // (P-201c pattern: staging dir removed on any failure).
+//
+// L2 progress mapping (P-202): the driver owns the C-8 `separating` band and
+// is its SINGLE writer. An engine MAY report within-window progress (the
+// vendor's own per-stage callback); the driver scales it into that window's
+// slice of the band, so the user sees movement during a long window instead of
+// a frozen bar. The driver never emits 1.0 unless it owns completion
+// (`Config.emitCompletion` — the engine sets it false when it still has to
+// stage the stems on disk after the driver returns).
 
 /// Tunable chunking policy (D-25: both recipes benchmarked, pick by measurement).
 public struct ChunkPolicy: Sendable, Equatable {
@@ -65,6 +73,26 @@ public protocol SegmentEngine: Sendable {
     /// Returned arrays per part must all have the same length as the window
     /// (per-channel framing: `samples = frames * channels`, interleaved).
     func separate(window: [Float], channels: Int) async throws -> [Part: [Float]]
+
+    /// Same call, with WITHIN-window progress: `fraction` is the engine's own
+    /// progress inside THIS window ([0, 1]) and `detail` is a human-readable
+    /// note (the vendor's stage name). The driver scales it into this window's
+    /// slice of the C-8 progress band — the driver stays the single writer of
+    /// the band, so the engine never picks absolute fractions.
+    ///
+    /// Default implementation ignores the progress (engines with no
+    /// sub-window signal, e.g. the Linux mock) — window-granular progress is
+    /// then what the user sees.
+    func separate(window: [Float], channels: Int,
+                  progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]]
+}
+
+public extension SegmentEngine {
+    func separate(window: [Float], channels: Int,
+                  progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
+        _ = progress
+        return try await separate(window: window, channels: channels)
+    }
 }
 
 /// Streaming overlap-add driver: windows the staged mix, calls the engine per
@@ -84,6 +112,11 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
         public var sleeper: @Sendable (Double) async throws -> Void = { s in
             try await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000))
         }
+        /// When true (default) the driver emits the C-8 completion fraction
+        /// 1.0 itself. Set false when the CALLER owns the final 1.0 because
+        /// work continues after the driver returns (the engine still has to
+        /// stage the stems on disk — C-8: "1.0 only at completion").
+        public var emitCompletion: Bool = true
 
         public init() {}
     }
@@ -147,15 +180,18 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
         var parts: Set<Part>? = nil    // key set consistency guard
         var doneFrames = 0             // input frames already ingested
 
+        let bandLow = config.progressBand.low
+        let bandHigh = config.progressBand.high
+        let progressHandler = progress
+
         func emit(_ fraction: Double, _ detail: String) {
-            let lo = config.progressBand.low, hi = config.progressBand.high
-            let f = lo + (hi - lo) * min(1.0, max(0.0, fraction))
-            progress?(ImportProgress(stage: .separating, fraction: f, detail: detail))
+            let f = bandLow + (bandHigh - bandLow) * min(1.0, max(0.0, fraction))
+            progressHandler?(ImportProgress(stage: .separating, fraction: f, detail: detail))
         }
         // C-8: "1.0 only at completion" — the final emit bypasses the band.
         func emitCompletion() {
-            progress?(ImportProgress(stage: .separating, fraction: 1.0,
-                                     detail: "separation complete"))
+            progressHandler?(ImportProgress(stage: .separating, fraction: 1.0,
+                                            detail: "separation complete"))
         }
 
         emit(0.0, "chunked separation: \(starts.count) window(s)")
@@ -173,7 +209,28 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
 
             let wLen = min(window, frames - s)
             let win = Array(audio[s * channels ..< (s + wLen) * channels])
-            let stems = try await engine.separate(window: win, channels: channels)
+
+            // Within-window progress: the engine reports [0, 1] INSIDE this
+            // window; the driver scales it into this window's slice of the
+            // band (the driver stays the single writer of the band, so the
+            // engine never emits an absolute fraction).
+            //
+            // The slice starts at the frames ALREADY INGESTED (doneFrames),
+            // NOT at the window's own start: consecutive windows OVERLAP, so
+            // the next window's start lies BEFORE the previous window's end.
+            // Slicing from the window start would make the fraction DECREASE
+            // at every boundary (C-8 monotonicity). The slice therefore spans
+            // exactly the NEW frames this window contributes
+            // [doneFrames, s + wLen) — the hop, not the window length — and
+            // its end equals the post-window emit below.
+            let windowStart = Double(doneFrames) / Double(frames)
+            let windowSpan = Double(s + wLen - doneFrames) / Double(frames)
+            let stems = try await engine.separate(window: win, channels: channels) { v, detail in
+                let vc = min(1.0, max(0.0, v))
+                let jobFraction = windowStart + windowSpan * vc
+                let f = bandLow + (bandHigh - bandLow) * jobFraction
+                progressHandler?(ImportProgress(stage: .separating, fraction: f, detail: detail))
+            }
 
             let keys = Set(stems.keys)
             if let p = parts {
@@ -235,7 +292,9 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
             acc[part] = Array(stem[0..<n])
         }
 
-        emitCompletion()
+        if config.emitCompletion {
+            emitCompletion()
+        }
         return acc
     }
 }

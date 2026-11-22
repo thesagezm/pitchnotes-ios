@@ -32,10 +32,24 @@ import DemucsShim
 //  - `livePitch` returns the unvoiced frame — separation has no live path.
 //  - `pitchFrames` returns an empty (immediately-finished) stream — no batch
 //    pitch path in the separation engine; SwiftF0/PitchORT is the pitch engine.
-//  - Cancellation is checked before/after the (uninterruptible) vendor
-//    inference call; segment-boundary cancellation arrives with P-202's
-//    chunked driver (which will also own the abort-flag vendor patch).
-public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
+//
+// P-202 L2 — chunked separation (D-25):
+//  - `separate` now drives EngineCore's ChunkedSeparationDriver: the staged
+//    mix is windowed, each window is inferred SEPARATELY by the vendor, and
+//    the driver blends the overlaps. Memory stays bounded by the window (not
+//    the song) — the §8 peak-RSS budget.
+//  - This class implements `SegmentEngine` (the driver's seam).
+//  - The vendor's internal segmentation (7.8 s segments, 0.25 overlap) still
+//    applies PER WINDOW — a 4.5 s window therefore pays a full 7.8 s segment
+//    of compute. That is the honest RTF price of external chunking and it is
+//    measured in L3 (BENCHMARKS §4), not hidden.
+//  - Cancellation: the driver's between-window check PLUS a mid-window abort
+//    seam (demucs_shim_request_abort → the shim unwinds the vendor at its
+//    next progress tick → DEMUCS_SHIM_ERR_ABORTED → CancellationError).
+//  - Progress: the vendor's per-stage callback is scaled into the driver's
+//    progress band (window-granular slices) — the user sees movement during
+//    a long window instead of a frozen bar.
+public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchecked Sendable {
 
     public enum EngineState: Error, Sendable {
         case modelNotLoaded
@@ -53,12 +67,21 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
         didSet { demucs_shim_set_threads(threads) }
     }
 
-    /// - Parameter modelPath: ggml fp16 htdemucs weights
-    ///   (ggml-model-htdemucs-4s-f16.bin; downloaded once + sha256-verified,
-    ///   never committed to git).
-    public init(modelPath: URL, threads: Int32 = 1) {
+    /// Chunking policy (D-25). Both arms are implemented; L3's measured
+    /// benchmark picks the production default.
+    public let policy: ChunkPolicy
+
+    /// - Parameters:
+    ///   - modelPath: ggml fp16 htdemucs weights (ggml-model-htdemucs-4s-f16.bin;
+    ///     downloaded once + sha256-verified, never committed to git).
+    ///   - threads: D-32.4 vendor thread count (1 = stock serial).
+    ///   - policy: chunk window/overlap (D-25 arms: `.planDefault` 8 s/2 s,
+    ///     `.muskeyRecipe` 4.5 s/1 s).
+    public init(modelPath: URL, threads: Int32 = 1,
+                policy: ChunkPolicy = .planDefault) {
         self.modelPath = modelPath
         self.threads = threads
+        self.policy = policy
         demucs_shim_set_threads(threads)
     }
 
@@ -90,11 +113,21 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
         handle = h
     }
 
+    /// The loaded model handle (read under the lock — `handle` is mutated by
+    /// `loadModelIfNeeded`).
+    private var modelHandle: OpaquePointer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return handle
+    }
+
     // MARK: - EngineAPI (C-3)
 
-    /// WAV-only decode until P-203 brings the AVFoundation seam (MP3/FLAC).
-    /// Input must be 44.1 kHz (D-8 SR policy) — resampling policy lands with
-    /// P-203 via AVAudioConverter (never resample STORED audio for tuning — D-22).
+    /// Legacy WAV-only decode helper. The REAL import path (MP3/FLAC/ALAC/WAV,
+    /// 44.1 kHz normalization, channel policy) lives in Engine/ImportKit
+    /// (AVAudioFileDecoder, P-203) and writes the staged float32 mix that
+    /// `separate` reads. This method stays for the EngineAPI contract and for
+    /// PCM16 WAV callers; it never resamples stored audio (D-22).
     public func importAudio(url: URL) async throws -> DecodedAudio {
         let content = try PCMWaveReader.read(url: url)
         guard content.sampleRate == 44100 else {
@@ -106,10 +139,21 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
                             channels: content.channels, duration_s: duration)
     }
 
-    /// Real separation (htdemucs fp16, one 4-source pass per song). Reports
-    /// C-8 `separating` progress driven by the vendor callback (monotonic via
-    /// ImportProgressEmitter). Throws on cancellation BEFORE/AFTER the vendor
-    /// call; mid-inference abort = P-202 (vendor abort-flag patch).
+    /// Real separation (htdemucs fp16) over the staged 44.1 kHz mix.
+    ///
+    /// P-202 L2: the song is separated in WINDOWS (ChunkedSeparationDriver,
+    /// D-25) instead of one whole-song vendor pass — the vendor's per-window
+    /// call is the same shim call as before, only bounded in length, so the
+    /// peak memory no longer scales with the song.
+    ///
+    /// Progress (C-8): the driver owns the `separating` band [0.05, 0.90];
+    /// staging the stems uses 0.95; 1.0 is emitted ONLY after both stems are
+    /// on disk (the driver is told not to emit its own completion).
+    ///
+    /// Cancellation (C-8): the driver checks between windows; the vendor call
+    /// itself aborts through the shim's abort seam (one encoder stage of
+    /// latency). On cancel/error the staging directory is removed — no partial
+    /// bundle ever survives (C-2.2).
     public func separate(_ audio: DecodedAudio, mode: SeparationMode) async throws -> [Part: URL] {
         guard mode == .twoStem else {
             // Honest M2: per-voice stems are the M3 assignment path (P-301).
@@ -119,73 +163,50 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
         try Task.checkCancellation()
         try loadModelIfNeeded()
 
-        let content = try PCMWaveReader.read(url: audio.url)
-        guard content.sampleRate == 44100 else {
+        // The staged mix: float32 WAV (P-203 staging format), channel-
+        // preserving (PCMWaveReader mono-folds and would lose stereo).
+        let (frames, sampleRate, mixChannels) = try readStagedMix(url: audio.url)
+        guard sampleRate == 44100 else {
             throw EngineError.unsupportedFormat(
-                "separate input must be the decoded 44.1 kHz mix (got \(content.sampleRate))")
+                "separate input must be the decoded 44.1 kHz mix (got \(sampleRate))")
         }
 
-        // Interleave to the shim's stereo contract (mono duplicated).
-        let ch = content.channels
-        var interleaved = [Float]()
-        interleaved.reserveCapacity(2 * content.samples.count / ch)
-        for i in 0..<(content.samples.count / ch) {
-            let l = content.samples[i * ch]
-            let r = ch == 2 ? content.samples[i * ch + 1] : l
-            interleaved.append(l)
-            interleaved.append(r)
-        }
+        // Processing layout is always stereo (the shim's contract): a mono mix
+        // is upmixed. D-8's stem policy (voice MONO / instrumental STEREO) is
+        // applied at staging time, after the blend.
+        let stereo = try SeparationChannels.upmixToStereo(frames: frames, channels: mixChannels)
 
-        // C-8 separating progress: vendor cb → emitter (monotonic clamp);
-        // reserve 0–5% for decode, 5–95% inference, 95–100% staging writes.
-        emitter.emit(ImportProgress(stage: .separating, fraction: 0.05,
-                                    detail: "demucs inference starting"))
-        final class ProgressBox: @unchecked Sendable {
-            let engine: DemucsEngine
-            init(_ e: DemucsEngine) { engine = e }
-        }
-        let box = ProgressBox(self)
-        let cb: demucs_shim_progress_cb = { fraction, detail, ctx in
-            guard let ctx else { return }
-            let box = Unmanaged<ProgressBox>.fromOpaque(ctx).takeUnretainedValue()
-            // Map vendor [0,1] into the separating band [0.05, 0.95].
-            let f = 0.05 + 0.9 * Double(max(0, min(1, fraction)))
-            let d = detail.map { String(cString: $0) }
-            box.engine.emitter.emit(ImportProgress(stage: .separating, fraction: f,
-                                                   detail: d))
-        }
+        var config = ChunkedSeparationDriver.Config()
+        config.progressBand = (0.05, 0.90)
+        config.emitCompletion = false // the engine owns the final 1.0 (staging follows)
+        let driver = try ChunkedSeparationDriver(
+            policy: policy,
+            config: config,
+            thermalProvider: { DemucsEngine.currentThermalState() },
+            progress: { [emitter] p in emitter.emit(p) })
 
-        var stems: UnsafeMutablePointer<Float>?
-        var outN: Int32 = 0
-        let status = try interleaved.withUnsafeBufferPointer { buf in
-            demucs_shim_infer(handle, buf.baseAddress, Int32(content.samples.count / ch),
-                              cb, Unmanaged.passUnretained(box).toOpaque(),
-                              &stems, &outN)
-        }
-        try Task.checkCancellation()
-        guard status == DEMUCS_SHIM_OK.rawValue, let stems, outN > 0 else {
-            throw EngineError.separationFailed("demucs_shim_infer status \(status)")
-        }
-        defer { demucs_shim_free_buffer(stems) }
-
-        // Map → C-1 two-stem pair (portable mapper, Linux-tested).
-        let raw = Array(UnsafeBufferPointer(start: stems,
-                                            count: Int(demucs_shim_num_sources(handle)) * 2 * Int(outN)))
-        let mapped = try DemucsOutputMapper.map(rawStems: raw, nSamples: Int(outN))
-
-        // Stage stems (PCM16 WAV now; ALAC + bundle = P-204). D-8: voice MONO,
-        // instrumental STEREO. Staging dir is removed on any failure below.
+        // Staging dir is created up front and removed on ANY failure below
+        // (including cancellation) — the C-2.2 no-partial-bundle discipline.
         let staging = FileManager.default.temporaryDirectory
             .appendingPathComponent("pitchnotes-sep-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         do {
+            try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+
+            let stems = try await driver.run(audio: stereo, channels: 2, engine: self)
+            guard let vocalsStem = stems[.vocals], let instrumentalStem = stems[.instrumental] else {
+                throw EngineError.contractViolation(
+                    "separation returned no two-stem pair (D-9): \(stems.keys.sorted())")
+            }
+
             emitter.emit(ImportProgress(stage: .separating, fraction: 0.95,
                                         detail: "staging stems"))
             let vocalsURL = staging.appendingPathComponent("vocals.wav")
             let instrumentalURL = staging.appendingPathComponent("instrumental.wav")
-            try PCMWavWriter.write(url: vocalsURL, samples: mapped.vocals.mono(),
+            // D-8: voice MONO, instrumental STEREO.
+            try PCMWavWriter.write(url: vocalsURL,
+                                   samples: try SeparationChannels.toMono(stereo: vocalsStem),
                                    sampleRate: 44100, channels: 1)
-            try PCMWavWriter.write(url: instrumentalURL, samples: mapped.instrumental.samples,
+            try PCMWavWriter.write(url: instrumentalURL, samples: instrumentalStem,
                                    sampleRate: 44100, channels: 2)
             emitter.emit(ImportProgress(stage: .separating, fraction: 1.0,
                                         detail: "separation complete"))
@@ -194,6 +215,126 @@ public final class DemucsEngine: ProgressReportingEngine, @unchecked Sendable {
             try? FileManager.default.removeItem(at: staging)
             throw error
         }
+    }
+
+    // MARK: - SegmentEngine (P-202 L2)
+
+    /// One window of the mix → the C-1 two-stem pair, in the PROCESSING layout
+    /// (stereo, interleaved) — the driver blends the overlaps there.
+    ///
+    /// The vendor call is wrapped in a cancellation handler: cancelling the
+    /// surrounding Task sets the shim's abort flag, the shim unwinds the
+    /// vendor at its next progress tick and returns
+    /// DEMUCS_SHIM_ERR_ABORTED, which surfaces as CancellationError (C-8).
+    public func separate(window: [Float], channels: Int) async throws -> [Part: [Float]] {
+        try await separate(window: window, channels: channels) { _, _ in }
+    }
+
+    public func separate(window: [Float], channels: Int,
+                          progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
+        try Task.checkCancellation()
+        try loadModelIfNeeded()
+
+        // The shim is stereo-only; the driver's layout is the mix layout.
+        let stereo = try SeparationChannels.upmixToStereo(frames: window, channels: channels)
+        let frameCount = stereo.count / 2
+
+        let raw = try inferStereo(stereo: stereo, frameCount: frameCount, progress: progress)
+
+        // Map → C-1 two-stem pair (portable mapper, Linux-tested).
+        let mapped = try DemucsOutputMapper.map(rawStems: raw, nSamples: frameCount)
+
+        // Back to the driver's layout (frames × channels).
+        return [
+            .vocals: try SeparationChannels.fromStereo(stereo: mapped.vocals.samples, channels: channels),
+            .instrumental: try SeparationChannels.fromStereo(stereo: mapped.instrumental.samples, channels: channels),
+        ]
+    }
+
+    /// Runs the vendor inference on stereo interleaved input; returns the raw
+    /// source-major stem buffer. Throws CancellationError when the task was
+    /// cancelled (mid-window abort through the shim's abort seam).
+    private func inferStereo(stereo: [Float], frameCount: Int,
+                             progress: @Sendable (Double, String) -> Void) throws -> [Float] {
+        guard let handle = modelHandle else {
+            throw EngineError.modelMissing("demucs model handle is nil")
+        }
+        // Clear a stale abort BEFORE the cancellation handler is installed: if
+        // the task is already cancelled, the handler fires immediately and
+        // re-arms the flag, so the vendor unwinds at its first progress tick.
+        demucs_shim_clear_abort(handle)
+
+        final class ProgressBox: @unchecked Sendable {
+            let handler: @Sendable (Double, String) -> Void
+            init(_ h: @escaping @Sendable (Double, String) -> Void) { handler = h }
+        }
+        let box = ProgressBox(progress)
+        let cb: demucs_shim_progress_cb = { fraction, detail, ctx in
+            guard let ctx else { return }
+            let box = Unmanaged<ProgressBox>.fromOpaque(ctx).takeUnretainedValue()
+            let d = detail.map { String(cString: $0) } ?? ""
+            box.handler(Double(max(0, min(1, fraction))), d)
+        }
+
+        final class OutputBox: @unchecked Sendable {
+            var stems: UnsafeMutablePointer<Float>?
+            var count: Int32 = 0
+        }
+        let out = OutputBox()
+
+        let status = withTaskCancellationHandler {
+            stereo.withUnsafeBufferPointer { buf -> Int32 in
+                demucs_shim_infer(handle, buf.baseAddress, Int32(frameCount),
+                                  cb, Unmanaged.passUnretained(box).toOpaque(),
+                                  &out.stems, &out.count)
+            }
+        } onCancel: {
+            // Runs on the cancelling thread — the vendor sees the flag at its
+            // next progress tick and unwinds (P-202 L2 abort seam).
+            demucs_shim_request_abort(handle)
+        }
+
+        if status == DEMUCS_SHIM_ERR_ABORTED.rawValue {
+            if let s = out.stems { demucs_shim_free_buffer(s) }
+            throw CancellationError()
+        }
+        try Task.checkCancellation()
+        guard status == DEMUCS_SHIM_OK.rawValue, let stems = out.stems, out.count > 0 else {
+            throw EngineError.separationFailed("demucs_shim_infer status \(status)")
+        }
+        defer { demucs_shim_free_buffer(stems) }
+
+        let nSources = Int(demucs_shim_num_sources(handle))
+        return Array(UnsafeBufferPointer(start: stems, count: nSources * 2 * Int(out.count)))
+    }
+
+    /// Reads the staged mix, channel-preserving. The P-203 staging format is
+    /// float32 WAV (PCMF32Wav); the legacy PCM16 path (PCMWaveReader,
+    /// mono-folded) is accepted as a fallback for older staging files.
+    private func readStagedMix(url: URL) throws -> (frames: [Float], sampleRate: Int, channels: Int) {
+        do {
+            let mix = try PCMF32Wav.read(url: url)
+            return (mix.frames, mix.sampleRate, mix.channels)
+        } catch {
+            let legacy = try PCMWaveReader.read(url: url)
+            return (legacy.samples, legacy.sampleRate, 1)
+        }
+    }
+
+    /// Portable thermal state (ProcessInfo.thermalState is Darwin-only; the
+    /// app target is iOS/macOS, so the real provider is wired here).
+    public static func currentThermalState() -> ThermalState {
+        #if os(iOS) || os(macOS)
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal: return .nominal
+        case .fair: return .fair
+        case .serious: return .serious
+        case .critical: return .critical
+        @unknown default: return .nominal
+        }
+        #else
+        return .nominal
+        #endif
     }
 
     /// M3 path (P-301) — not an M2 deliverable.

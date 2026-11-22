@@ -43,7 +43,8 @@ enum demucs_shim_status {
     DEMUCS_SHIM_ERR_LOAD = 1,        // model file missing/corrupt/magic mismatch
     DEMUCS_SHIM_ERR_AUDIO = 2,       // null/empty/degenerate input
     DEMUCS_SHIM_ERR_INFERENCE = 3,   // inference threw / produced non-finite
-    DEMUCS_SHIM_ERR_ALLOC = 4        // output allocation failed
+    DEMUCS_SHIM_ERR_ALLOC = 4,       // output allocation failed
+    DEMUCS_SHIM_ERR_ABORTED = 5      // abort requested via demucs_shim_request_abort
 };
 
 /// Load the ggml fp16 model. Returns NULL on failure (status set if non-NULL).
@@ -66,10 +67,27 @@ void demucs_shim_set_threads(int32_t n);
 ///   out_stems:   on success receives n_sources*2*N interleaved float32
 ///                (source-major: src0 L,R L,R … src1 L,R …); free via
 ///                demucs_shim_free_buffer.
+///
+/// ABORT (P-202 L2): the vendored inference is a blocking C++ call, so a
+/// cancelled Swift Task cannot unwind it from the outside. The shim therefore
+/// checks an abort flag INSIDE the vendor's progress callback (the vendor
+/// calls it ~26 times per 7.8 s segment, at every encoder stage) and throws
+/// to unwind the vendor frames; the shim catches it and returns
+/// DEMUCS_SHIM_ERR_ABORTED. Abort latency = one encoder stage (a few seconds
+/// on a laptop; measured on device at P-603). No vendor patch needed.
 int32_t demucs_shim_infer(demucs_shim_model* model,
                           const float* interleaved, int32_t n_samples,
                           demucs_shim_progress_cb cb, void* context,
                           float** out_stems, int32_t* out_n_samples);
+
+/// Request abort of the NEXT (or in-flight) demucs_shim_infer call on this
+/// model. Thread-safe; safe to call from another thread while an inference is
+/// running (the Swift cancellation handler does exactly that). The caller
+/// clears the flag with demucs_shim_clear_abort before each fresh call.
+void demucs_shim_request_abort(demucs_shim_model* model);
+
+/// Clear a pending abort request (call before a fresh inference).
+void demucs_shim_clear_abort(demucs_shim_model* model);
 
 /// Free a stem buffer returned by demucs_shim_infer. NULL-safe.
 void demucs_shim_free_buffer(float* buf);

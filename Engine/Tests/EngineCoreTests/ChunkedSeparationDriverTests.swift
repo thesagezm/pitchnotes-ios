@@ -228,4 +228,92 @@ final class ChunkedSeparationDriverTests: XCTestCase {
             // contractViolation expected
         }
     }
+
+    // MARK: - L2: within-window progress mapping
+
+    /// An engine that reports sub-window progress (the vendor's per-stage
+    /// callback). The driver must scale it into the window's slice of the
+    /// band — never an absolute fraction chosen by the engine.
+    func testSubWindowProgressScalesIntoBandSlice() async throws {
+        final class SubProgressEngine: SegmentEngine, @unchecked Sendable {
+            func separate(window: [Float], channels: Int) async throws -> [Part: [Float]] {
+                try await separate(window: window, channels: channels) { _, _ in }
+            }
+            func separate(window: [Float], channels: Int,
+                          progress: @Sendable (Double, String) -> Void) async throws -> [Part: [Float]] {
+                progress(0.0, "stage 0")
+                progress(0.5, "stage 1")
+                progress(1.0, "stage 2")
+                return [.vocals: window, .instrumental: window.map { $0 * 0.5 }]
+            }
+        }
+        let collector = ProgressCollector()
+        // Band [0.05, 0.95] (default): window 1 of a 10 s song with 4 s/1 s
+        // windows covers frames [0, 4 s) ⇒ slice [0.0, 0.4] of the band.
+        let driver = try ChunkedSeparationDriver(
+            policy: ChunkPolicy(windowSeconds: 4.0, overlapSeconds: 1.0),
+            progress: { collector.record($0) })
+        let audio: [Float] = [Float](repeating: 0.1, count: 44100 * 10)
+        _ = try await driver.run(audio: audio, channels: 1, engine: SubProgressEngine())
+
+        let items = collector.all
+        let sub = items.filter { $0.detail?.hasPrefix("stage") == true }
+        XCTAssertEqual(sub.count, 9, "3 sub-progress ticks × 3 windows")
+        // Window 1's middle tick (0.5 of the window) lands at band position
+        // 0.05 + 0.9 * (0.2) = 0.23 — inside window 1's slice, NOT at the
+        // engine's raw 0.5.
+        XCTAssertEqual(sub[1].fraction, 0.05 + 0.9 * 0.2, accuracy: 1e-9)
+        XCTAssertEqual(sub[0].fraction, 0.05, accuracy: 1e-9)
+        XCTAssertEqual(sub[2].fraction, 0.05 + 0.9 * 0.4, accuracy: 1e-9)
+        // Window 2 starts at 3 s but only contributes NEW frames from 4 s
+        // (the 1 s overlap was already ingested) ⇒ its slice is [0.4, 0.7].
+        XCTAssertEqual(sub[3].fraction, 0.05 + 0.9 * 0.4, accuracy: 1e-9)
+        XCTAssertEqual(sub[5].fraction, 0.05 + 0.9 * 0.7, accuracy: 1e-9)
+        // Monotonic across the whole run, and the final emit is still 1.0.
+        var last = -1.0
+        for p in items {
+            XCTAssertGreaterThanOrEqual(p.fraction, last)
+            last = p.fraction
+        }
+        XCTAssertEqual(items.last?.fraction, 1.0)
+    }
+
+    /// The engine may own the final 1.0 (it still has to stage stems after the
+    /// driver returns) — then the driver must NOT emit 1.0 itself.
+    func testCompletionOwnershipCanBeDelegatedToCaller() async throws {
+        let collector = ProgressCollector()
+        var config = ChunkedSeparationDriver.Config()
+        config.emitCompletion = false
+        let driver = try ChunkedSeparationDriver(
+            policy: ChunkPolicy(windowSeconds: 4.0, overlapSeconds: 1.0),
+            config: config,
+            progress: { collector.record($0) })
+        let audio: [Float] = [Float](repeating: 0.1, count: 44100 * 10)
+        _ = try await driver.run(audio: audio, channels: 1, engine: IdentityEngine())
+        let items = collector.all
+        XCTAssertFalse(items.isEmpty)
+        XCTAssertLessThan(items.last!.fraction, 1.0,
+                          "driver must not claim completion when the caller owns it")
+        XCTAssertEqual(items.last!.fraction, 0.05 + 0.9 * 1.0, accuracy: 1e-9)
+    }
+
+    /// The default `SegmentEngine` progress variant (used by engines with no
+    /// sub-window signal) forwards to the plain call — window-granular
+    /// progress only.
+    func testDefaultProgressVariantForwardsToPlainCall() async throws {
+        final class PlainEngine: SegmentEngine, @unchecked Sendable {
+            func separate(window: [Float], channels: Int) async throws -> [Part: [Float]] {
+                [.vocals: window, .instrumental: window.map { $0 * 0.5 }]
+            }
+        }
+        let collector = ProgressCollector()
+        let driver = try ChunkedSeparationDriver(
+            policy: ChunkPolicy(windowSeconds: 4.0, overlapSeconds: 1.0),
+            progress: { collector.record($0) })
+        let audio: [Float] = [Float](repeating: 0.1, count: 44100 * 10)
+        let out = try await driver.run(audio: audio, channels: 1, engine: PlainEngine())
+        XCTAssertEqual(out[.vocals]!.count, audio.count)
+        XCTAssertFalse(collector.all.isEmpty)
+        XCTAssertTrue(collector.all.allSatisfy { $0.detail?.hasPrefix("stage") != true })
+    }
 }

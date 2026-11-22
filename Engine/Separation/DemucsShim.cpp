@@ -11,15 +11,30 @@
 #include "model.hpp"
 
 #include <Eigen/Dense>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <exception>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
+namespace {
+// Thrown from the vendor's progress callback when an abort was requested
+// (P-202 L2). It unwinds the vendored C++ frames (no vendor patch needed —
+// the vendor calls the callback between encoder stages, where no std::thread
+// is joinable, so unwinding cannot hit a std::terminate).
+struct demucs_shim_abort_exception : std::exception {
+    const char* what() const noexcept override { return "demucs inference aborted"; }
+};
+} // namespace
+
 struct demucs_shim_model {
     struct demucscpp::demucs_model model;
+    // Abort flag (P-202 L2): set from the Swift cancellation handler on
+    // another thread, checked inside the vendor's progress callback.
+    std::atomic<bool> abort_requested{false};
 };
 
 extern "C" {
@@ -30,6 +45,16 @@ void demucs_shim_set_threads(int32_t n) {
     char buf[16];
     std::snprintf(buf, sizeof(buf), "%d", n > 0 ? n : 1);
     setenv("DEMUCSCPP_NUM_THREADS", buf, 1);
+}
+
+void demucs_shim_request_abort(demucs_shim_model* model) {
+    if (!model) return;
+    model->abort_requested.store(true, std::memory_order_release);
+}
+
+void demucs_shim_clear_abort(demucs_shim_model* model) {
+    if (!model) return;
+    model->abort_requested.store(false, std::memory_order_release);
 }
 
 demucs_shim_model* demucs_shim_load(const char* model_path, int32_t* status) {
@@ -80,16 +105,26 @@ int32_t demucs_shim_infer(demucs_shim_model* model,
     }
 
     // Bridge the C progress callback into the vendor's std::function.
+    // The abort check lives HERE (not in the caller): the vendor calls the
+    // callback between encoder stages, so this is the only place where an
+    // in-flight blocking inference can be unwound without a vendor patch.
     demucscpp::ProgressCallback vendor_cb;
-    if (cb) {
-        vendor_cb = [cb, context](float progress, const std::string& msg) {
-            cb(progress, msg.c_str(), context);
-        };
-    }
+    vendor_cb = [cb, context, model](float progress, const std::string& msg) {
+        if (model->abort_requested.load(std::memory_order_acquire)) {
+            throw demucs_shim_abort_exception();
+        }
+        if (cb) cb(progress, msg.c_str(), context);
+    };
 
+    // The caller clears the abort flag before each fresh call (the Swift side
+    // does it per window), so an abort requested before this call still
+    // unwinds the very first vendor progress tick.
     Eigen::Tensor3dXf out;
     try {
         out = demucscpp::demucs_inference(model->model, full_audio, vendor_cb);
+    } catch (const demucs_shim_abort_exception&) {
+        // P-202 L2: cooperative cancellation reached the vendor.
+        return DEMUCS_SHIM_ERR_ABORTED;
     } catch (...) {
         return DEMUCS_SHIM_ERR_INFERENCE;
     }
