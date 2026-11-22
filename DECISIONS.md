@@ -357,16 +357,40 @@ unverified.
    (MUSDB18/IRMAS). File map: Docs/RESEARCH.md owner = Leto. Edits committed separately.
 **Affects:** AGENTS.md §9/§12, P-309/P-605, X-310, NOTICE file (M6), J-204 licenses screen.
 
-## X-310 | 2026-11-21 UTC | Leto | OPEN (Leto owns)
+## X-310 | 2026-11-21 UTC | Leto | OPEN (Leto owns) — UPDATED 2026-11-22: (c)+(d) RULED
 **Question:** LICENSE VERIFICATION BUNDLE (verify-before-use, per D-15/D-26): (a) confirm
 dettato transcriber + evidence Apache-2.0 + exact NOTICE text — **transcriber DONE
 (verified 2026-11-21), evidence DONE (card verified: Apache-2.0, synthetic-only training)
 — residual: the ~20 "soundfont babies" soundfonts' file licenses**; (b) confirm grouper
-NC terms — **DONE (MUSDB18 academic/CC BY-NC-SA + IRMAS CC BY-NC-SA confirmed verbatim;
-weights NEVER ship)**; (c) BS-Roformer-SW checkpoint license — PENDING (needed before any
-P-605 quality-mode ship); (d) MVSep 53-stem checkpoint license — PENDING (same gate);
-(e) drums NC — **DONE (README confirms)**. Record each verdict here.
-**Affects:** D-21.4, P-309, P-605, M6.
+NC terms — **DONE (MUSDB18 academic/CC BY-NC-SA + IRMAS CC BY-NC-SA 3.0 confirmed verbatim;
+weights NEVER ship)**; (c) BS-Roformer-SW checkpoint license — **RULED 2026-11-22 (below)**;
+(d) MVSep 53-stem checkpoint license — **RULED 2026-11-22 (below)**; (e) drums NC —
+**DONE (README confirms)**. Record each verdict here.
+**2026-11-22 verdicts (Leto, primary sources, D-30 tier lens):**
+- **(c) BS-Roformer-SW = TIER C (REFUSE) as of today.** HF mirrors
+  (FractalSurfer/BS-RoFormer-SW-6stem — byte-for-byte mirror of
+  enerjazzer/BS-ROFO-SW-Fixed) carry license tag "unknown" with the card stating
+  verbatim: "Upstream declares no license (license: unknown). This mirror grants no
+  additional rights." Original author jarredou's HF account is DELETED; no
+  authoritative license statement exists anywhere in the chain; training data
+  undocumented. P-605's BS-RoFormer-SW path CANNOT ship. Re-classification path: only
+  if an authoritative author statement (surfacing author or rights holder) grants an
+  explicit permissive license → then Tier B at best (training data still undocumented).
+  P-605's live path: windowed-roformer (Smule MIT — weight-availability/license
+  verified when P-605 opens) and/or demucs.cpp Tier B baseline.
+- **(d) MVSep Mega 53-stem (ZFTurbo MSST) = TIER C (REFUSE) as of today.** MSST CODE
+  repo is MIT (verified) — but that covers CODE; the 53-stem CHECKPOINT carries NO
+  author license declaration (canonical repo shares checkpoints via releases/issues
+  "with no license terms attached"; docs/pretrained_models.md has no license column).
+  Third-party mirrors (e.g. Audante int8) tag MIT "as the source" while stating
+  "All rights to the model remain with its authors" — derivative tags, not
+  authoritative. Training data undocumented. Re-classification path: an explicit
+  license statement by ZFTurbo (active, contactable) in the repo/release → Tier B at
+  best (training data still undocumented). Muskey's MVSep-53-stem woodwind route
+  (RESEARCH A.2.2) is unusable for us.
+- **Residual (a) soundfont-babies file licenses: still PENDING** — gates X-301 (M3
+  prep) and P-309/P-605 indirectly; not an M2 gate item.
+**Affects:** D-21.4, D-30 (tier lens), P-309, P-605, M6, X-301.
 
 ## X-311 | 2026-11-21 UTC | Leto | OPEN (Paul owns; M3 prep, NON-GATING)
 **Question:** Read dettato's published "soundfont babies" soundfont-morphing technique
