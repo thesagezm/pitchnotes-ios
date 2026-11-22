@@ -76,14 +76,25 @@ def vendor_dir() -> Path | None:
 
 
 def real_available() -> str | None:
-    """Vendor sources + compiler present (weights resolved at run time)."""
+    """Vendor sources + compiler + model availability (env path or manifest
+    entry). Without the model check, every mock-fallback run on a main that
+    HAS vendor/demucs.cpp would burn minutes compiling Eigen for nothing."""
     if vendor_dir() is None:
         return None
     try:
         compiler()
     except RuntimeError:
         return None
-    return "demucs.cpp-vendored"
+    if os.environ.get("PITCHNOTES_DEMUCS_MODEL"):
+        return "demucs.cpp-vendored"
+    try:
+        import json
+        manifest = json.loads((REPO_ROOT / "Models" / "manifest.json").read_text())
+        if any(m.get("name") == "htdemucs" for m in manifest.get("models", [])):
+            return "demucs.cpp-vendored"
+    except Exception:
+        pass
+    return None
 
 
 def build_runner() -> Path:
