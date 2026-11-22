@@ -86,25 +86,53 @@ A14 budget and is not faked.
 *Columns: engine/model | fixture | SDR vocals | NSDR | chunk config | wall time
 (4-min synth) | peak RSS | thermal | env. P-201 spike harness:
 `Tests/Spikes/run_spike.py --spike separation` (demucs_real.py) — finite (S3),
-non-silent two-stem (S4), shape (S5), byte-identical runs (S6), RSS < 1.5 GB
-(S8); reconstruction-SDR (mix vs vocals+instrumental) logged non-gated — demucs
+**instrumental** non-silent (S4 — honest gate: the mix44k fixture is PURE
+SYNTHETIC TONES and htdemucs routes that energy to OTHER, so vocals RMS
+≈ −70 dB is correct semantic classification, NOT silence-defect; per-stem RMS
+is logged for humans and the vocal-presence gate moves to real-audio fixtures
+at P-205), shape (S5), byte-identical runs (S6), RSS < per-OS spike sanity
+bound (S8 — Linux 2.0 GB / macOS-runner 3.75 GB sanity ceiling; AGENTS §8
+1.5 GB stays the DEVICE target, measured on A14 at P-603);
+reconstruction-SDR (mix vs vocals+instrumental) logged non-gated — demucs
 sources do not sum exactly to the mix, so it is a sanity signal, not a quality
 claim. Real SDR/NSDR vs known-truth stems fills when a truth-bearing fixture
-lands (X-311 synthetic SATB prep for M3).*
+lands (X-311 synthetic SATB prep for M3). Weights identity: htdemucs fp16
+ggml 83,994,361 B, sha256 anchor 72b17c42…df0064 (D-32.6 FALLBACK Retrobear,
+TIER B per D-30), load ~0.3–0.65 s, 533 tensors / 80.08 MB fp32-decoded.*
 
 | Engine | Fixture | SDR | NSDR | Chunk | Time | RSS | Thermal | Env |
 |---|---|---|---|---|---|---|---|---|
-| demucs.cpp htdemucs fp16 ggml (stock serial, DEMUCSCPP_NUM_THREADS unset) | mix44k_short.wav 2.5 s (44.1 kHz mono→stereo, 1 zero-padded segment) | recon-SDR PENDING (weights download in flight) | n/m (no truth stems on fixture) | vendor 7.8 s @ 0.25 | PENDING | PENDING (< 1.5 GB assert in spike) | n/m (CI/dev) | Linux dev box g++ 13.3 -O2; runner sha @2923a9a |
-| demucs.cpp htdemucs + apply_demucs_threading.py (freq∥time pairs, 2 thr) | same | PENDING | n/m | same | PENDING | PENDING | n/m | same; **1-thread == 2-thread stem bytes asserted (bit-identical by construction)** |
-| demucs.cpp htdemucs (4 threads) | same | PENDING | n/m | same | PENDING (pairs are the only free parallelism — expect ≈ 2-thr number, documented honestly) | PENDING | n/m | same |
-| CI-runner row (macOS, separation-spike real path) | mix44k_short.wav | fills at first green real spike run post leto→main merge | n/m | vendor 7.8 s | CI log | CI log | n/m | macOS runner, Xcode clang++; run URL recorded on P-201 row |
+| demucs.cpp htdemucs fp16 ggml (stock serial, pristine intake vendor) | mix44k_short.wav 2.5 s (44.1 kHz mono→stereo, 1 zero-padded 7.8 s segment) | recon-SDR 38.28 dB | n/m (no truth stems on fixture) | vendor 7.8 s @ 0.25 | RTF 45.24 | 1.59–1.63 GB (§8 note: 1.5 GB = DEVICE target, P-603) | n/m (CI/dev) | Linux dev box g++ 13.3 -O2, 1 thread; runner sha @2923a9a; first real-weights run 2026-11-22 |
+| demucs.cpp htdemucs + threading patch (env=1 → serial path, byte-identical to stock) | same | recon-SDR 38.28 dB | n/m | same | RTF 38.07 | 1623 MB | n/m | Linux dev box, clang++/g++ -O2 (patched scratch copy == origin/leto @d007780, diff-verified); same-session baseline for the rows below — 45.24 → 38.07 across sessions ≈ serial run-to-run variance (~16%), no patch delta on the serial path |
+| demucs.cpp htdemucs + patch (DEMUCSCPP_NUM_THREADS=2 → freq∥time pairs) | same | recon-SDR 38.28 dB | n/m | same | RTF 40.52 | 1590 MB | n/m | **stems BYTE-IDENTICAL to serial** (sha256, 4/4 stems — patch safety argument holds); NO speedup vs serial (40.52 vs 38.07) |
+| demucs.cpp htdemucs + patch (4 threads → capped to pairs) | same | recon-SDR 38.28 dB | n/m | same | RTF 34.50 | 1617 MB | n/m | **stems BYTE-IDENTICAL to serial**; −9% vs same-session serial — within the ±8–16% run-to-run variance band, NOT a reliable speedup |
+| CI-runner row (macOS, separation-spike real path) | mix44k_short.wav | recon-SDR + S3/S4/S5/S6 ALL PASSED on first runner real-path run (45023115947) — incl. cross-run byte-identity | n/m | vendor 7.8 s | RTF pending next green run | ~3.23 GiB (normalized from the ru_maxrss bytes-unit bug that tripped the old bound) | n/m | macOS runner, Xcode clang++; S8 now per-OS bound (darwin 3.75 GB runner sanity ceiling) |
+
+**Threading benchmark verdict (D-25/P-603 input — honest):** the freq∥time
+pair patch is BIT-SAFE (byte-identical stems at 1/2/4 threads, dev box AND
+macOS runner) but delivers NO reliable speedup on this dev box: pairs wall =
+max(freq-chain, time-chain), the time chain dominates, and the deliberately
+serial per-source mask/ISTFT section carries a large share of the cost. The
+34.5–40.5 RTF spread across thread counts is within observed serial variance
+(45.24 → 38.07 across sessions). KEEP the patch (harmless, plausibly more
+useful on A14's 2P+4E heterogeneous cores — verify at P-603) but do NOT count
+on it as the device lever; the levers for the ≤2× song-length target are the
+D-25 chunk-policy benchmark (Muskey 4.5 s/1 s/crossfade vs 5–10 s) and §8
+quality-mode pacing. Long-form honesty note: the spike RTF pays a FULL
+zero-padded 7.8 s segment for 2.5 s of audio (≈ 95 s compute ÷ 2.5 s = 38);
+per-segment cost ÷ 7.8 s ≈ **RTF ~12–13 for long-form songs (derived
+estimate, not measured)** — still ≫ 1× ⇒ offline quality mode remains the
+only sane device path; real-song rows land at P-202.
 
 **Threading patch note (D-32.4):** vendored src has ZERO OpenMP pragmas
 (re-verified on the scratch extraction — 8/8 compile without -fopenmp). The
 patch pairs the independent freq/time encoder+decoder chains (disjoint
 buffers ⇒ bit-identical output, asserted); the per-source mask/ISTFT section
-stays serial (shared stft_buf mutation — deferred by design). Device target:
-≤ 2× song length (stretch ≤ 1×) — A14 rows land at P-603 device runs.
+stays serial (shared stft_buf mutation — deferred by design). X-202 DONE:
+applied to vendor/ @d007780 (Leto, + patches.log) with one ternary correction
+— `apply_demucs_threading.py` mirrors it byte-for-byte (diff-verified vs
+origin/leto). Device target: ≤ 2× song length (stretch ≤ 1×) — A14 rows land
+at P-603 device runs.
 
 *Empty — fills at M3. Columns: stage | fixture | onset F1@50ms | part-aware macro
 F1 | multi-f0 P/R/F1 | RTF | env. Real-fixture results stated honestly against
@@ -129,3 +157,4 @@ the PawCT 0.225 ceiling.*
 | v1.1 | 2026-11-21 | P-105: Swift MPM ribbon RTF measured (0.093 best-of-3, −O, Linux x86_64 — under the 0.1 budget, 3× over the optimistic estimate; honest note recorded + X-009 vendor path validated as the shipping hot path at 0.0014). Latency-relevant: facade ribbon answer ≈ 4 ms per 40 ms chunk on dev box (≪ 100 ms feedback budget; A14 number via J-103/P-603 pending). |
 | v1.2 | 2026-11-21 | P-106: F1@50c column filled by bench harness v1 (Tests/Spikes/bench_f1.py + ribbon_swift_bench/, report artifact bench_report_v1.json, §1 methodology exact: hit iff both voiced AND \|cents\|<50, RPA/RCA alongside, window-center truth pairing). Synthetic-clean AC ≥ 0.75 MET on all 6 engine rows — swiftf0 0.986 voice / 0.764 sweep (note ¹: sine confidence gating, precision 1.000), ribbon-swift 0.982 voice / 0.925 sweep, ribbon-cpp 0.977 voice / 0.896 sweep@1024. RCA == RPA everywhere (zero octave errors on clean synthetic). CI bench job = X-012 (non-blocking, Leto lane). |
 | v1.3 | 2026-11-22 | P-201c: §4 separation table opened — harness contract (S3/S4/S5/S6/S8 incl. RSS < 1.5 GB assert), reconstruction-SDR honesty note, threading-patch methodology (freq∥time pairs, bit-identical assertion, ISTFT serial rationale). Numbers PENDING the htdemucs ggml weights (Meta PRIMARY download stalled on dev box → D-32.6 FALLBACK Retrobear HF dataset in flight with sha256 trust anchor); CI-runner row fills at first green real spike post merge. |
+| v1.4 | 2026-11-22 | P-201 real-weights rows FILLED: serial RTF 45.24 (pristine intake) / patched-binary rows 38.07 (1-thr) / 40.52 (2-thr) / 34.50 (4-thr) — **byte-identical stems at every thread count (dev box + macOS runner), NO reliable thread speedup on dev box (verdict for D-25: chunk policy + quality mode are the levers, patch kept as harmless)**; recon-SDR 38.28 dB; S4 → honest instrumental gate (tone fixture routes to OTHER); S8 → per-OS spike bound (Linux 2.0 GB / macOS-runner 3.75 GB ceiling after fixing the ru_maxrss bytes-vs-KiB bug found by runner run 45023115947 — S3/S4/S5/S6 all passed on the runner's first real-path run); long-form RTF ~12–13 derived estimate noted; §8 1.5 GB DEVICE target unchanged (P-603). |
