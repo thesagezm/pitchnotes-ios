@@ -52,6 +52,24 @@ targets:
     platform: iOS
     sources:
       - App/Sources
+      # X-201 (P-201c compile proof): DemucsEngine bridge + vendored demucs.cpp.
+      # Engine/Separation entries are OPTIONAL until paul→main lands them at the
+      # M2 gate merge — branches without the files skip them (main stays green),
+      # paul's branch compiles the full Swift↔C++ bridge on macOS CI. The vendor
+      # .cpp files exist everywhere (Leto intake @ef63422, threading patch
+      # @d007780 per X-202) and are compiled unconditionally (Apple-clang proof).
+      - path: Engine/Separation/DemucsEngine.swift
+        optional: true
+      - path: Engine/Separation/DemucsShim.cpp
+        optional: true
+      - path: vendor/demucs.cpp/src/crosstransformer.cpp
+      - path: vendor/demucs.cpp/src/dsp.cpp
+      - path: vendor/demucs.cpp/src/encdec.cpp
+      - path: vendor/demucs.cpp/src/layers.cpp
+      - path: vendor/demucs.cpp/src/lstm.cpp
+      - path: vendor/demucs.cpp/src/model_apply.cpp
+      - path: vendor/demucs.cpp/src/model_inference.cpp
+      - path: vendor/demucs.cpp/src/model_load.cpp
     dependencies:
       - package: OnnxRuntime
         product: onnxruntime
@@ -105,6 +123,16 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1"
+        # X-201: vendored demucs.cpp is C++17 (ZERO OpenMP pragmas, D-32.4 — do
+        # NOT add -fopenmp); Eigen headers incl. unsupported/Eigen/CXX11/Tensor;
+        # SWIFT_INCLUDE_PATHS resolves `import DemucsShim` via
+        # Engine/Separation/module.modulemap (paul branch until gate merge).
+        CLANG_CXX_LANGUAGE_STANDARD: GNU++17
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Engine/Separation"
+          - "$(SRCROOT)/vendor/demucs.cpp/src"
+          - "$(SRCROOT)/vendor/demucs.cpp/third_party/eigen"
+        SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Engine/Separation"
 schemes:
   PitchNotesIOS:
     build:
