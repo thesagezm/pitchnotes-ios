@@ -115,7 +115,7 @@ def build_runner() -> Path:
     print("  compiling demucs_runner against vendored demucs.cpp + Eigen …")
     r = subprocess.run(cmd)
     if r.returncode != 0:
-        raise sc.SpikeFailure("demucs_runner compile failed")
+        raise RuntimeError("demucs_runner compile failed")
     return binary
 
 
@@ -124,7 +124,7 @@ def ensure_model() -> Path:
     if env:
         p = Path(env)
         if not p.is_file():
-            raise sc.SpikeFailure(f"PITCHNOTES_DEMUCS_MODEL points at missing file {p}")
+            raise RuntimeError(f"PITCHNOTES_DEMUCS_MODEL points at missing file {p}")
         return p
     cache = Path(os.environ.get("PITCHNOTES_MODEL_CACHE", REPO_ROOT / "Models" / "downloads"))
     r = subprocess.run(
@@ -134,12 +134,12 @@ def ensure_model() -> Path:
          "--cache-dir", str(cache)],
         capture_output=True, text=True)
     if r.returncode != 0:
-        raise sc.SpikeFailure(
+        raise RuntimeError(
             "htdemucs ggml weights unavailable: no PITCHNOTES_DEMUCS_MODEL and "
             f"download.py failed rc={r.returncode}: {r.stderr.strip()[:300]}")
     line = [l for l in r.stdout.splitlines() if l.startswith(("downloaded", "cached"))]
     if not line:
-        raise sc.SpikeFailure(f"download.py printed no path: {r.stdout!r}")
+        raise RuntimeError(f"download.py printed no path: {r.stdout!r}")
     raw = line[0].split(": ", 1)[1]
     import re
     raw = re.sub(r"\s+\(\d+ bytes\)\s*$", "", raw)
@@ -150,7 +150,7 @@ def load_f32(path: Path, n_samples: int) -> np.ndarray:
     raw = path.read_bytes()
     arr = np.frombuffer(raw, dtype="<f4").copy()
     if arr.size != 2 * n_samples:
-        raise sc.SpikeFailure(f"{path.name}: {arr.size} floats != 2*{n_samples}")
+        raise RuntimeError(f"{path.name}: {arr.size} floats != 2*{n_samples}")
     return arr
 
 
@@ -162,7 +162,7 @@ def run_runner(binary: Path, model: Path, wav: Path, outdir: Path, threads: int 
                        capture_output=True, text=True)
     wall = time.time() - t0
     if r.returncode != 0:
-        raise sc.SpikeFailure(f"demucs_runner rc={r.returncode}: {r.stderr[-500:]}")
+        raise RuntimeError(f"demucs_runner rc={r.returncode}: {r.stderr[-500:]}")
     metrics: dict[str, str] = {}
     rms: dict[str, float] = {}
     for line in r.stdout.strip().splitlines():
@@ -172,7 +172,7 @@ def run_runner(binary: Path, model: Path, wav: Path, outdir: Path, threads: int 
         elif len(parts) >= 2:
             metrics[parts[0]] = "\t".join(parts[1:])
     if "DONE" not in r.stdout:
-        raise sc.SpikeFailure(f"demucs_runner incomplete output (wall {wall:.1f}s): {r.stdout[-200:]}")
+        raise RuntimeError(f"demucs_runner incomplete output (wall {wall:.1f}s): {r.stdout[-200:]}")
     return {"metrics": metrics, "rms": rms, "outdir": outdir}
 
 
