@@ -5,8 +5,13 @@ import PitchLogic
 /// MockEngine, validated with EngineCore V1–V13 (no more JSON shim). M2: this
 /// becomes the real imported-song list (J-202) — row structure and inspector
 /// carry over unchanged; only the catalog producer swaps again.
+/// J-201: the (+) toolbar action opens the import flow (document picker →
+/// ImportFlowSheet; completed bundles land in BundleStore, the list merge is
+/// J-202).
 struct LibraryView: View {
     @StateObject private var model = LibraryModel()
+    @StateObject private var importModel = ImportModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -19,6 +24,29 @@ struct LibraryView: View {
             }
         }
         .navigationTitle("Library")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    importModel.isImportPickerPresented = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Import song")
+                .accessibilityHint("Pick an MP3, FLAC, WAV or M4A file to import")
+            }
+        }
+        .fileImporter(
+            isPresented: $importModel.isImportPickerPresented,
+            allowedContentTypes: ImportModel.supportedTypes,
+            allowsMultipleSelection: false
+        ) { importModel.handlePickerResult($0) }
+        .sheet(isPresented: Binding(
+            get: { importModel.phase != .idle },
+            set: { if !$0 { importModel.reset() } }
+        )) {
+            ImportFlowSheet(model: importModel)
+        }
+        .onChange(of: scenePhase) { importModel.scenePhaseChanged($0) }
     }
 
     private var songList: some View {

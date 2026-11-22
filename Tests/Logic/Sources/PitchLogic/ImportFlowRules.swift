@@ -130,7 +130,7 @@ public enum ImportThermalGate {
         /// (BGProcessingTask, AGENTS §8) but the user may proceed.
         case deferRecommended(String)
 
-        var message: String? {
+        public var message: String? {
             switch self {
             case .none: return nil
             case .slowDown(let m), .deferRecommended(let m): return m
