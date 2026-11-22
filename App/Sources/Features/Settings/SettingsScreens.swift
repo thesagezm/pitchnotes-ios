@@ -217,7 +217,8 @@ struct ModelsScreen: View {
         ("SwiftF0", "~60 KB", "Shipped (M1)", "Grading-grade pitch stream."),
         ("MPM/YIN ribbon (vendored C)", "code only", "Shipped (M1)", "Live tuner, zero lookahead."),
         ("Silero VAD", "~2 MB", "Shipped (M1)", "Live voice-activity gating."),
-        ("htdemucs fp16 ggml", "~81 MB", "M2 — Paul's P-201..P-205", "Two-stem separation. Tier B: \(LicensesCatalog.tierBProvenanceLine)"),
+        ("htdemucs fp16 ggml", "84 MB (83,994,361 B)", "M2 — manifest live (P-201 REVIEW)",
+         "Two-stem separation (D-32.6 Retrobear fallback path, SHA256 trust anchor 72b17c42…df0064, re-verified byte-identical on upload). Tier B: \(LicensesCatalog.tierBProvenanceLine)"),
         ("basic-pitch", "~2 MB", "M3", "Multi-f0 note transcription."),
         ("RMVPE (optional)", "~180 MB", "Optional download (labeled)", "User-selected heavy alternative."),
     ]
