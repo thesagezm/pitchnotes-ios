@@ -170,7 +170,11 @@ final class TuningOffsetTests: XCTestCase {
     }
 
     func testTuningCentsConvenienceReturnsEstimate() {
-        XCTAssertEqual(ManifestV1.tuningCents(in: v1JSON(parts: voicePart)), 32)
+        // V15-consistent fixture (hasInstrumental false + T1-only parts) —
+        // the default-true variant is intentionally inconsistent and would
+        // fail V15 before the estimate is read.
+        XCTAssertEqual(ManifestV1.tuningCents(
+            in: v1JSON(hasInstrumental: "false", parts: voicePart)), 32)
         XCTAssertNil(ManifestV1.tuningCents(in: Data("not json".utf8)))
     }
 
