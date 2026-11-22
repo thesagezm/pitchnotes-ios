@@ -204,6 +204,36 @@ CI model flow (all): HF repo (D-2, BLOCKED(human) until created) → `scripts/mo
 
 Matches PLAN §0 targets exactly (live F1@50c ≥ 0.75 synthetic clean; RTF < 0.3; feedback < 100 ms; separation vocals SDR ≥ 8 dB synthetic; per-part NSDR 4–14 dB post-v1 honest; part-aware note F1 0.2–0.4 honest; peak RSS < 1.5 GB; core bundle < 200 MB). Harness = pitch-benchmark design (F1@50c, RPA/RCA) + mir_eval/museval (SDR/NSDR) as study-reference implementations — reimplement metrics in our harness, ship no NC dataset. Measured on CI macOS runner + human-assisted A14 device runs; every engine task logs RTF/RSS in BENCHMARKS.md (honesty rule).
 
+### 4.1 Spike parity harness (P-208 — D-24 / CONTRACTS C-7)
+
+Numerical PARITY of the Swift/ORT path against Python reference tensors, strictly
+stronger than shape/range spike assertions (D-24, adopted from the Muskey
+`--dettato-check` pattern):
+
+- **Reference side (Python):** `Tests/Spikes/swiftf0_real.py --export-c7` and
+  `Tests/Spikes/silero_real.py --export-c7` run the pinned manifest models
+  (download.py SHA-verified) on the committed fixtures and write C-7 sidecars
+  under `Tests/Spikes/ReferenceTensors/{swiftf0,silero-vad}/`: one JSON manifest
+  + one little-endian f32/f64 bin per tensor. `model_sha256` + `fixture_sha256`
+  bind the reference to the exact model and fixture bytes. The npz exports
+  (`--export-ref`) remain the Python-side regression format.
+- **Consumer side (Swift):** `Engine/PitchORT/Tests/PitchORTTests/` —
+  `SwiftF0ParityTests` (3 fixtures × 4 tensors: pitch_hz, confidence_raw,
+  confidence_gated, loudness_db — raw model output AND EngineCore.SwiftF0Postprocessor
+  outputs, i.e. parity through the FULL device pipeline) and `SileroParityTests`
+  (4 fixtures × speech_prob through SileroVADStream, Python SileroStream chunking
+  semantics mirrored). Binding assertions (model sha, fixture sha) run BEFORE
+  tensor comparison — a model bump without regeneration fails loudly.
+- **Pass criterion (C-7):** every element within tolerance (abs 1e-3 OR rel 1e-4
+  of the reference). Same tolerance for both engines at v1; changes need a
+  recorded ruling (never tightened silently).
+- **CI:** `engine-parity` job (macOS, X-205 spec filed) — BLOCKING at milestone
+  merges like the other spike contract tests; also serves as the macOS
+  compile/execute proof for the PitchORT test target.
+- **Regeneration:** after any manifest model bump: run both `--export-c7`
+  exporters against the new pinned model and commit the sidecar diff with the
+  manifest change.
+
 ## 5. License flags (proposed X-tasks — LETO RULES in DECISIONS.md)
 
 - **X-002 → RULED as D-17 + D-19 (2026-11-21):** GTSinger-trained NanoPitch weights BANNED; v1 ribbon = vendored sevagh/pitch-detection (Leto-verified MIT @v2023.12; vendor/pitch-detection + kissfft v131 BSD-3 via pd_fft seam). NanoPitch only on clean LICENSE + clean weights/retrain. Original proposal text: NanoPitch CODE license is unverified (D-7) AND its pretrained weights are trained on **GTSinger (CC BY-NC-SA)** + FSDNoisy18k (RESEARCH §4b) — NC-trained weights are commercially encumbered even if code is permissive. PROPOSAL: v1 causal ribbon = **sevagh/pitch-detection (MIT, pure DSP, no training data)** as the DEFAULT; NanoPitch ships only if (i) LICENSE verified ship-safe AND (ii) Leto rules the weight provenance usable, or (iii) weights retrained on clean synthetic/CC-BY data (VocalSet CC-BY, SingStyle111 CC-BY, own synth per X-301). Do NOT silently ship GTSinger-trained weights.
@@ -226,3 +256,4 @@ Matches PLAN §0 targets exactly (live F1@50c ≥ 0.75 synthetic clean; RTF < 0.
 | v1 | 2026-11-21 | P-101/P-103: SwiftF0 + silero-vad SHIPPED (portable cores, PitchORT seam, self-upgrading real spikes). Architecture M1 layer + Engine/PitchORT split rationale; SwiftF0 I/O + streaming semantics (176 ms lookahead); silero 512/64/state + speech-VAD semantics; X-002 resolved (D-17/D-19); open questions 2–4 closed by CONTRACTS v0.1. |
 | v1.1 | 2026-11-21 | P-105: LivePitchFacade (C-6.0 verbatim) + C-6.1 presets + MockEngine additive conformance — §1.1 facade semantics (sticky sub-hop, VAD fail-open fusion, V12 clarity clamp, M2 stubs, reset); P-102 Swift MPM noted in the M1 layer diagram. RibbonEngine partial-window crash fixed (Int-division truncation; testTimestampsOnContractGridAndCausal red on CI arm64 + Linux, emitCount guard). |
 | v1.2 | 2026-11-22 | P-201a CONTRACTS v1.0 wired in EngineCore (C-1 += VOCALS sortOrder 10, C-2.1 notesFile optional, V14/V15 era-scoped, C-8 verbatim + ImportProgressEmitter) — 103/103 Linux; P-201c M2 separation stack: §1.3 architecture (shim C-ABI + DemucsEngine bridge + DemucsOutputMapper/PCMWavWriter portable layer), demucs model row → Tier B provenance (D-30/D-32.6) + std::thread pair parallelism spec (D-32.4, apply_demucs_threading.py). EngineCore 112/112 Linux. |
+| v1.3 | 2026-11-22 | P-208 (D-24/C-7): §4.1 spike parity harness — C-7 sidecar exporter (--export-c7, JSON+f32/f64 bins, model+fixture sha binding), Swift/ORT parity tests in PitchORTTests (SwiftF0 3 fixtures × 4 tensors incl. EngineCore postprocess outputs; silero 4 fixtures), tolerance abs 1e-3 OR rel 1e-4; engine-parity CI job spec = X-205 (Leto). |

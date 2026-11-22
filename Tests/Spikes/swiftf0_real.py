@@ -275,7 +275,9 @@ def export_reference_tensors(sess) -> Path:
         "# ReferenceTensors (D-24 / CONTRACTS C-7 spike-parity sidecars)\n\n"
         "Captured model outputs of the PINNED manifest entries on the committed "
         "fixtures (regenerable: `python3 Tests/Spikes/swiftf0_real.py --export-ref` "
-        "and `... silero_real.py --export-ref`). Consumed by P-208 parity tests "
+        "and `... silero_real.py --export-ref` for the npz regression format; "
+        "`--export-c7` on the same scripts for the P-208 C-7 JSON+bin parity "
+        "sidecars in swiftf0/ + silero-vad/). Consumed by P-208 parity tests "
         "(Python reference vs Swift/ORT outputs, tolerance-based). The model SHA "
         "travels INSIDE the npz (`_model_sha256`) — parity asserts it matches the "
         "manifest entry, so a model bump without regeneration fails loudly.\n")
