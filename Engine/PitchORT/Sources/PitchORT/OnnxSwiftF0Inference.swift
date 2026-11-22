@@ -29,7 +29,7 @@ public final class OnnxSwiftF0Inference: SwiftF0Inference, @unchecked Sendable {
     ///     thread scaling: RTF 0.0156 → 0.0098 → 0.0089 on the CI runner).
     public init(modelURL: URL, intraOpThreads: Int = 2) throws {
         let env = try ORTEnv(loggingLevel: .error)
-        let options = ORTSessionOptions()
+        let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(Int32(intraOpThreads))
         self.session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
     }
@@ -60,16 +60,19 @@ public final class OnnxSwiftF0Inference: SwiftF0Inference, @unchecked Sendable {
     }
 
     private func frameCount(of value: ORTValue) throws -> Int {
-        guard let info = try value.tensorTypeAndShapeInfo() else {
-            throw EngineError.contractViolation("SwiftF0 ONNX output has no type/shape info")
-        }
+        // Mirror bindings return NON-optional info (X-013: `guard let` was
+        // invalid — run 44957019830); a throw here means the call itself failed.
+        let info = try value.tensorTypeAndShapeInfo()
         let shape = info.shape
         // [1, frames] → frames = product of trailing dims beyond the batch axis.
         return shape.dropFirst().reduce(1) { $0 * $1.intValue }
     }
 }
 
-private extension ORTValue {
+// Module-internal (X-013): `data(as:count:)` is shared with
+// OnnxSileroVADInference — `private` here made it invisible cross-file
+// ("fileprivate protection level", run 44957019830).
+extension ORTValue {
     /// Scalar float32 input (fmin/fmax): 0-d tensor over 4 bytes.
     static func makeScalar(_ value: Float) throws -> ORTValue {
         var copy = value
@@ -80,7 +83,9 @@ private extension ORTValue {
             shape: [])
     }
 
-    /// Typed read of this tensor's bytes.
+    /// Typed read of this tensor's bytes. `tensorData()` yields NSMutableData,
+    /// which has no `withUnsafeBytes` — bridge to the Data struct first
+    /// (X-013, run 44957019830).
     func data<T: BinaryFloatingPoint>(as: T.Type, count: Int) throws -> [T] {
         let raw = try tensorData()
         let expected = count * MemoryLayout<T>.stride
@@ -88,7 +93,7 @@ private extension ORTValue {
             throw EngineError.contractViolation(
                 "SwiftF0 ONNX tensor: \(raw.length) bytes, expected \(expected) (\(count) × \(T.self))")
         }
-        return raw.withUnsafeBytes { rawBuf in
+        return (raw as Data).withUnsafeBytes { rawBuf in
             Array(rawBuf.bindMemory(to: T.self)).map { T($0) }
         }
     }

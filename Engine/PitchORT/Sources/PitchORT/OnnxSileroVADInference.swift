@@ -21,7 +21,7 @@ public final class OnnxSileroVADInference: SileroVADInference, @unchecked Sendab
 
     public init(modelURL: URL, intraOpThreads: Int = 1) throws {
         let env = try ORTEnv(loggingLevel: .error)
-        let options = ORTSessionOptions()
+        let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(Int32(intraOpThreads))
         self.session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
     }
@@ -48,7 +48,10 @@ public final class OnnxSileroVADInference: SileroVADInference, @unchecked Sendab
         guard outData.length >= MemoryLayout<Float>.stride else {
             throw EngineError.contractViolation("silero-vad output tensor too small")
         }
-        let prob = outData.withUnsafeBytes { $0.load(as: Float.self) }
+        // NSMutableData has no `withUnsafeBytes` — bridge to Data (X-013).
+        let prob = (outData as Data).withUnsafeBytes { $0.load(as: Float.self) }
+        // `data(as:count:)` lives on the shared internal ORTValue extension in
+        // OnnxSwiftF0Inference.swift (same module — X-013 visibility fix).
         let newState = try stateValueN.data(as: Float.self, count: SileroVADSpec.stateSize)
         return (prob, newState)
     }
