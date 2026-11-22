@@ -22,9 +22,13 @@ WHY SAFE (recorded for Leto's patches.log entry):
 
 MECHANICS: exact-string replacements against the pinned intake
 (upstream 4edae497, byte-identical per patches.log). Idempotent (refuses to
-double-apply), leaves a .orig backup, --revert restores it. Leto applies this
-to vendor/demucs.cpp/src/ with a patches.log line (X-201); until then the
-benchmark applies it to the READ-ONLY scratch extraction.
+double-apply), leaves a .orig backup, --revert restores it. X-202 DONE:
+Leto applied this to vendor/demucs.cpp @d007780 with a patches.log entry,
+correcting the emitted helper ternary (`? 2 : n` → `? 1 : 2`) — the old text
+inverted the env semantics (unset/1 would have run PARALLEL, explicit 2/4
+SERIAL). This script MIRRORS that correction so script output == vendor text
+byte-for-byte (verified by diff against origin/leto @d007780 on 2026-11-22).
+Benchmarks apply it to SCRATCH copies so the vendor baseline stays pristine.
 
 Usage:
   python3 apply_demucs_threading.py <vendor>/src/model_inference.cpp [--revert]
@@ -45,7 +49,11 @@ static int demucscpp_thread_pair_threshold(void)
 {{
     const char *env = std::getenv("DEMUCSCPP_NUM_THREADS");
     int n = env ? std::atoi(env) : 1;
-    return n < 2 ? 2 : n;
+    return n < 2 ? 1 : 2; // LETO X-202 correction: script emitted `? 2 : n`, which
+                          // inverted the env semantics (unset/1 would run PARALLEL,
+                          // explicit 2/4 SERIAL) vs the documented contract above.
+                          // `? 1 : 2` + the sites' `== 2` test = docstring-true:
+                          // unset/1 -> serial stock, >= 2 -> parallel pairs.
 }}
 """
 
