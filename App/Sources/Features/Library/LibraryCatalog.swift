@@ -26,11 +26,19 @@ struct LibrarySong: Identifiable {
     let unisonPairs: [UnisonPair]
     let reports: [BundleFileReport]
     /// Provenance caption ("perfect", "breathy", "tampered — must FAIL").
-    /// Mock-era only; real imports (M2) drop it.
+    /// Demo rows only; real imports render their own provenance via `record`.
     let scenarioCaption: String
+    /// J-202: non-nil for a REAL imported bundle (BundleStore disk truth) —
+    /// delete/storage/provenance UI applies; nil for the demo catalog.
+    let record: BundleRecord?
+    /// J-202: bytes this bundle occupies on disk (0 for demo rows — their
+    /// temporary-directory size is meaningless and would mislead).
+    let bytesOnDisk: Int64
 
     var id: String { manifest.id }
     var allReportsValid: Bool { reports.allSatisfy(\.isValid) }
+    /// Real imported song (deletable, storage-counted) vs demo catalog row.
+    var isImported: Bool { record != nil }
 }
 
 enum LibraryCatalog {
@@ -50,6 +58,21 @@ enum LibraryCatalog {
     }
 
     // MARK: - One song: materialize → read back → validate
+
+    /// J-202: assemble a LibrarySong from a REAL imported bundle directory
+    /// (BundleStore.scan() record). Same disk-truth validation as the demo
+    /// rows — the only difference is provenance and the on-disk size.
+    /// `scan()` guarantees a parseable song.json, but a vanished/corrupted
+    /// bundle between scan and read still renders as a failed row, not a crash.
+    static func importedSong(at dir: URL, record: BundleRecord, bytesOnDisk: Int64) -> LibrarySong {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("song.json")),
+              let manifest = try? JSONDecoder().decode(SongManifest.self, from: data) else {
+            return failedSong(id: record.id, error: BundleStoreError.bundleIncomplete(record.id),
+                              record: record, bytesOnDisk: bytesOnDisk)
+        }
+        return assemble(manifest: manifest, in: dir,
+                        caption: "", record: record, bytesOnDisk: bytesOnDisk)
+    }
 
     private static func song(scenario: MockScenario, seed: UInt64, caption: String) -> LibrarySong {
         let engine = MockEngine(scenario: scenario, seed: seed, referencePart: .bass)
@@ -84,7 +107,8 @@ enum LibraryCatalog {
     /// Reads song.json + notes/* + pitch/* FROM DISK and validates each with
     /// EngineCore validators (per-file reports) plus the file-level bundle pass
     /// (V1/V2/V3 stem reality/V10). This is the honesty layer: disk truth.
-    private static func assemble(manifest: SongManifest, in dir: URL, caption: String) -> LibrarySong {
+    private static func assemble(manifest: SongManifest, in dir: URL, caption: String,
+                                 record: BundleRecord? = nil, bytesOnDisk: Int64 = 0) -> LibrarySong {
         var reports: [BundleFileReport] = []
         var tracks: [Part: NoteTrack] = [:]
 
@@ -159,15 +183,20 @@ enum LibraryCatalog {
             noteTracks: tracks,
             unisonPairs: UnisonDetector.pairs(in: tracks),
             reports: reports,
-            scenarioCaption: caption)
+            scenarioCaption: caption,
+            record: record,
+            bytesOnDisk: bytesOnDisk)
     }
 
     /// Materialization itself failed — one red report row, no crash.
-    private static func failedSong(id: String, error: Error, caption: String) -> LibrarySong {
+    /// `caption` doubles as the honest reason ("tampered — must FAIL" for the
+    /// demo, "bundle no longer readable" for a real import that went bad).
+    private static func failedSong(id: String, error: Error, caption: String = "",
+                                   record: BundleRecord? = nil, bytesOnDisk: Int64 = 0) -> LibrarySong {
         let manifest = SongManifest(
-            engineVersion: "mock-failed",
+            engineVersion: "unavailable",
             id: id,
-            title: "Mock bundle failed to materialize",
+            title: "Bundle failed to load",
             sourceHash: SourceHash(hex: String(repeating: "0", count: 64)),
             duration_s: 1.0,
             hasInstrumental: false,
@@ -179,7 +208,9 @@ enum LibraryCatalog {
             unisonPairs: [],
             reports: [BundleFileReport(
                 fileName: "bundle",
-                violations: [ContractViolation("V1", "materialization error: \(error)")])],
-            scenarioCaption: caption)
+                violations: [ContractViolation("V1", "load error: \(error)")])],
+            scenarioCaption: caption,
+            record: record,
+            bytesOnDisk: bytesOnDisk)
     }
 }

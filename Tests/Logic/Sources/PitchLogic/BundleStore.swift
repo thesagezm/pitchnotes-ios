@@ -221,4 +221,25 @@ public struct BundleStore: Sendable {
         }
         return total
     }
+
+    /// Bytes occupied by ONE bundle directory (manifest + stems + notes/pitch
+    /// files) — the per-song row in the Library. 0 when the bundle is absent
+    /// (scan already prunes records whose directory vanished). Staging dirs of
+    /// OTHER imports are adjacent (`<id>.tmp`), never inside, so they don't
+    /// pollute a bundle's size.
+    public func bytesOnDisk(forID id: String) -> Int64 {
+        let fm = FileManager.default
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        guard let enumerator = fm.enumerator(
+            at: dir, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) else {
+            return 0
+        }
+        var total: Int64 = 0
+        for case let url as URL in enumerator {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { continue }
+            total += Int64(values.fileSize ?? 0)
+        }
+        return total
+    }
 }

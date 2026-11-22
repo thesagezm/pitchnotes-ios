@@ -122,7 +122,8 @@ final class BundleStoreTests: XCTestCase {
     func testIncompleteBundleWithoutSongJSONIsNotAdopted() throws {
         let id = "01JIIIIIIIIIIIIIIIIIIIIIII"
         let dir = root.appendingPathComponent(id, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: dir.appendingPathComponent("stems", isDirectory: true), withIntermediateDirectories: true)
         try "stems but no manifest".data(using: .utf8)!.write(to: dir.appendingPathComponent("stems/VOCALS.wav"))
 
         XCTAssertTrue(store.isCompleteBundle(at: dir) == false)
@@ -163,5 +164,50 @@ final class BundleStoreTests: XCTestCase {
             .appendingPathComponent("01JMMMMMMMMMMMMMMMMMMMMMMM/song.json")).count)
         let indexBytes = Int64(try Data(contentsOf: store.indexURL).count)
         XCTAssertGreaterThanOrEqual(store.totalBytesOnDisk(), manifestBytes + indexBytes)
+    }
+
+    // MARK: J-202 per-song storage (bytesOnDisk(forID:))
+
+    func testBytesOnDiskSumsExactlyTheBundleFiles() throws {
+        let id = "01JNNNNNNNNNNNNNNNNNNNNNNN"
+        _ = try materializeBundle(id: id, title: "Per-song")
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        // Known-size files inside the bundle (stem + notes shapes). Data.write
+        // does not create intermediate dirs — make them first.
+        for sub in ["stems", "notes"] {
+            try FileManager.default.createDirectory(
+                at: dir.appendingPathComponent(sub, isDirectory: true), withIntermediateDirectories: true)
+        }
+        let stem = Data(repeating: 0x2A, count: 4096)
+        let notes = Data(repeating: 0x7B, count: 250)
+        try stem.write(to: dir.appendingPathComponent("stems/VOCALS.m4a"))
+        try notes.write(to: dir.appendingPathComponent("notes/VOCALS.json"))
+
+        let manifestBytes = Int64(try Data(contentsOf: dir.appendingPathComponent("song.json")).count)
+        XCTAssertEqual(store.bytesOnDisk(forID: id), manifestBytes + 4096 + 250,
+                       "per-song size = manifest + every regular file in the bundle dir")
+        XCTAssertLessThanOrEqual(store.bytesOnDisk(forID: id), store.totalBytesOnDisk(),
+                                 "per-song size folds into the root total (index + other bundles)")
+    }
+
+    func testBytesOnDiskUnknownBundleIsZero() {
+        XCTAssertEqual(store.bytesOnDisk(forID: "01JOOOOOOOOOOOOOOOOOOOOOOO"), 0,
+                       "missing bundle → 0 (scan prunes such records anyway)")
+    }
+
+    func testDeleteFreesPerSongBytes() throws {
+        let id = "01JPPPPPPPPPPPPPPPPPPPPPPP"
+        _ = try materializeBundle(id: id, title: "Freed")
+        let dir = root.appendingPathComponent(id, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dir.appendingPathComponent("stems", isDirectory: true), withIntermediateDirectories: true)
+        try Data(repeating: 0x2A, count: 1024).write(to: dir.appendingPathComponent("stems/VOCALS.m4a"))
+
+        let before = store.bytesOnDisk(forID: id)
+        XCTAssertGreaterThan(before, 0)
+
+        try store.delete(id: id)
+        XCTAssertEqual(store.bytesOnDisk(forID: id), 0, "delete frees the bundle's bytes")
+        XCTAssertFalse(store.scan().contains { $0.id == id }, "record gone from disk truth")
     }
 }
