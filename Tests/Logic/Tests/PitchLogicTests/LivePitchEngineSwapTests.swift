@@ -85,18 +85,18 @@ final class LivePitchEngineSwapTests: XCTestCase {
 
     // MARK: - PartRangeChips derives from (not duplicates) the EngineCore table
 
-    func testChipsAdapterMirrorsEngineCoreTable() {
+    func testChipsAdapterMirrorsEngineCoreTable() throws {
         // Every display row must EQUAL the EngineCore contract row it derives
         // from — the adapter owns zero contract values.
         for (part, preset) in EngineCore.PartRangePresets.all {
-            let chip = PartRangeChips.range(for: part)
-            XCTAssertNotNil(chip, "\(part.rawValue) missing from chips")
-            XCTAssertEqual(chip?.part, preset.part)
-            XCTAssertEqual(chip?.presetName, preset.presetName)
-            XCTAssertEqual(chip?.midiLow, preset.midiLow)
-            XCTAssertEqual(chip?.midiHigh, preset.midiHigh)
-            XCTAssertEqual(chip?.hzLow, preset.fmin, accuracy: 0.001)
-            XCTAssertEqual(chip?.hzHigh, preset.fmax, accuracy: 0.001)
+            let chip = try XCTUnwrap(PartRangeChips.range(for: part),
+                                     "\(part.rawValue) missing from chips")
+            XCTAssertEqual(chip.part, preset.part)
+            XCTAssertEqual(chip.presetName, preset.presetName)
+            XCTAssertEqual(chip.midiLow, preset.midiLow)
+            XCTAssertEqual(chip.midiHigh, preset.midiHigh)
+            XCTAssertEqual(chip.hzLow, preset.fmin, accuracy: 0.001)
+            XCTAssertEqual(chip.hzHigh, preset.fmax, accuracy: 0.001)
         }
         XCTAssertEqual(PartRangeChips.all.count, 7)
         XCTAssertNil(PartRangeChips.range(for: .vp))

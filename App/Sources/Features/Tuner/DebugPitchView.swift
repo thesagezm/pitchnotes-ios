@@ -247,7 +247,7 @@ final class DebugPitchModel: ObservableObject {
                               loudness_db: frame.loudness_db,
                               callMs: callMs))
         if samples.count > 700 { samples.removeFirst(samples.count - 700) }
-        engineID = frame.engine_id
+        engineID = frame.engine_id ?? "" // contract v0.1: absent = unknown (facade always sets it live)
         lookaheadMs = frame.lookahead_ms
 
         rtfEMA = rtfEMA == 0 ? rtf : rtfEMA * 0.9 + rtf * 0.1
