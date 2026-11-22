@@ -46,6 +46,11 @@ struct LibrarySong: Identifiable {
     var allReportsValid: Bool { reports.allSatisfy(\.isValid) }
     /// Real imported song (deletable, storage-counted) vs demo catalog row.
     var isImported: Bool { record != nil }
+    /// J-202/J-205: does this bundle carry note tracks at all? C-2.1 defines
+    /// `meanNoteConfidence` as 0.0 when there are none (the M2 two-stem
+    /// bundles carry none — M3+ adds them), so the UI must NOT render that
+    /// 0.0 as a "0% low confidence" warning (D-12 honesty).
+    var hasNoteTracks: Bool { ManifestContents.hasNoteTracks(in: manifest) }
 }
 
 enum LibraryCatalog {

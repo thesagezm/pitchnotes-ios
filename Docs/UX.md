@@ -398,6 +398,10 @@ banner (ImportThermalGate).
 Library (disk truth first, J-202):
   rows: title · a cappella|backed chip (D-9: hasInstrumental false ⇒ "a cappella")
         · conf % chip (amber < 60% — D-12 bleed honesty) · parts chips (+ unison ×n)
+          ⚠ the conf chip appears ONLY when the bundle carries note tracks:
+          C-2.1 sets meanNoteConfidence to 0.0 when there are none (every M2
+          two-stem bundle — note tracks arrive with M3), so an amber "conf 0%"
+          on a healthy import would be a FALSE warning. Omitted, not shown.
         · imported rows: provenance line "source file · date · on-disk size"
         · demo rows (MockEngine, until P-204): "Demo: scenario" line, NOT deletable
   header: "<total> on device" (BundleStore.totalBytesOnDisk) + all-valid seal
@@ -409,6 +413,8 @@ Library (disk truth first, J-202):
   merge order: BundleStore.scan() (C-2.2 complete-marker rule) THEN demo catalog.
 Song detail (Bundle Inspector):
   song.json fields (contractVersion/engineVersion/sourceHash/confidence…)
+  "Mean note confidence" reads "not yet — no note tracks in this bundle" when
+    the bundle has none (same honesty rule as the row chip — never "0.00")
   Import section: source file · added at · on-disk size (per-song bytes)
   Tuning section: D-22 chip copy + override picker (Recording / Force A440 /
     Manual ±50c stepper) — persists per song in the index (J-205)
@@ -730,7 +736,11 @@ otherwise the ScriptedImportEngine mock path demonstrates the same UX).
    resets; Library shows NO new song; Settings → Storage shows no growth from
    the cancelled run (stray `*.tmp` absent — C-2.2).
 4. **Stems appear**: song row shows parts chips + a cappella/backed chip +
-   conf % chip (amber < 60%) + provenance line (filename · date · size).
+   provenance line (filename · date · size). **No conf % chip on an M2
+   bundle** — a two-stem bundle carries no note tracks, so the confidence
+   value is undefined (C-2.1 sets it to 0.0 when there are none); the chip is
+   omitted rather than showing a false amber "conf 0%". The chip appears from
+   M3 on, when note tracks exist (amber < 60%).
    [P: two-stem bundle with INSTRUMENTAL when source has backing.]
 5. **Inspector**: Import section (source/added/size), Tuning section shows the
    D-22 estimate ("+32c sharp — reference adjusted" when P-207 landed; v0-era

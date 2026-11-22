@@ -146,7 +146,14 @@ struct BundleInspectorView: View {
             field("Sample rate", "\(song.manifest.sampleRate) Hz")
             field("Instrumental", song.manifest.hasInstrumental ? "present" : "none (D-9 acapella)")
             field("sourceHash", "\(song.manifest.sourceHash.algo) · \(song.manifest.sourceHash.hex)…")
-            field("Mean note confidence", String(format: "%.2f", song.manifest.confidenceSummary.meanNoteConfidence))
+            // C-2.1: meanNoteConfidence is 0.0 when the bundle carries NO note
+            // tracks (every M2 two-stem bundle — note tracks arrive with M3).
+            // "0.00" there would read as "zero confidence", so the field says
+            // "not yet" instead (D-12 honesty).
+            field("Mean note confidence",
+                  song.hasNoteTracks
+                  ? String(format: "%.2f", song.manifest.confidenceSummary.meanNoteConfidence)
+                  : "not yet — no note tracks in this bundle")
         }
     }
 

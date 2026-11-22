@@ -236,7 +236,14 @@ struct LibraryView: View {
         private var partChips: some View {
             HStack(spacing: Token.Spacing.s1) {
                 aCappellaChip
-                confidenceChip
+                // The confidence chip means something only when the bundle
+                // carries note tracks. C-2.1 sets meanNoteConfidence to 0.0
+                // when there are none (every M2 two-stem bundle), and an
+                // amber "conf 0%" on a healthy import would be a false
+                // warning (D-12 honesty) — so it is omitted, not shown.
+                if song.hasNoteTracks {
+                    confidenceChip
+                }
                 ForEach(song.manifest.parts, id: \.part) { part in
                     Text(part.part.displayName) // C-1 Part (EngineCore) + PitchLogic display names
                         .font(Token.Fonts.caption)
