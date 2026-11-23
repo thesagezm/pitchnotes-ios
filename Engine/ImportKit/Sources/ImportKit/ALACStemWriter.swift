@@ -340,18 +340,14 @@ public struct ALACStemWriter: StemEncoding {
         }
         if let dstPlanes = destination.floatChannelData {
             for c in 0..<channels {
-                guard let src = srcPlanes[c], let dst = dstPlanes[c] else {
-                    throw EngineError.importFailed("no float channel data for channel \(c)")
-                }
-                dst.update(from: src, count: frames)
+                dstPlanes[c].update(from: srcPlanes[c], count: frames)
             }
             return
         }
         if let dstPlanes = destination.int16ChannelData {
             for c in 0..<channels {
-                guard let src = srcPlanes[c], let dst = dstPlanes[c] else {
-                    throw EngineError.importFailed("no int16 channel data for channel \(c)")
-                }
+                let src = srcPlanes[c]
+                let dst = dstPlanes[c]
                 for f in 0..<frames {
                     let scaled = Double(src[f]) * 32767.0
                     let clamped = max(-32768.0, min(32767.0, scaled))

@@ -79,11 +79,12 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
         // the two engine tests. So: remove only what exists, and never let a
         // cleanup problem escape into the caller's error path.
         let fm = FileManager.default
-        guard fm.fileExists(atPath: workDir.path) else { return }
+        let dir = workDir
+        guard fm.fileExists(atPath: dir.path) else { return }
         do {
-            try fm.removeItem(at: workDir)
+            try fm.removeItem(at: dir)
         } catch {
-            Self.logger.error("could not remove the work dir \(workDir.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+            Self.logger.error("could not remove the work dir \(dir.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 
