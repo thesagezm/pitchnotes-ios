@@ -175,6 +175,11 @@ final class ALACBundleTests: XCTestCase {
         XCTAssertEqual(info.durationSeconds, 1.0, accuracy: 0.01)  // 44 100 frames @ 44.1 kHz
         XCTAssertGreaterThan(info.megabytesPerMinute, 0)
         XCTAssertTrue(info.megabytesPerMinute.isFinite)
+        // The winning encode strategy is REPORTED (the ladder's winner) — the
+        // print puts it in the CI log so the ladder can later be trimmed to
+        // the one strategy the shipping path uses.
+        XCTAssertFalse(info.strategy.isEmpty)
+        print("ALAC stem writer strategy (the ladder's winner): \(info.strategy)")
 
         // The reported size IS the file on disk.
         let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)

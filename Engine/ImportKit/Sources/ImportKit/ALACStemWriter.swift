@@ -60,12 +60,19 @@ public struct ALACStemWriter: StemEncoding {
         public let channels: Int
         public let bytes: Int
         public let durationSeconds: Double
+        /// Which encode strategy actually produced the file (the ladder's
+        /// winner — e.g. "float32+hint16+frameCount"). Reported so the
+        /// ladder can be trimmed to the ONE strategy the shipping path uses
+        /// once the macOS verdict is recorded.
+        public let strategy: String
 
-        public init(part: Part, channels: Int, bytes: Int, durationSeconds: Double) {
+        public init(part: Part, channels: Int, bytes: Int, durationSeconds: Double,
+                    strategy: String = "") {
             self.part = part
             self.channels = channels
             self.bytes = bytes
             self.durationSeconds = durationSeconds
+            self.strategy = strategy
         }
 
         /// Megabytes (10^6 bytes) per minute of audio.
@@ -146,7 +153,8 @@ public struct ALACStemWriter: StemEncoding {
             let byteCount = (attributes?[.size] as? NSNumber)?.intValue ?? 0
             let duration = sampleRate > 0 ? Double(frames) / sampleRate : 0
             let info = EncodedStemInfo(part: part, channels: channels,
-                                       bytes: byteCount, durationSeconds: duration)
+                                       bytes: byteCount, durationSeconds: duration,
+                                       strategy: plan.name)
 
             let mbPerMinute = String(format: "%.3f", info.megabytesPerMinute)
             let seconds = String(format: "%.1f", duration)
