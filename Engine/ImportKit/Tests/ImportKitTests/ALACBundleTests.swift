@@ -143,6 +143,38 @@ final class ALACBundleTests: XCTestCase {
         XCTAssertEqual(decoded.channels, 2)
     }
 
+    /// P-204 ac — "sizes logged (~5–6 MB/min/stem)": the writer REPORTS the
+    /// encoded size (and logs it), and the report must agree with the file on
+    /// disk.
+    ///
+    /// The §8 5–6 MB/min figure is for REAL music. A synthetic sine compresses
+    /// far below it (ALAC is lossless and a tone is nearly free), so this test
+    /// asserts the SIZE REPORT, not the §8 ratio — the ratio is checked
+    /// against real imports (BENCHMARKS §4 / P-603 device run).
+    func testALACStemWriterReportsEncodedSize() throws {
+        let dir = tempDir("alac-size")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let source = dir.appendingPathComponent("vocals.wav")
+        let destination = dir.appendingPathComponent("VOCALS.m4a")
+        try Self.writeStem(at: source, rmsDBFS: -20, channels: 1)
+
+        let info = try ALACStemWriter().encodeStemWithInfo(source: source,
+                                                            destination: destination,
+                                                            part: .vocals)
+        XCTAssertEqual(info.part, .vocals)
+        XCTAssertEqual(info.channels, 1)
+        XCTAssertGreaterThan(info.bytes, 0)
+        XCTAssertEqual(info.durationSeconds, 1.0, accuracy: 0.01)  // 44 100 frames @ 44.1 kHz
+        XCTAssertGreaterThan(info.megabytesPerMinute, 0)
+        XCTAssertTrue(info.megabytesPerMinute.isFinite)
+
+        // The reported size IS the file on disk.
+        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+        let onDisk = (attributes[.size] as? NSNumber)?.intValue ?? 0
+        XCTAssertEqual(info.bytes, onDisk)
+    }
+
     // MARK: - The real import engine
 
     func testImportEnginePublishesCompleteBundle() async throws {
