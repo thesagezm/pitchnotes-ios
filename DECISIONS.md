@@ -16,7 +16,87 @@ Entry format (one `##` block per decision):
 
 ---
 
-## D-35 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9; the M2 real-engine seam surface is FIXED + the C-3 import flow must END in a PUBLISHED bundle)
+## D-36 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9, same session — SUPERSEDES D-35 §1/§2 after Jess's in-flight work was read and PROVEN; the FINDING stands, the SHAPE changed)
+**Context:** D-35 (committed earlier this session, `029408c`) ruled that the M2 app-facing engine
+would be a NEW app-target facade (`SeparationImportEngine`, `init(modelPath:libraryRoot:)`) whose
+`separate` would publish the bundle, and that Jess's factory would change by ONE LINE. **Two
+things that happened after D-35 was written changed the ruling — and I am recording the
+correction openly rather than letting two shapes exist:**
+(1) **JESS'S OWN WORK moved while I was ruling.** Her branch (`origin/jess` @9074653) now carries
+a rewritten binding: the app builds `DemucsEngine(modelPath:)` (Paul's app-target bridge),
+injects `demucs.separationRun()` into `SongBundleImportEngine(libraryRoot:separator:)`, and drives
+the engine's EXISTING whole-import call `importSong(source:title:) -> ImportOutcome` — one call
+that owns decode → separate → assemble → atomic publish. The app-side seam hides the difference
+behind ONE closure (`ImportEngineHandle.runImport` → an app-owned `PublishedImport`), so the C-3
+pair is still what the MOCK runs and the UI is untouched. **CI-proven: probe `jess-swap-probe-v5`
+run `45098520720` = `build-ipa` SUCCESS with `SEPARATION_IMPORT_ENGINE` ON, `canImport(ImportKit)`
+TRUE and the REAL classes in place** — her binding compiles against Paul's actual API
+(`DemucsEngine.init(modelPath:threads:policy:)`, `separationRun()`, `SongBundleImportEngine.init(libraryRoot:separator:)`,
+`importSong`, `ImportOutcome` — all verified present in `origin/paul`).
+(2) **MY OWN SHAPE WAS TECHNICALLY INFERIOR, and the reason is the manifest, not the taste.** The
+bundle's `song.json` needs facts that only the DECODE stage produces (the source hash, the decoded
+duration, the normalised mix). Splitting the flow into `importAudio` → `separate` forces a SECOND
+decode/hash to build the manifest, and splits the all-or-nothing guarantee (C-8: no partial bundle,
+NO residue) across two calls with the APP in between — exactly the atomicity C-2.2/C-8 exist to
+provide. Jess's shape keeps the whole import inside ONE atomic, already-tested, already-written
+engine call (`ImportOrchestrator.run(source:…)`, with staging discipline + pre-publish validation +
+the C-9 publish + the global monotonic progress bands).
+**Ruling:**
+1. **D-35 §1 (the facade) and §2 (the one-line factory change) are SUPERSEDED. D-35's FINDING —
+   the C-3 pair as it stood could not publish, and the real-engine import would have failed the
+   app's own C-2.2 completeness check — STANDS and is the reason for this ruling. The contract
+   clause D-35 added is RESTATED in v1.0.3 to be shape-agnostic.**
+2. **The M2 real path is the ATOMIC whole-import call (Jess's shape), and it is RATIFIED.**
+   The app drives ONE call that owns decode → separate → assemble → atomic publish; the app
+   translates the outcome at ONE seam point (`PublishedImport`); the mock keeps the frozen C-3
+   pair; the UI changes not at all. The app owns the weights path (J-207) and constructs the
+   engine behind its factory (D-34 §3) — that is the app's job and it is lane-correct.
+3. **C-9.1 IS ADDED (CONTRACTS v1.0.3):** the M2 bundle-producing engine exposes a whole-import
+   entry point — `importSong(source: URL, title: String) async throws -> ImportOutcome` — and the
+   app drives an engine that has it through that call (an engine without it is driven with the
+   frozen C-3 pair, as the mock is). **NO NEW SWIFT PROTOCOL IS REQUIRED** — the app-side
+   `runImport` closure IS the interface, and the app binds the concrete engine at its factory
+   (which is exactly what compiles today). Paul MAY publish an `AtomicBundleImporting` protocol
+   in EngineCore as an additive nicety; it is **NOT a gate item**. Naming the entry point in the
+   contract is what protects Jess's binding from a rename.
+4. **C-9 RULE 5 IS RESTATED (shape-agnostic):** what the contract requires is the OUTCOME — the
+   import flow the app drives ENDS with a COMPLETE published bundle (`song.json` present) and
+   `importedBundleID` set. HOW the engine gets there (the atomic call, or a C-3 pair whose
+   `separate` publishes) is the engine's business. My v1.0.2 wording ("by the time `separate`
+   returns…") was over-specified and is withdrawn.
+5. **PAUL'S REMAINING WORK SHRINKS — X-211 (the facade) IS CANCELLED.** Paul owes: X-213 (the
+   `ALACStemWriter` compile fix — now also a `build-ipa` red once step 5(a) lands), P-202 L3 (the
+   D-25 numbers) + L4(a) (the 4-minute no-OOM run), P-204/P-205 close (bundle sizes logged), and
+   the D-25 arm as `DemucsEngine`'s default `policy` (see §6). **No new facade, no new orchestrator
+   entry point, no change to `separate`.** Jess's session-7 finding and her probe already reported
+   the two ALAC facts Paul needs (`AVAssetWriterInput.sourceFormatHint` is GET-ONLY ⇒ delete the
+   assignment; `AVAudioFile.read(into:frameCount:)` returns Void ⇒ the count is
+   `buffer.frameLength` after the read); the remaining work is the `CMSampleBuffer` conversion.
+6. **THE D-25 PICK MAPS ONTO `DemucsEngine.init(modelPath:threads:policy:)` — the `policy:`
+   DEFAULT (currently `.planDefault`).** The app constructs `DemucsEngine` and does NOT know about
+   `ChunkPolicy`, so the arm chosen under the D-25 protocol MUST land as that default (or the app
+   must be taught the arm — worse). Paul: the D-25 ruling therefore has a REQUIRED landing site.
+   Rules 1–4 (QUEUE 21:00Z §6) are unchanged, the tie goes to `planDefault`, and runner numbers
+   are never device numbers.
+7. **STEP 5 IS RESHAPED (X-209 updated):** (a) project.yml `packages:` += `ImportKit: {path:
+   Engine/ImportKit}` + app `dependencies:` += `- package: ImportKit` / `product: ImportKit`
+   (PROVEN by BOTH probes — mine `45097390536` and Jess's `45098520720` wired it the same way);
+   (b) app `sources:` += `Models/manifest.json` (X-207) — AFTER paul→main lands the manifest that
+   carries the `htdemucs` entry; (c) **the `SEPARATION_IMPORT_ENGINE` compilation condition ALONE**
+   — **NO `Engine/Separation/SeparationImportEngine.swift` source path (the class does not exist and
+   is no longer needed)** — LAST and as its own commit, after (a)+(b) and after Jess's binding is
+   on main. Plus, at step 5: drop `optional: true` from the two `Engine/Separation` entries, remove
+   the X-201 branch-state adapter from build.yml, and add the Info.plist Files-container keys.
+8. **THE ORDER IS UNCHANGED** (D-34 §5): paul→main → Jess rebase + swap seam #1 → jess→main →
+   leto→main step 5(a)+(b) then (c) → main gate run ALL 8 → human device demo → Tier B ask → tag m2
+   → open M3. The merge order is CONTRACTUAL and is not re-opened.
+**Affects:** CONTRACTS.md (v1.0.3 — C-9 rule 5 restated + NEW C-9.1 + changelog), QUEUE (X-209
+reshaped, X-211 CANCELLED, X-212 SUPERSEDED by Jess's rewrite, L-204), `Engine/ImportKit`
+(`SongBundleImportEngine.importSong` — unchanged, now the ratified entry point),
+`App/Sources/Features/Import/{ImportEngineSeam,RealImportEngineFactory,ImportModel}.swift`
+(Jess's rewrite, as built), `project.yml` (step 5(a)+(b)+(c) — no facade path).
+
+## D-35 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9; the M2 real-engine seam surface is FIXED + the C-3 import flow must END in a PUBLISHED bundle) — **§1/§2 SUPERSEDED BY D-36 (same session); the FINDING and the spirit stand**
 **Context:** Session-9 gate review, after both lanes moved past the session-8 checkpoint
 (paul @2d9f7f8, jess @772c112). Three facts, all found by reading code — not by trusting a row:
 (1) **The X-208 surface does not exist.** Paul landed P-204's Apple side as
