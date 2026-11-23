@@ -76,8 +76,9 @@ public enum ImportOrchestrator {
 
     /// D-9 presence decision: `true` ⇒ the source has accompaniment and the
     /// INSTRUMENTAL stem ships; `false` ⇒ acapella (no INSTRUMENTAL stem, no
-    /// INSTRUMENTAL entry in `parts[]` — V15). The argument is the encoded
-    /// instrumental stem (nil when the separator produced none). P-205
+    /// INSTRUMENTAL entry in `parts[]` — V15). The argument is the SEPARATOR's
+    /// staged instrumental stem (the PCM WAV, NOT the encoded file) so the
+    /// decision can be measured portably (P-205's RMS heuristic). P-205
     /// replaces the default with the measured near-silent heuristic.
     public typealias InstrumentalPresence = @Sendable (URL?) throws -> Bool
 
@@ -170,7 +171,7 @@ public enum ImportOrchestrator {
             try stage.create()
 
             var partInfos: [PartInfo] = []
-            var instrumentalURL: URL?
+            var instrumentalSource: URL?
             // Deterministic order (C-1 sortOrder) → byte-identical manifests.
             for part in out.stems.keys.sorted(by: { $0.sortOrder < $1.sortOrder }) {
                 try Task.checkCancellation()
@@ -188,7 +189,7 @@ public enum ImportOrchestrator {
                 }
                 partInfos.append(PartInfo(part: part, stemFile: relative,
                                           channels: channels, noteConfidence: 0.0))
-                if part == .instrumental { instrumentalURL = destination }
+                if part == .instrumental { instrumentalSource = stemURL }
             }
             guard !partInfos.isEmpty else {
                 throw EngineError.contractViolation(
@@ -196,11 +197,12 @@ public enum ImportOrchestrator {
             }
 
             // D-9 / V15: acapella ⇒ no INSTRUMENTAL stem AND no INSTRUMENTAL
-            // entry in parts[].
-            let hasInstrumental = try config.instrumentalPresence(instrumentalURL)
+            // entry in parts[]. The decision is measured on the SEPARATOR's
+            // staged stem (portable RMS — P-205).
+            let hasInstrumental = try config.instrumentalPresence(instrumentalSource)
             if !hasInstrumental {
-                if let instrumentalURL {
-                    try? fm.removeItem(at: instrumentalURL)
+                if let instrumentalPart = partInfos.first(where: { $0.part == .instrumental }) {
+                    try? fm.removeItem(at: stage.stagingURL.appendingPathComponent(instrumentalPart.stemFile))
                 }
                 partInfos.removeAll { $0.part == .instrumental }
             }
