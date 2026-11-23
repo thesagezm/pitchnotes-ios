@@ -246,17 +246,54 @@ public enum ImportOrchestrator {
                                        detail: "bundle published"))
 
             // Success: the scratch space and the separator's stems are gone.
-            try? fm.removeItem(at: workDir)
+            _ = removeIfPresent(workDir)
             out.cleanup()
             return ImportOutcome(bundleID: manifest.id,
                                   bundleURL: stage.publishedURL,
                                   manifest: manifest)
         } catch {
-            // C-2.2 / C-8: NO partial bundle, NO residue.
+            // C-2.2 / C-8: NO partial bundle, NO residue — and the ORIGINAL
+            // error is what the caller sees (P-204: a failed import must
+            // surface the REAL failure; a cleanup problem is APPENDED to its
+            // message, never substituted for it).
+            var notes: [String] = []
             staging?.discard()
             separation?.cleanup()
-            try? fm.removeItem(at: workDir)
-            throw error
+            if let note = removeIfPresent(workDir) { notes.append(note) }
+            throw preserving(error, cleanupNotes: notes)
+        }
+    }
+
+    /// Removes a path if it exists; NEVER throws.
+    ///
+    /// A cleanup failure must never mask the error that caused the cleanup,
+    /// so the failure is RETURNED as a message instead of thrown. A missing
+    /// path is not a failure at all (the removal is idempotent).
+    @discardableResult
+    static func removeIfPresent(_ url: URL) -> String? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return nil }
+        do {
+            try fm.removeItem(at: url)
+            return nil
+        } catch {
+            return "could not remove \(url.lastPathComponent): \(error.localizedDescription)"
+        }
+    }
+
+    /// The original error with the cleanup notes APPENDED — the error's TYPE
+    /// and message are preserved (a cleanup problem never replaces the real
+    /// failure).
+    static func preserving(_ error: Error, cleanupNotes: [String]) -> Error {
+        guard !cleanupNotes.isEmpty else { return error }
+        let suffix = " [cleanup: " + cleanupNotes.joined(separator: "; ") + "]"
+        guard let engineError = error as? EngineError else { return error }
+        switch engineError {
+        case .importFailed(let text): return EngineError.importFailed(text + suffix)
+        case .unsupportedFormat(let text): return EngineError.unsupportedFormat(text + suffix)
+        case .separationFailed(let text): return EngineError.separationFailed(text + suffix)
+        case .modelMissing(let text): return EngineError.modelMissing(text + suffix)
+        case .contractViolation(let text): return EngineError.contractViolation(text + suffix)
         }
     }
 

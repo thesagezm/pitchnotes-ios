@@ -394,4 +394,54 @@ final class ImportOrchestratorTests: XCTestCase {
         // reset by beginImport()).
         XCTAssertLessThan(second.first?.fraction ?? 1.0, 1.0)
     }
+
+    // MARK: - Cleanup never masks the real error (P-204, macOS CI run 45143126945)
+
+    /// A missing path is not a cleanup failure — the removal is idempotent.
+    func testRemoveIfPresentOnAMissingPathReportsNoFailure() {
+        let missing = URL(fileURLWithPath: "/tmp/pitchnotes-does-not-exist-\(UUID().uuidString)")
+        XCTAssertNil(ImportOrchestrator.removeIfPresent(missing))
+    }
+
+    /// An existing path IS removed, and the removal reports no failure.
+    func testRemoveIfPresentRemovesAnExistingPath() throws {
+        let work = tempDir("remove")
+        defer { try? FileManager.default.removeItem(at: work) }
+        let victim = work.appendingPathComponent("victim", isDirectory: true)
+        try FileManager.default.createDirectory(at: victim, withIntermediateDirectories: true)
+        XCTAssertNil(ImportOrchestrator.removeIfPresent(victim))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: victim.path))
+    }
+
+    /// The cleanup note is APPENDED to the original error — the error's TYPE
+    /// and its original message survive (a failed import must surface the
+    /// REAL failure).
+    func testCleanupNotesAreAppendedAndTheErrorTypeIsPreserved() {
+        let original = EngineError.importFailed("ALAC encode failed for VOCALS")
+        let decorated = ImportOrchestrator.preserving(original, cleanupNotes: ["could not remove work"])
+        guard let engineError = decorated as? EngineError else {
+            return XCTFail("the error type must be preserved")
+        }
+        guard case .importFailed(let message) = engineError else {
+            return XCTFail("the error case must be preserved")
+        }
+        XCTAssertTrue(message.contains("ALAC encode failed for VOCALS"),
+                      "the original message must survive: \(message)")
+        XCTAssertTrue(message.contains("could not remove work"),
+                      "the cleanup note must be appended: \(message)")
+    }
+
+    /// Without a cleanup note the error is returned UNCHANGED (no suffix, no
+    /// wrapping).
+    func testPreservingWithoutNotesReturnsTheErrorUnchanged() {
+        let original = EngineError.unsupportedFormat("bad container")
+        let result = ImportOrchestrator.preserving(original, cleanupNotes: [])
+        guard let engineError = result as? EngineError else {
+            return XCTFail("the error type must be preserved")
+        }
+        guard case .unsupportedFormat(let message) = engineError else {
+            return XCTFail("the error case must be preserved")
+        }
+        XCTAssertEqual(message, "bad container")
+    }
 }

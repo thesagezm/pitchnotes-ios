@@ -1,4 +1,5 @@
 import Foundation
+import os
 import EngineCore
 
 // P-204 · The REAL import engine (Apple-side, ImportKit).
@@ -24,6 +25,8 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
     private let emitter = ImportProgressEmitter()
     private let lock = NSLock()
     private var publishedBundleID: String?
+
+    private static let logger = Logger(subsystem: "com.thesagezm.pitchnotes", category: "import")
 
     /// Where published bundles live (the library root; one directory per song
     /// id, C-2).
@@ -67,7 +70,21 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
     }
 
     deinit {
-        try? FileManager.default.removeItem(at: workDir)
+        // C-2.2 cleanup, made IDEMPOTENT and non-throwing (P-204, macOS CI
+        // run 45143126945): the engine's work dir is created ONLY by
+        // `importAudio` (the standalone C-3 flow's staged mix) — the full
+        // import path never creates it. Removing a path that was never
+        // created throws ("'.work' couldn't be removed", NSCocoaErrorDomain
+        // code 4), and that cleanup error REPLACED the real import failure in
+        // the two engine tests. So: remove only what exists, and never let a
+        // cleanup problem escape into the caller's error path.
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: workDir.path) else { return }
+        do {
+            try fm.removeItem(at: workDir)
+        } catch {
+            Self.logger.error("could not remove the work dir \(workDir.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
     }
 
     public func setImportProgressHandler(_ handler: ImportProgressHandler?) {
