@@ -44,12 +44,13 @@ protocol ImportEngineFactory {
 /// (C-9), how long the separated source was (J-206's RTF denominator), and
 /// the stems (the C-9 rule-3 derivation fallback).
 ///
-/// It is deliberately NOT EngineCore's `ImportOutcome`: that type is part of
-/// the contract ratification still in flight (X-209's C-9.1 clause), and the
-/// app must not be the thing that guesses a contract's shape. The engine's
-/// own result is TRANSLATED into this app-side type at the seam, so the app
-/// compiles against a shape it owns — and against the real engine's shape
-/// once the contract clause lands.
+/// It is deliberately NOT EngineCore's `ImportOutcome`: that type already
+/// exists (Paul's P-204 ships it in EngineCore), but the CONTRACT clause
+/// that names `importSong` as the entry point is still in flight (X-209's
+/// C-9.1), and the app must not be the thing that guesses a contract's
+/// shape. The engine's own result is TRANSLATED into this app-side type at
+/// the seam, so the app compiles against a shape it owns — and a contract
+/// rename later is a one-place change in MY lane, not an app-wide edit.
 struct PublishedImport: Sendable {
     /// C-9 `importedBundleID` — the bundle DIRECTORY name, set only after
     /// the atomic publish (C-9 rule 1). nil when the engine published
