@@ -43,6 +43,19 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
         return publishedBundleID
     }
 
+    /// Sets the published id under the lock.
+    ///
+    /// The lock is taken INSIDE this synchronous helper, never directly in an
+    /// `async` function: `NSLock.lock()`/`unlock()` are unavailable from
+    /// asynchronous contexts (a warning today, an error in the Swift 6
+    /// language mode). The value is still published under the same lock, so
+    /// C-9 rule 1's ordering is unchanged.
+    private func setPublishedBundleID(_ id: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        publishedBundleID = id
+    }
+
     /// - Parameters:
     ///   - libraryRoot: the directory that holds the published bundles.
     ///   - separator: the chunked separation seam (the app injects
@@ -74,7 +87,7 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
     @discardableResult
     public func importSong(source: URL, title: String) async throws -> ImportOutcome {
         // C-9 rule 1: a cancelled/failed import leaves the id nil.
-        lock.lock(); publishedBundleID = nil; lock.unlock()
+        setPublishedBundleID(nil)
 
         let outcome = try await ImportOrchestrator.run(
             source: source,
@@ -89,7 +102,7 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
 
         // C-9 rule 1: the id is published only after the bundle is complete
         // and visible at its final path.
-        lock.lock(); publishedBundleID = outcome.bundleID; lock.unlock()
+        setPublishedBundleID(outcome.bundleID)
 
         // Engine-side import cache (P-204): source hash → bundle id.
         BundleCacheIndex.record(sourceHash: outcome.manifest.sourceHash.hex,

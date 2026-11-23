@@ -40,14 +40,21 @@ final class ALACBundleTests: XCTestCase {
     }
 
     /// A mono/stereo PCM16 stem at a given level (dBFS RMS; nil = silence).
+    ///
+    /// The sample expression is split into named sub-expressions on purpose:
+    /// as one expression the Swift type-checker times out on it ("unable to
+    /// type-check this expression in reasonable time") — the error only
+    /// surfaced once the ImportKit MODULE compiled (before that the compiler
+    /// never reached this test file).
     private static func writeStem(at url: URL, rmsDBFS: Double?, channels: Int) throws {
         let frames = 44100
         var samples = [Float](repeating: 0, count: frames * channels)
         if let rmsDBFS {
             let amplitude = Float(pow(10.0, rmsDBFS / 20.0))
+            let peak = Float(sqrt(2.0))
             for f in 0..<frames {
-                let value = amplitude * Float(sqrt(2.0))
-                    * sin(2.0 * Double.pi * 220.0 * Double(f) / 44100.0)
+                let phase = 2.0 * Double.pi * 220.0 * Double(f) / 44100.0
+                let value = amplitude * peak * Float(sin(phase))
                 for c in 0..<channels { samples[f * channels + c] = value }
             }
         }
