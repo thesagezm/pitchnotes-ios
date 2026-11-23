@@ -104,21 +104,44 @@ enum RealEngineBuild {
 enum ImportEngineResolver {
 
     /// - Parameter modelURL: the VERIFIED htdemucs ggml path (J-207's cache),
-    ///   nil when the weights were never downloaded.
+    ///   nil when the weights are not on the device yet.
+    ///
+    /// **Call this AT IMPORT TIME, not once at launch** (J-208, session 6): the
+    /// weights can arrive after the app started — that IS the demo flow
+    /// (Settings → Models → Download → Import). Resolving once at launch froze
+    /// the decision: on a real build the import failed with "the model is not
+    /// on this device yet" although the human had just downloaded it, and on a
+    /// mock-only build the import silently ran the MOCK with the weights
+    /// sitting on the device (the exact D-12 failure Leto ruled against).
+    ///
+    /// The decision itself is the pure, tested truth table in PitchLogic
+    /// (`ImportEngineAvailability.resolve`) — this function only maps its four
+    /// states onto factories.
     static func factory(modelURL: URL?) -> ImportEngineFactory {
-        #if canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
-        return RealImportEngineFactory(modelURL: modelURL)
-        #else
-        // This build cannot run a real separation. If the weights are ALREADY
-        // on the device the user expects a real separation — failing honestly
-        // beats silently running the mock (D-12 honesty; the mock path does
-        // not satisfy the M2 gate).
-        if modelURL != nil {
+        let availability = ImportEngineAvailability.resolve(
+            compiledIn: RealEngineBuild.isCompiledIn,
+            modelURL: modelURL)
+        switch availability {
+        case .realReady, .realModelMissing:
+            #if canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
+            // The real engine reports a missing model itself, with an
+            // actionable message ("download it in Settings → Models").
+            return RealImportEngineFactory(modelURL: modelURL)
+            #else
+            // Unreachable: `realReady`/`realModelMissing` require the engine
+            // to be compiled in. Kept total so no future edit can fall
+            // through to the mock by accident.
             return UnavailableRealEngineFactory(
                 reason: "this build does not include the real separation engine")
+            #endif
+        case .realUnavailable:
+            // The weights ARE on the device but this build cannot separate:
+            // failing honestly beats silently running the mock (D-12).
+            return UnavailableRealEngineFactory(
+                reason: "this build does not include the real separation engine")
+        case .mockOnly:
+            return MockImportEngineFactory()
         }
-        return MockImportEngineFactory()
-        #endif
     }
 }
 

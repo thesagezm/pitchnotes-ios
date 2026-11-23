@@ -163,4 +163,31 @@ final class BundleIdentityTests: XCTestCase {
             XCTAssertFalse(availability.statusLine.contains("0.00"), availability.statusLine)
         }
     }
+
+    func testAvailabilityFromTheWeightsPathMatchesTheBoolRule() {
+        // The app's real input is the weights PATH (nil = not downloaded yet).
+        let path = URL(fileURLWithPath: "/tmp/htdemucs-aabbccddeeff0011")
+        XCTAssertEqual(ImportEngineAvailability.resolve(compiledIn: true, modelURL: path),
+                       .realReady)
+        XCTAssertEqual(ImportEngineAvailability.resolve(compiledIn: true, modelURL: nil),
+                       .realModelMissing)
+        XCTAssertEqual(ImportEngineAvailability.resolve(compiledIn: false, modelURL: path),
+                       .realUnavailable)
+        XCTAssertEqual(ImportEngineAvailability.resolve(compiledIn: false, modelURL: nil),
+                       .mockOnly)
+    }
+
+    func testAvailabilityNeverPromisesAMockOnceTheWeightsAreOnTheDevice() {
+        // The regression this guards: the weights arrive AFTER the app
+        // launched (Settings → Models → Download → Import). Resolving the
+        // engine once at launch would leave the app on the mock — the D-12
+        // failure. The rule must be re-evaluated per import.
+        let before = ImportEngineAvailability.resolve(compiledIn: false, modelURL: nil)
+        let after = ImportEngineAvailability.resolve(
+            compiledIn: false, modelURL: URL(fileURLWithPath: "/tmp/htdemucs-aabbccddeeff0011"))
+        XCTAssertEqual(before, .mockOnly)
+        XCTAssertEqual(after, .realUnavailable)
+        XCTAssertFalse(after.isMock,
+                       "with the weights on the device the import must not quietly mock")
+    }
 }

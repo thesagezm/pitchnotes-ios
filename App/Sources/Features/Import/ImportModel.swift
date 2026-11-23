@@ -87,13 +87,22 @@ final class ImportModel: ObservableObject {
     /// The engine seam (J-208): the app resolves the REAL engine when it is
     /// compiled in and its weights are on disk; previews/tests inject the
     /// mock explicitly.
-    private let engineFactory: ImportEngineFactory
+    ///
+    /// **nil = resolve AT IMPORT TIME** (J-208, session 6): the weights can
+    /// arrive after the app launched — that IS the demo flow (Settings →
+    /// Models → Download → Import). Resolving once at launch froze the
+    /// decision at launch: on a real build the import failed with "the model
+    /// is not on this device yet" although the human had just downloaded it,
+    /// and on a mock-only build the import silently ran the MOCK with the
+    /// weights sitting on the device (the exact D-12 failure Leto ruled
+    /// against). So an injected factory wins (previews/tests), and the
+    /// shipping resolution happens per import.
+    private let injectedEngineFactory: ImportEngineFactory?
 
     /// - Parameter engineFactory: nil = the shipping resolution (real engine
     ///   when available, mock otherwise — see `ImportEngineResolver`).
     init(engineFactory: ImportEngineFactory? = nil) {
-        self.engineFactory = engineFactory
-            ?? ImportEngineResolver.factory(modelURL: ModelCache.verifiedModelURL(named: "htdemucs"))
+        self.injectedEngineFactory = engineFactory
         refreshAvailability()
         Task.detached(priority: .userInitiated) { [weak self] in
             let store = try? BundleStore.makeDefault()
@@ -103,6 +112,13 @@ final class ImportModel: ObservableObject {
             }
         }
         observeThermal()
+    }
+
+    /// The factory for THIS import — resolved now, not at launch.
+    private func resolveEngineFactory() -> ImportEngineFactory {
+        if let injectedEngineFactory { return injectedEngineFactory }
+        return ImportEngineResolver.factory(
+            modelURL: ModelCache.verifiedModelURL(named: "htdemucs"))
     }
 
     /// Re-reads the engine availability (compile-time flag + the weights on
@@ -188,7 +204,9 @@ final class ImportModel: ObservableObject {
         // back to the mock silently (D-12 honesty).
         let handle: ImportEngineHandle
         do {
-            handle = try engineFactory.makeEngine(bundleRoot: store.root)
+            // Resolved HERE, per import (J-208, session 6): the weights may
+            // have arrived since the app launched.
+            handle = try resolveEngineFactory().makeEngine(bundleRoot: store.root)
         } catch {
             phase = .failed(ImportFailure.cause(from: error))
             stopSecurityScope()

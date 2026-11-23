@@ -61,6 +61,13 @@ public enum ImportEngineAvailability: Equatable, Sendable {
         }
     }
 
+    /// The same rule, from the weights path (the app's real input).
+    ///
+    /// The path is nil when the weights are not on the device yet.
+    public static func resolve(compiledIn: Bool, modelURL: URL?) -> ImportEngineAvailability {
+        resolve(compiledIn: compiledIn, modelPresent: modelURL != nil)
+    }
+
     /// Whether the REAL path is available for the next import.
     public var isReal: Bool {
         switch self {
@@ -68,6 +75,9 @@ public enum ImportEngineAvailability: Equatable, Sendable {
         case .mockOnly, .realUnavailable: return false
         }
     }
+
+    /// Whether the next import runs on the MOCK (UI regression only).
+    public var isMock: Bool { self == .mockOnly }
 
     /// One-line, honest status for the import screen BEFORE an import runs.
     public var statusLine: String {
