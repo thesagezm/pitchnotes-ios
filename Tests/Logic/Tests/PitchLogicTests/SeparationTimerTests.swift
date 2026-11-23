@@ -1,4 +1,5 @@
 import XCTest
+import EngineCore
 @testable import PitchLogic
 
 // SeparationTimerTests (J-206, session 7) — the separation pass, measured

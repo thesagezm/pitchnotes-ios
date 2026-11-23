@@ -383,9 +383,10 @@ The M0 drawing's 4-stage bar and the "Remove instruments?" toggle are both
   button is a 44 pt target.
 - **Recent imports** render from the bundle index (D-4 v0) newest-first;
   Library rows appear on completion via disk-truth reload (5.2 AS-BUILT).
-- Seam: `ScriptedImportEngine` (paced mock, C-8-shaped) stands in for Paul's
-  real engine until **P-204** — same `ProgressReportingEngine` protocol
-  surface, ZERO view changes at the swap (M1 preset precedent).
+- Seam: `ScriptedImportEngine` (paced mock, C-8-shaped) is the MOCK half of
+  one seam; Paul's real engine (P-204, `SongBundleImportEngine`) is the REAL
+  half — same `ProgressReportingEngine` protocol surface, ZERO view changes
+  at the swap (M1 preset precedent).
 - **AS-BUILT v0.3 (J-208, session 6): WHICH ENGINE, SAID TWICE.** The engine
   is chosen behind one seam (`ImportEngineFactory` → `ImportEngineHandle`),
   never by a view. The screen states it in two moments:
@@ -412,6 +413,34 @@ The M0 drawing's 4-stage bar and the "Remove instruments?" toggle are both
   the demo shows the layout instead of guessing. Without this, a legal
   one-line wiring could produce a false "this build has no bundled model
   manifest" — a demo failure that looks like a missing one-liner.
+- **AS-BUILT v0.4 (J-208, session 7): ONE CALL SHAPE, TWO ENGINES — and the
+  separation is timed from the stage stream.** The seam's handle now carries
+  ONE way to run an import (`runImport`), and the app never has to know which
+  shape it got:
+  - the **REAL** engine publishes ATOMICALLY — it owns decode → separate →
+    assemble → the atomic rename (C-2.2) — so it is driven through its
+    `importSong(source:title:)` entry point;
+  - the **MOCK** publishes during `separate`, so it is driven through the
+    frozen C-3 pair (`importAudio` → `separate`).
+  **Why this is not a detail:** the real engine's `separate` returns raw stem
+  URLs and publishes NOTHING, so an app that drove the C-3 pair against it
+  would get stems but no bundle — and then fail its own completeness check,
+  which looks like a separation failure and is not. The engine's own result
+  is translated at the seam into one app-side type (`PublishedImport`: the
+  C-9 bundle id, the source duration, the stems), so the app compiles
+  against a shape it owns.
+  - **The separation wall time now comes from the `.separating` PROGRESS
+    BAND** (first `.separating` event → first `.assembling` event) instead of
+    wrapping the `separate()` call. The stage stream is the one signal both
+    call shapes share, so the RTF number means the SAME thing on either path
+    — and it is now honest about what it excludes (the old measurement
+    silently included the mock's ALAC assembly). If the band is never
+    observed, NO separation number is reported at all: a fabricated 0.0 would
+    read as "infinitely fast" in the RTF line (D-12).
+  - The real path is compiled in only when the build can see the import
+    package AND the separation bridge AND the deliberate
+    `SEPARATION_IMPORT_ENGINE` switch is on — a build with any one of them
+    missing runs the mock and says so, loudly.
 
 Failure states (unchanged from the drawing, as shipped): unsupported file →
 `.unsupportedFile`; permission denied → system prompt + retry hint; disk full
@@ -805,6 +834,12 @@ IPA: artifact of the first ALL-GREEN `build-ipa` carrying the M2 Jess lane
    - **peak resident footprint** during the import (Darwin `task_info`
      phys_footprint — the §8 budget is peak RSS < 1.5 GB during separation);
    - **thermal state at the start and at the end** of the separation pass.
+   - **What "separation wall-time" means (as-built, session 7):** the time
+     between the FIRST "Separating" stage event and the FIRST "Assembling"
+     stage event — the separation pass itself, EXCLUDING the decode before it
+     and the ALAC assembly after it. The stage stream is the only signal the
+     app and the engine share, so the number means the same thing whichever
+     engine ran.
    - Honest readings: an unsampled peak reads "not sampled" (never 0 MB); an
      unknown RTF reads "—" (never "0.00×"). The live "Peak memory so far"
      line is visible during the import.

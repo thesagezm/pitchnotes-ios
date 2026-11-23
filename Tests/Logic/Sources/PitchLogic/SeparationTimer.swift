@@ -1,7 +1,15 @@
 import Foundation
+import EngineCore
 
 // SeparationTimer (J-206, session 7) — the SEPARATION PASS, measured from the
 // C-8 progress stream.
+//
+// `import EngineCore` IS LOAD-BEARING: `ImportStage` is EngineCore's C-8 type
+// once the swap seam #1 deletes the interim lane-local copy, so without this
+// import this file compiles on the pre-swap branches (where PitchLogic
+// defines the type itself) and FAILS on the post-swap ones. The probe
+// (jess-swap-probe-v5, run 45096751903) caught exactly that — a latent
+// gate-time red that no pre-swap build could ever surface.
 //
 // WHY THE MEASUREMENT CHANGED (and why it is not a detail):
 // The first implementation measured the separation by wrapping the
