@@ -26,10 +26,15 @@
 │  RibbonEngine (Swift MPM, P-102) · LivePitchFacade (P-105)       │
 │  PartRangePresets (C-6.1) · PitchEngineID (C-6.0)                │
 ├──────────────────────────────────────────────────────────────────┤
+│ M2 separation layer (P-201 — portable pieces Linux-tested)       │
+│  DemucsOutputMapper (4-source → C-1 two-stem, D-9)               │
+│  PCMWavWriter (staging; ALAC at P-204) · ImportProgress (C-8)    │
+├──────────────────────────────────────────────────────────────────┤
 │ Apple/ORT layer                                                  │
 │  Engine/PitchORT pkg (X-008): OnnxSwiftF0 + OnnxSileroVAD        │
 │  AVFoundation I/O (P-104/P-203) · ORT mirror 1.24.2 (D-13)       │
 │  C/C++ vendored: sevagh MPM/YIN (P-102) · demucs.cpp (M2)        │
+│  Engine/Separation: DemucsShim C-ABI + DemucsEngine (X-201)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -120,6 +125,116 @@ to counted drops + contiguous recent audio, never stale feedback.
   verbatim + calibration immutability, MockEngine facade surface, PitchFrame
   v0.0/v0.1 JSON round-trip. EngineCore 79/79 Linux green.
 
+### 1.3 M2 separation stack (P-201, CONTRACTS v1.0)
+
+```
+DemucsEngine (Engine/Separation/DemucsEngine.swift, app target — X-201 wiring)
+  │  ProgressReportingEngine: C-8 emitter (monotonic clamp), Task cancellation
+  │  separate(): PCMWaveReader → shim infer → DemucsOutputMapper → PCM16 staging
+  ▼
+DemucsShim (DemucsShim.h/.cpp, plain-C ABI — no C++/Eigen types cross the seam)
+  │  load/num_sources/set_threads/infer(status codes, finite gate, progress cb)
+  ▼
+vendor/demucs.cpp src/*.cpp (MIT, D-30 Tier A; Eigen headers MPL-2.0, D-32.5)
+  │  htdemucs fp16 ggml → fp32 Eigen tensors; 7.8 s segments @ 0.25 overlap,
+  │  triangular transition weighting; 4-source out (drums, bass, other, vocals)
+  ▼
+DemucsOutputMapper (EngineCore, Linux-tested): vocals = target_3,
+  instrumental = drums+bass+other residual (D-9 always-two-stem); D-8 stems:
+  vocals MONO / instrumental STEREO (PCM16 staging now, ALAC at P-204)
+```
+
+- **Weights (TIER B per D-30, D-32.6):** htdemucs fp16 ggml ~81–84 MB. Provenance
+  chain: Meta .th @e976d93e (PRIMARY, dl.fbaipublicfiles.com) OR Retrobear/demucs.cpp
+  HF dataset (FALLBACK, linked from the demucs.cpp README) — Paul picks operationally;
+  either way sha256 is the trust anchor (D-19.4), the mirror is
+  `thesagezm/pitchnotes-models` via hf_upload.sh, manifest license field = "MIT
+  (Tier B per D-30: training-data risk recorded)", attribution in NOTICE + J-204
+  licenses screen. HUMAN SIGN-OFF before any commercial/App Store distribution;
+  NEVER represented as "clean" (MUSDB18 CC BY-NC-SA + undocumented 800-song set).
+- **Threading (D-32.4):** vendored src has ZERO OpenMP pragmas (verified at
+  intake + re-verified by Paul on the scratch extraction). The port = ADD
+  std::thread parallelism: `Tests/Spikes/apply_demucs_threading.py` pairs the
+  INDEPENDENT freq/time encoder+decoder chains (disjoint buffers, read-only
+  model, deterministic ops ⇒ bit-identical output at any thread count — the
+  benchmark asserts 1-thread == 2-thread bytes). DEMUCSCPP_NUM_THREADS env:
+  unset/1 = exact stock serial baseline, ≥2 = parallel pairs (explicit 4 caps
+  to 2 — pairs are the only free parallelism today). The per-source
+  mask/ISTFT section stays SERIAL (it mutates the shared stft_buf — thread-local
+  restructuring deliberately deferred). X-202 DONE: Leto applied to vendor/
+  @d007780 (+ patches.log) with one ternary correction (`? 2 : n` → `? 1 : 2` —
+  the emitted text had inverted env semantics); `apply_demucs_threading.py`
+  mirrors it byte-for-byte (verified by diff vs origin/leto @d007780), so
+  revert+re-apply on vendor reproduces the committed text exactly.
+- **Honest limits:** mid-inference abort is not possible through the vendor API —
+  cancellation is checked before/after `demucs_inference`. **P-202 L2 landed the abort
+  seam WITHOUT a vendor patch:** the shim (`Engine/Separation/DemucsShim.{h,cpp}`, Paul
+  lane) carries an atomic abort flag and throws from the vendor's progress callback —
+  which the vendor calls ~26× per 7.8 s segment, always OUTSIDE any joinable
+  `std::thread` scope (verified in `vendor/demucs.cpp/src/model_inference.cpp`) — so the
+  throw unwinds the blocking vendor call (abort latency = one encoder stage). Swift
+  arms the flag from `withTaskCancellationHandler.onCancel` (on the cancelling thread);
+  the shim maps it to `DEMUCS_SHIM_ERR_ABORTED` → Swift `CancellationError`. multiStem
+  mode throws in M2 (per-voice stems are the M3 assignment path). `hasInstrumental`
+  (D-9 near-silence) = P-205.
+
+### 1.4 M2 import/decode stack (P-203, D-8 / C-2.1)
+
+```
+ImportPipeline (EngineCore, portable, Linux-tested)
+  │  DecodePolicy (D-8: 44.1 kHz out, mix ∈ {1,2} ch, channel-preserving)
+  │  → AudioResampler (kaiser-sinc, stateful) → PCMF32Wav staging (mix)
+  │  → BLAKE3 (pure Swift, from spec — 23 official vectors) over the SOURCE bytes
+  │  → ImportManifestBuilder (song.json v1.0: tuning_cents + channels + hasInstrumental)
+  ▼
+AVAudioFileDecoder (Engine/ImportKit — APPLE-ONLY package, AVFoundation)
+  AVAudioFile → deinterleave f32 @ source rate/ch → SHARED normalizeAndStage
+  (ONE policy path: the portable core owns the D-8 resample/channel policy)
+```
+
+- **Package boundary (Leto's X-204/step-5 ask, answered):** `Engine/ImportKit` is an
+  Apple-only SPM package (product `ImportKit`, path-dep `..` → `EngineCore`), the same
+  pattern as `Engine/PitchORT` and `Engine/MicCapture`. AVFoundation-dependent code
+  (this decoder, and P-204's ALAC writer + SongBundle assembler) CANNOT live in
+  `Engine/Sources/EngineCore` (Foundation-only / Linux-clean by AGENTS §0). **P-204
+  extends `Engine/ImportKit`** (no new package ⇒ no new identity surprise at the gate);
+  exact product name `ImportKit` for `project.yml`.
+- **MP3 GAPLESS BEHAVIOUR (measured, macOS runner 45076895490 + 45078702137):**
+  `AVAudioFile` does NOT apply the LAME gapless tag, so an imported MP3 keeps the
+  encoder delay + trailing padding: the 2.5 s fixture decodes to **111744 frames
+  (97 MPEG frames × 1152) = 2.534 s**, while ffmpeg (which honours the tag) returns
+  exactly 110250 frames. The extra frames are codec padding, not duplicated source
+  audio — the import leg asserts the count is a whole number of MPEG frames and that
+  the decode agrees with the source WAV (SNR ≥ 18 dB; locally measured 26.0 dB,
+  max |Δ| 0.045) once the encoder delay is removed. **TWO decoder delay conventions
+  (measured, both):** the gapless delay is 1105 samples = 576 (encoder side) + 529
+  (decoder side); ffmpeg's RAW decode (Info/LAME tag neutralised locally) aligns with
+  the source at **1105**, while CoreAudio/AVAudioFile (measured on the runner) applies
+  the 529-sample decoder-side delay but not the gapless trim ⇒ it aligns at
+  **1105 − 529 = 576**. The test accepts both (window 512…1216) and the SNR
+  assertion is the real guarantee (a wrong offset scores ≈ −2 dB, not 26 dB).
+  **Consequence for the manifest:** `duration_s` for an MP3 import is up to ~51 ms
+  longer than the true song length (delay 1105 + ≤1152 frames); negligible for a
+  4-minute track, and NOT silently "fixed" by trimming (a trailing-silence heuristic
+  would truncate quiet real endings). WAV/FLAC/ALAC are exact (bit-identical to
+  ffmpeg's decode — **PROVEN on the macOS runner**, run 45078702137: ffmpeg's f32
+  output is bit-for-bit `s16/32768`).
+- **ALAC STEM WRITING (P-204, GREEN on the macOS runner — run 45156291152@1935a0f,
+  8/8):** `ALACStemWriter` (Engine/ImportKit) writes the stems as native ALAC
+  `.m4a` through `AVAudioFile(forWriting:settings:commonFormat:.pcmFormatFloat32,
+  interleaved:false)` — float32 PLANAR, the only layout the ALAC encoder accepts —
+  streaming 8 192-frame chunks (a 4-minute stem never materialises as one buffer,
+  §8). `AVAssetWriterInput` is NOT used: on this SDK it only accepts a
+  `CMSampleBuffer`. **THE RUNTIME ROOT CAUSE (measured, and worth remembering for
+  every other streaming writer in this project): `AVAudioFile.read(into:frameCount:)`
+  THROWS when the source has fewer frames left than the requested count** — asking
+  for a full 8 192-frame chunk at the tail of a 44 100-frame stem failed with the
+  opaque "Foundation._GenericObjCError error 0". The fix is to request exactly the
+  frames that remain. The encode now reports the step it failed in (open / read /
+  copy / write) with the NSError's domain, code and userInfo — "it didn't work" is
+  not an acceptable error message for a native-codec path. The engine's failed
+  import surfaces the REAL error (the cleanup can no longer mask it).
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -127,7 +242,7 @@ to counted drops + contiguous recent audio, never stale feedback.
 | **SwiftF0** (primary pitch + grading) | lars76/swift-f0 (+ -training) | MIT | 14,386 params (~60 KB) | 16 kHz | 16 ms | F#1–C7 (46.875–2093.75 Hz) | hz, confidence, loudness_db; `segment_notes()`, `export_to_midi()`; streaming 176 ms lookahead | RTF ≪ 0.3 (179.6× RT, 1 core, pitch-benchmark) | bundled ONNX pinned HF rev 7877fba (D-19; HF repo re-host when D-2 lands — sha256 must not change) | **SHIP (M1: ±20c AC met, RTF 0.009–0.016 @1–4 thr)** |
 | **NanoPitch** (zero-lookahead ribbon candidate) | smulelabs/NanoPitch | **VERIFY (D-7)** + weights trained on GTSinger (CC BY-NC-SA) + FSDNoisy18k — see flag X-002-proposed | ~333K (gru96) / ~200K (gru64), ~1.3 MB | 16 kHz | ~? ms causal | 6 octaves, 360 sigmoid bins @20¢ | hz, VAD head; Viterbi (offline+realtime) | RTF 0.1–0.3 WASM ⇒ native ≪ 0.3 | train gru64 on HF smulelabs/NanoPitch-PreExtract → export weights JSON → C array; OR fallback below | **VERIFY → likely FALLBACK** |
 | **sevagh/pitch-detection** (ribbon FALLBACK per D-7) | sevagh/pitch-detection | MIT | DSP only (MPM/YIN/ACF, C++) | any | callback | n/a (per-frame) | hz | zero-lag, ≪ 0.3 | vendor per `vendor/README.md` intake (L-008) | **SHIP (fallback default)** |
-| **demucs.cpp** (separation baseline, M2) | sevagh/demucs.cpp | MIT | htdemucs fp16 ggml **81 MB**; 6s 53 MB; ft bag 4×81 MB; v3 160 MB | 44.1 kHz | windowed (chunk 5–10 s overlap-add) | n/a | 2 stems first (vocals/instrumental, D-9), 4-stem optional | ≤2× song length (stretch ≤1×) | `convert-pth-to-ggml.py` fp16 → HF manifest; OpenMP→std::thread/GCD port | **SHIP** |
+| **demucs.cpp** (separation baseline, M2) | sevagh/demucs.cpp | **MIT (code, Tier A per D-30); WEIGHTS Tier B (D-30: MUSDB18 CC BY-NC-SA + undocumented 800-song set — risk recorded, human sign-off pre-commercial)** | htdemucs fp16 ggml **81–84 MB**; 6s 53 MB; ft bag 4×81 MB; v3 160 MB | 44.1 kHz | windowed (7.8 s segments @ 0.25 overlap, vendor-owned; chunking policy re-benchmarked at P-202 per D-25) | n/a | 2 stems first (vocals/instrumental, D-9), 4-stem optional | ≤2× song length (stretch ≤1×) | D-32.6: Meta .th @e976d93e via pinned `convert-pth-to-ggml.py` (PRIMARY) or Retrobear HF ggml (FALLBACK) → sha256 anchor → HF mirror; std::thread PAIR parallelism via `apply_demucs_threading.py` (D-32.4: zero OpenMP pragmas verified) | **SHIP (M2 in flight: shim+bridge+mapper landed @2923a9a, 112/112 Linux; spike + RTF/RSS/SDR → BENCHMARKS §4)** |
 | **basicpitch.cpp** (note transcription, M3) | sevagh/basicpitch.cpp | MIT; model spotify/basic-pitch nmp.onnx **Apache-2.0** | ~2 MB | 22.05 kHz (resample 44.1k→22.05k) | n/a (note events) | MIDI 24–96 typical | polyphonic note events → MIDI | RTF logged at P-301 | ort-builder: trim ops/types, weights→.c/.h | **SHIP** |
 | **silero-vad** (mic gating, M1) | snakers4/silero-vad | MIT | ~2 MB ONNX | 16 kHz | 30 ms chunks | n/a | speech prob | <1 ms/chunk | official ONNX pinned commit bfdc019 (D-19) → HF manifest | **SHIP (M1: 0.23 ms/chunk, speech-VAD semantics verified)** |
 | **windowed-roformer** (stretch eval, P-206 M2, non-gating) | smulelabs/windowed-roformer | MIT | MB-R-class (large; fp16/int8 + bench) | 44.1 kHz | windowed | n/a | stems | 11.17 dB SDR = 92% of full MB-R, 44.5× fewer attention FLOPs (WSA W=10 S=8) | FlexAttention is CUDA-only → ONNX export must re-express window+sink as additive attention-mask bias (`|i−j|≤W/2 ∨ i<S ∨ j<S`); Bleedless worse (30.14 vs 41.00) in silent segments | **STUDY → P-206 eval only** |
@@ -152,6 +267,36 @@ CI model flow (all): HF repo (D-2, BLOCKED(human) until created) → `scripts/mo
 
 Matches PLAN §0 targets exactly (live F1@50c ≥ 0.75 synthetic clean; RTF < 0.3; feedback < 100 ms; separation vocals SDR ≥ 8 dB synthetic; per-part NSDR 4–14 dB post-v1 honest; part-aware note F1 0.2–0.4 honest; peak RSS < 1.5 GB; core bundle < 200 MB). Harness = pitch-benchmark design (F1@50c, RPA/RCA) + mir_eval/museval (SDR/NSDR) as study-reference implementations — reimplement metrics in our harness, ship no NC dataset. Measured on CI macOS runner + human-assisted A14 device runs; every engine task logs RTF/RSS in BENCHMARKS.md (honesty rule).
 
+### 4.1 Spike parity harness (P-208 — D-24 / CONTRACTS C-7)
+
+Numerical PARITY of the Swift/ORT path against Python reference tensors, strictly
+stronger than shape/range spike assertions (D-24, adopted from the Muskey
+`--dettato-check` pattern):
+
+- **Reference side (Python):** `Tests/Spikes/swiftf0_real.py --export-c7` and
+  `Tests/Spikes/silero_real.py --export-c7` run the pinned manifest models
+  (download.py SHA-verified) on the committed fixtures and write C-7 sidecars
+  under `Tests/Spikes/ReferenceTensors/{swiftf0,silero-vad}/`: one JSON manifest
+  + one little-endian f32/f64 bin per tensor. `model_sha256` + `fixture_sha256`
+  bind the reference to the exact model and fixture bytes. The npz exports
+  (`--export-ref`) remain the Python-side regression format.
+- **Consumer side (Swift):** `Engine/PitchORT/Tests/PitchORTTests/` —
+  `SwiftF0ParityTests` (3 fixtures × 4 tensors: pitch_hz, confidence_raw,
+  confidence_gated, loudness_db — raw model output AND EngineCore.SwiftF0Postprocessor
+  outputs, i.e. parity through the FULL device pipeline) and `SileroParityTests`
+  (4 fixtures × speech_prob through SileroVADStream, Python SileroStream chunking
+  semantics mirrored). Binding assertions (model sha, fixture sha) run BEFORE
+  tensor comparison — a model bump without regeneration fails loudly.
+- **Pass criterion (C-7):** every element within tolerance (abs 1e-3 OR rel 1e-4
+  of the reference). Same tolerance for both engines at v1; changes need a
+  recorded ruling (never tightened silently).
+- **CI:** `engine-parity` job (macOS, X-205 spec filed) — BLOCKING at milestone
+  merges like the other spike contract tests; also serves as the macOS
+  compile/execute proof for the PitchORT test target.
+- **Regeneration:** after any manifest model bump: run both `--export-c7`
+  exporters against the new pinned model and commit the sidecar diff with the
+  manifest change.
+
 ## 5. License flags (proposed X-tasks — LETO RULES in DECISIONS.md)
 
 - **X-002 → RULED as D-17 + D-19 (2026-11-21):** GTSinger-trained NanoPitch weights BANNED; v1 ribbon = vendored sevagh/pitch-detection (Leto-verified MIT @v2023.12; vendor/pitch-detection + kissfft v131 BSD-3 via pd_fft seam). NanoPitch only on clean LICENSE + clean weights/retrain. Original proposal text: NanoPitch CODE license is unverified (D-7) AND its pretrained weights are trained on **GTSinger (CC BY-NC-SA)** + FSDNoisy18k (RESEARCH §4b) — NC-trained weights are commercially encumbered even if code is permissive. PROPOSAL: v1 causal ribbon = **sevagh/pitch-detection (MIT, pure DSP, no training data)** as the DEFAULT; NanoPitch ships only if (i) LICENSE verified ship-safe AND (ii) Leto rules the weight provenance usable, or (iii) weights retrained on clean synthetic/CC-BY data (VocalSet CC-BY, SingStyle111 CC-BY, own synth per X-301). Do NOT silently ship GTSinger-trained weights.
@@ -173,3 +318,8 @@ Matches PLAN §0 targets exactly (live F1@50c ≥ 0.75 synthetic clean; RTF < 0.
 | v0 | 2026-11-21 | P-003: model table + export plan + benchmark plan + open questions + license flags (X-002/X-003 proposed, X-601 referenced). M0 engine state documented (EngineCore + MockEngine + spike harness). |
 | v1 | 2026-11-21 | P-101/P-103: SwiftF0 + silero-vad SHIPPED (portable cores, PitchORT seam, self-upgrading real spikes). Architecture M1 layer + Engine/PitchORT split rationale; SwiftF0 I/O + streaming semantics (176 ms lookahead); silero 512/64/state + speech-VAD semantics; X-002 resolved (D-17/D-19); open questions 2–4 closed by CONTRACTS v0.1. |
 | v1.1 | 2026-11-21 | P-105: LivePitchFacade (C-6.0 verbatim) + C-6.1 presets + MockEngine additive conformance — §1.1 facade semantics (sticky sub-hop, VAD fail-open fusion, V12 clarity clamp, M2 stubs, reset); P-102 Swift MPM noted in the M1 layer diagram. RibbonEngine partial-window crash fixed (Int-division truncation; testTimestampsOnContractGridAndCausal red on CI arm64 + Linux, emitCount guard). |
+| v1.2 | 2026-11-22 | P-201a CONTRACTS v1.0 wired in EngineCore (C-1 += VOCALS sortOrder 10, C-2.1 notesFile optional, V14/V15 era-scoped, C-8 verbatim + ImportProgressEmitter) — 103/103 Linux; P-201c M2 separation stack: §1.3 architecture (shim C-ABI + DemucsEngine bridge + DemucsOutputMapper/PCMWavWriter portable layer), demucs model row → Tier B provenance (D-30/D-32.6) + std::thread pair parallelism spec (D-32.4, apply_demucs_threading.py). EngineCore 112/112 Linux. |
+| v1.3 | 2026-11-22 | P-208 (D-24/C-7): §4.1 spike parity harness — C-7 sidecar exporter (--export-c7, JSON+f32/f64 bins, model+fixture sha binding), Swift/ORT parity tests in PitchORTTests (SwiftF0 3 fixtures × 4 tensors incl. EngineCore postprocess outputs; silero 4 fixtures), tolerance abs 1e-3 OR rel 1e-4; engine-parity CI job spec = X-205 (Leto). |
+| v1.4 | 2026-11-23 | P-202 L2 (chunked driver + abort seam, no vendor patch) + P-203 (import/decode): §1.4 import stack (ImportPipeline / AVAudioFileDecoder / BLAKE3 / manifest v1.0), the **ImportKit package declaration** answered for Leto's step-5 wiring (extend `Engine/ImportKit`, product `ImportKit`), and the **measured MP3 gapless behaviour** (AVAudioFile keeps the LAME encoder delay + padding → 111744 vs ffmpeg's 110250 frames; duration_s up to ~51 ms long; padding proven frame-aligned + SNR-vs-source 26.0 dB). §1.3 abort seam replaced with the landed design. |
+| v1.5 | 2026-11-23 | P-204 (ALAC stem writer, GREEN on the macOS runner 45156291152@1935a0f): §1.4 gains the **ALAC stem-writing** note — `AVAudioFile` + float32 PLANAR, `AVAssetWriterInput` avoided (CMSampleBuffer-only on this SDK), 8 192-frame streaming chunks, and the **measured runtime root cause**: `AVAudioFile.read(into:frameCount:)` THROWS when fewer frames remain than requested (the tail chunk) — request exactly what remains; the encode reports the failing step (open/read/copy/write) with the NSError details; a failed import surfaces the REAL error (cleanup can no longer mask it). |
+

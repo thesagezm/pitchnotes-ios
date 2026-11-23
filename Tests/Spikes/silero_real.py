@@ -221,11 +221,48 @@ def export_reference_tensors(sess) -> Path:
     return out
 
 
+def export_c7_sidecars(sess) -> Path:
+    """P-208 (D-24): C-7 JSON+bin parity sidecars for the SWIFT tests.
+
+    Same 4 fixtures as export_reference_tensors; per fixture the per-512-chunk
+    speech_prob stream (SileroStream semantics). Stored float32 — the model's
+    native output dtype (probs_for carries them through float64, lossless).
+    """
+    import json
+
+    import c7_export
+    entry = [m for m in json.loads((REPO_ROOT / "Models" / "manifest.json").read_text())["models"]
+             if m["name"] == "silero-vad"][0]
+    fx = REPO_ROOT / "Tests" / "Spikes" / "Fixtures"
+    tensors_by_stem = {}
+    for name in ("silence_16k.wav", "noise_burst_16k.wav", "click_track_16k.wav", "synthetic_voice_16k.wav"):
+        audio = read_wav_mono(fx / name)
+        probs = probs_for(sess, audio).astype(np.float32)
+        tensors_by_stem[name.removesuffix(".wav")] = {"speech_prob": probs}
+    return c7_export.export_c7(
+        engine="SILERO_VAD", slug="silero-vad",
+        stems=list(tensors_by_stem.keys()),
+        tensors_by_stem=tensors_by_stem,
+        model_entry=entry,
+        source=f"snakers/silero-vad (manifest {entry.get('version', 'pin')}, sha {entry['sha256'][:12]}…)",
+        script="Tests/Spikes/silero_real.py --export-c7")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--export-ref", action="store_true",
                     help="write the D-24/C-7 reference-tensor sidecar and exit")
+    ap.add_argument("--export-c7", action="store_true",
+                    help="write the P-208 C-7 JSON+bin parity sidecars and exit")
     args = ap.parse_args()
+    if args.export_c7:
+        if real_available() is None:
+            print("FAILED: onnxruntime required for --export-c7")
+            return 1
+        sess = load_session(ensure_model())
+        out = export_c7_sidecars(sess)
+        print(f"C-7 parity sidecars written: {out}")
+        return 0
     if args.export_ref:
         if real_available() is None:
             print("FAILED: onnxruntime required for --export-ref")

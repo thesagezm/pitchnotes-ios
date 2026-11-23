@@ -16,6 +16,14 @@ Byte-identity policy: fixed seeds, numpy `Generator(PCG64)` (stable streams),
 stdlib `wave` headers, IEEE-754 doubles. Committed bytes are canonical —
 `--check` is the CI gate for drift. See `scripts/fixtures/gen.py` docstring.
 
+**Encoded formats (mp3/flac/m4a)** are ffmpeg encodes of `mix44k_short.wav`
+committed once from the dev box; runners never need ffmpeg. ffmpeg encoders are
+NOT byte-deterministic across platforms/versions, so `gen.py` regenerate mode
+only encodes when the file is MISSING (committed encodes are never re-encoded),
+and `--check` validates structure (ID3/frame-sync, `fLaC`, `ftyp`) + the
+recorded sha — never re-encode-and-compare. A deliberate re-encode updates
+`fixtures.sha256` (gen.py does it automatically).
+
 ## Manifest (SHA256, committed as fixtures.sha256 too)
 
 | Fixture | Bytes | SHA256 | Purpose |

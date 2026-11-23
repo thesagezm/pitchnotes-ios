@@ -15,6 +15,8 @@ final class ValidatorTests: XCTestCase {
             sourceHash: SourceHash(hex: String(repeating: "0123456789abcdef", count: 4)),
             duration_s: 12.0,
             sampleRate: 44100,
+            channels: 1,     // v1.0 REQUIRED (C-2.1/V14): decoded mix channels
+            tuning_cents: 0, // v1.0 REQUIRED (D-22/V14): tuning offset
             hasInstrumental: false,
             parts: [PartInfo(part: .bass, stemFile: "stems/BASS.m4a", channels: 1,
                              notesFile: "notes/BASS.json", pitchFile: nil, noteConfidence: 0.9)],

@@ -50,7 +50,7 @@ public enum MockScenario: String, CaseIterable, Sendable {
     case vibrato
 }
 
-public final class MockEngine: EngineAPI, @unchecked Sendable {
+public final class MockEngine: EngineAPI, ProgressReportingEngine, @unchecked Sendable {
 
     // MARK: - Scripted song (C-major hymn-style progression, 5-part male ensemble)
 
@@ -100,6 +100,17 @@ public final class MockEngine: EngineAPI, @unchecked Sendable {
         self.songID = id
         self.bundleDirectory = bundleDirectory
             ?? FileManager.default.temporaryDirectory.appendingPathComponent("pitchnotes-mock-\(id)", isDirectory: true)
+    }
+
+    // MARK: - C-8 progress (v1.0, additive protocol)
+
+    /// C-8: staged monotonic progress + cooperative cancellation. The mock emits
+    /// the three contract stages across `makeBundle` (its whole "import" path);
+    /// `separate(_:mode:)` inherits the same stream via makeBundle.
+    private let progressEmitter = ImportProgressEmitter()
+
+    public func setImportProgressHandler(_ handler: ImportProgressHandler?) {
+        progressEmitter.setHandler(handler)
     }
 
     // MARK: - EngineAPI
@@ -180,7 +191,9 @@ public final class MockEngine: EngineAPI, @unchecked Sendable {
     // MARK: - Bundle materialization (C-2 layout, V1–V13 valid)
 
     /// Writes the complete mock SongBundle (song.json + stems/*.wav +
-    /// notes/<PART>.json + pitch/<PART>.json) atomically (tmp dir + rename).
+    /// notes/<PART>.json + pitch/<PART>.json) atomically (tmp dir + rename) per
+    /// C-2.2 v1.0 semantics: on ANY failure/cancellation the staging directory is
+    /// removed — a cancelled job leaves NO partial bundle.
     /// Returns the manifest. Re-running overwrites the SAME mock bundle (matched
     /// by song id); refuses to replace a directory that holds a different song.
     @discardableResult
@@ -206,15 +219,36 @@ public final class MockEngine: EngineAPI, @unchecked Sendable {
         let tmp = dir.deletingLastPathComponent().appendingPathComponent(dir.lastPathComponent + ".tmp", isDirectory: true)
         if fm.fileExists(atPath: tmp.path) { try fm.removeItem(at: tmp) }
         try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
+        // C-8/P-202 AC: cancellation or error mid-import removes the staging
+        // directory — no partial bundle is ever observable.
+        do {
+            return try makeBundleBody(to: dir, tmp: tmp)
+        } catch {
+            try? fm.removeItem(at: tmp)
+            throw error
+        }
+    }
+
+    /// makeBundle body after staging creation. Private — the public wrapper owns
+    /// the cleanup contract.
+    private func makeBundleBody(to dir: URL, tmp: URL) throws -> SongManifest {
+        let fm = FileManager.default
         // C-2 bundle layout subdirectories (stems/, notes/, pitch/).
         for sub in ["stems", "notes", "pitch"] {
             try fm.createDirectory(at: tmp.appendingPathComponent(sub, isDirectory: true), withIntermediateDirectories: true)
         }
 
+        // C-8 staged progress: decoding (mock: input validation only), then
+        // separating (per-part stem write), then assembling. Fractions monotonic
+        // via the emitter; ≥1 call per stage per contract.
+        progressEmitter.emit(ImportProgress(stage: .decoding, fraction: 0.02, detail: "mock: no container decode"))
+
         var partInfos: [PartInfo] = []
         var confidences: [Double] = []
 
-        for part in MockEngine.scriptedParts {
+        for (partIndex, part) in MockEngine.scriptedParts.enumerated() {
+            // C-8 cooperative cancellation between chunks/parts.
+            try Task.checkCancellation()
             let stemRel = "stems/\(part.rawValue).wav"
             let stemData = Self.wavData(for: part, scenario: scenario, seed: seed)
             try stemData.write(to: tmp.appendingPathComponent(stemRel))
@@ -231,6 +265,10 @@ public final class MockEngine: EngineAPI, @unchecked Sendable {
             confidences.append(noteConf)
             partInfos.append(PartInfo(part: part, stemFile: stemRel, channels: 1,
                                       notesFile: notesRel, pitchFile: pitchRel, noteConfidence: noteConf))
+            progressEmitter.emit(ImportProgress(
+                stage: .separating,
+                fraction: 0.1 + 0.15 * Double(partIndex + 1) / Double(MockEngine.scriptedParts.count),
+                detail: "mock stem \(part.rawValue) (\(partIndex + 1)/\(MockEngine.scriptedParts.count))"))
         }
 
         let meanConf = confidences.isEmpty ? 0.0 : confidences.reduce(0, +) / Double(confidences.count)
@@ -241,15 +279,22 @@ public final class MockEngine: EngineAPI, @unchecked Sendable {
             sourceHash: SourceHash(hex: Self.pseudoHashHex(seed: seed, scenario: scenario)),
             duration_s: MockEngine.duration_s,
             sampleRate: 44100,
-            hasInstrumental: false, // D-9 acapella path: no INSTRUMENTAL stem
+            channels: 1,        // v1.0 REQUIRED: mock mix is mono (V14 in-range)
+            tuning_cents: 0,    // v1.0 REQUIRED: mock synth is A440-exact (D-22;
+                                // scenario deviations are singer performance,
+                                // not recording tuning)
+            hasInstrumental: false, // D-9 acapella path: no INSTRUMENTAL stem (V15 ⇔ parts[] has none)
             parts: partInfos,
             confidenceSummary: ConfidenceSummary(meanNoteConfidence: meanConf)
         )
+        progressEmitter.emit(ImportProgress(stage: .assembling, fraction: 0.9, detail: "mock: writing manifest"))
         try Self.jsonData(manifest).write(to: tmp.appendingPathComponent("song.json"))
 
         // Atomic swap: rename the fully written tmp directory over the target.
         if fm.fileExists(atPath: dir.path) { try fm.removeItem(at: dir) }
         try fm.moveItem(at: tmp, to: dir)
+        // C-8: 1.0 only at completion.
+        progressEmitter.emit(ImportProgress(stage: .assembling, fraction: 1.0, detail: "mock: bundle complete"))
 
         // Paul's responsibility (C-3): bundled output MUST validate against C-2.
         let result = BundleValidator.validate(bundleDirectory: dir)

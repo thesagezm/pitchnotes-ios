@@ -16,6 +16,246 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-37 | 2026-11-23 UTC | Leto | RULED (M2 gate session 10 — the D-25 chunk-policy arm is decided BY MEASUREMENT; Rule 3 escalation answered)
+**Context:** The D-25 protocol was fixed at QUEUE 2026-11-22T21:00Z §6 (Rules 1–4) so the gate could
+never stall on a judgement call. Paul has now landed both measurement legs and escalated the
+outcome with the numbers, as Rule 3 requires:
+- **L3** (BENCHMARKS §4.1, v1.6): 30.0 s synthetic mix, **3 paired repeats × 3 arms**, same fixture,
+  same weights (htdemucs fp16 ggml, sha256 `72b17c42…df0064`), same runner class, 1 vendor thread,
+  **Linux dev box — ENV-LABELED, NOT A14**.
+- **L4(a)** (BENCHMARKS §4.2, v1.7): 240.0 s synthetic mix (8× the L3 fixture), `planDefault` arm,
+  1 repeat, same env.
+The numbers below are quoted from Paul's own tables in `Docs/BENCHMARKS.md` §4.1/§4.2; they are not
+re-derived here. I am answering the Rule-3 escalation.
+
+| arm | all-sources SDR | instrumental SDR | vocals SDR | NSDR (all-src) | wall | RTF | peak RSS |
+|---|---|---|---|---|---|---|---|
+| reference (whole song) | n/m (it IS the baseline) | n/m | n/m | n/m | 692.2 s | **23.07** (22.17–27.50) | 1829 MB (1781–1885) |
+| muskeyRecipe (4.5 s / 1.0 s) | **1.63 dB** | 8.07 dB | 1.11 dB ⚠ | −21.28 dB | 1048.2 s | **34.94** (33.19–36.72) | 1767 MB (1738–1785) |
+| **planDefault (8.0 s / 2.0 s)** | **6.39 dB** | **12.11 dB** | 5.06 dB ⚠ | **−16.51 dB** | 1298.5 s | **43.28** (40.53–43.73) | 1778 MB (1740–1788) |
+| planDefault @ 240 s (L4(a)) | n/a (paired comparison lives in the 30 s rows) | n/a | n/a | n/a | 8717.6 s | 36.32 | **1805 MB** |
+
+**Ruling:**
+1. **RULE 1 FAILS — `muskeyRecipe` IS REJECTED.** Its SDR gate is decisive: 1.63 dB vs 6.39 dB
+   all-sources = **4.76 dB behind** (instrumental 8.07 vs 12.11 = 4.04 dB behind). Its other two
+   gates pass (RTF 34.94 ≤ 1.25 × 43.28 = 54.10 ✓; peak RSS 1767 ≤ 1778 MB ✓), but Rule 1 requires
+   ALL of them. **⇒ No §8 window deviation is recorded, and none is needed: the shipped arm keeps a
+   §8-native 5–10 s window.**
+2. **RULE 2's PRECONDITION FAILS ⇒ RULE 3 TRIGGERED ⇒ ESCALATED TO ME ⇒ RULED HERE.** Rule 2 would
+   have selected `planDefault` had both arms been in budget; neither is (see §4). The Rule-3
+   reversible option was designated "the better-quality arm at `planDefault`, flagged".
+   **THE SHIPPED DEFAULT IS `planDefault` — 8.0 s window / 2.0 s overlap / linear crossfade.**
+3. **THE REQUIRED LANDING SITE IS ALREADY SATISFIED — PAUL OWES ZERO CODE FOR D-25.**
+   D-36 §6 made the arm land as `DemucsEngine.init(modelPath:threads:policy:)`'s default `policy`.
+   Verified on `origin/paul` @599b441, `Engine/Separation/DemucsEngine.swift:80–81`:
+   `policy: ChunkPolicy = .planDefault` — **already the default.** Nothing to change, no new ruling
+   to implement. **P-202's only open item (this ruling) is now closed; the row is gate-closable.**
+4. **THE BUDGET MISS IS RECORDED, NOT PAPERED OVER.** No arm meets §8's device budgets on any
+   measured environment: dev-box RTF 34.94 / 43.28 against the ≤ 2.0 target, and peak RSS 1767 /
+   1778 MB against the < 1.5 GB target. **The miss is NOT caused by chunking** — the whole-song
+   REFERENCE itself is RTF 23.07. The derived macOS-runner factor (≈3.7×, from the §4 CI row) puts
+   the long-form arms at ≈ 9.4 (muskey) / ≈ 11.7 (plan) — still ≫ 2.0. **§8's RTF ≤ 2× and
+   RSS < 1.5 GB are NOT amended by this ruling; they remain the targets** — but they are **NOT MET**
+   by M2's CPU path. The honest product consequence: **M2 separation is an OFFLINE / QUALITY-MODE
+   job** (foreground progress, or `BGProcessingTask` while charging, per §8) — not a
+   "≤ 2× song length" interactive path. **Closing the RTF gap belongs to the M6 acceleration phase
+   (CoreML EP, same ONNX models — AGENTS §0 hard rail 2), not to M2.** The A14 numbers arrive from
+   the §10.2 device demo (P-603 / Jess's J-206 readout) and go into BENCHMARKS §6 — **runner
+   numbers are never presented as device numbers, and these are not.**
+5. **THE MEMORY CLAIM IS THE ONE THAT HOLDS.** L4(a): 8× the audio cost grew peak RSS by **+27 MB
+   (+1.5 %)** — the peak is the vendor's per-segment working set (~1.7–1.8 GB), not whole-song
+   accumulation — and 1805 MB is under the Linux 2.0 GB spike sanity bound. **P-202's "4-minute
+   synthetic processes without OOM" ac leg is MET on this path.** But the measurement comes from the
+   **C++ MIRROR**, which accumulates MORE than the Swift shipping path (four source stems vs the
+   Swift driver's two blended output stems) — and the Swift driver's own whole-song accumulation
+   term DOES scale with length. **A streaming stem writer (write each window's blended stems to
+   disk instead of accumulating them) is therefore a REAL follow-up, filed as X-214 (owner: paul,
+   M3-prep, NON-GATING for `m2`)** — recorded, not smuggled into this gate.
+6. **CHUNKING LOSES ON RTF BY CONSTRUCTION — a standing fact, not a re-litigation.** The vendor pads
+   every external window to full 7.8 s internal segments (an 8 s window costs 15.6 s of vendor
+   compute; a 4.5 s window costs 7.8 s), and the measured ordering matches that cost model exactly
+   (reference 23.07 < muskey 34.94 < plan 43.28). **Any future window-policy change must beat this
+   cost model with measurement, not with opinion.** (Paul's honest cost model from the vendor source
+   is what predicted the outcome before the run — it was right.)
+7. **TWO SMALL POINTS ACCEPTED (no new row, no contract change):** (a) the D-9 near-silent
+   instrumental threshold (**−50 dBFS RMS**) is **ACCEPTED** as the M2 heuristic constant — it lives
+   in EngineCore, it is **not** a contract item, and it is revisited only with evidence; (b) the
+   engine-side cache index is **not** D-4's library index (that is Jess's J-202) — the distinction is
+   correct and stands as stated.
+8. **THE VOCALS-SDR COLUMN IS NOT A QUALITY CLAIM.** On the L3 fixture the tone energy routes to
+   other stems, so the vocals stem sits at ≈ −70 dB and the SDR of two near-silent signals is noise
+   (1.11 dB vs 5.06 dB — a 3.95 dB spread that is meaningless in itself). **The primary quality
+   numbers are all-sources + instrumental.** Any real vocal-separation quality claim needs a
+   truth-bearing fixture (known stems) — that is M3's eval-harness job (X-301/X-311), not M2's.
+9. **NOTHING HERE RE-OPENS ANYTHING.** Rules 1–4 were applied as written; D-22..D-36 stand; the
+   next decision letter is **D-38**.
+**Affects:** P-202 (REVIEW → gate-closable; the D-25 arm is ruled), P-201/P-203/P-204/P-205 (gate
+rows), P-206 (M6/D-31, non-gating), P-603 + J-206 (the A14 device numbers → BENCHMARKS §6),
+`Docs/BENCHMARKS.md` §4.1/§4.2/§6, `Docs/ENGINE.md`, **X-214 (new: streaming stem writer,
+owner paul, M3-prep, non-gating)**, L-204 (M2 gate).
+
+## D-36 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9, same session — SUPERSEDES D-35 §1/§2 after Jess's in-flight work was read and PROVEN; the FINDING stands, the SHAPE changed)
+**Context:** D-35 (committed earlier this session, `029408c`) ruled that the M2 app-facing engine
+would be a NEW app-target facade (`SeparationImportEngine`, `init(modelPath:libraryRoot:)`) whose
+`separate` would publish the bundle, and that Jess's factory would change by ONE LINE. **Two
+things that happened after D-35 was written changed the ruling — and I am recording the
+correction openly rather than letting two shapes exist:**
+(1) **JESS'S OWN WORK moved while I was ruling.** Her branch (`origin/jess` @9074653) now carries
+a rewritten binding: the app builds `DemucsEngine(modelPath:)` (Paul's app-target bridge),
+injects `demucs.separationRun()` into `SongBundleImportEngine(libraryRoot:separator:)`, and drives
+the engine's EXISTING whole-import call `importSong(source:title:) -> ImportOutcome` — one call
+that owns decode → separate → assemble → atomic publish. The app-side seam hides the difference
+behind ONE closure (`ImportEngineHandle.runImport` → an app-owned `PublishedImport`), so the C-3
+pair is still what the MOCK runs and the UI is untouched. **CI-proven: probe `jess-swap-probe-v5`
+run `45098520720` = `build-ipa` SUCCESS with `SEPARATION_IMPORT_ENGINE` ON, `canImport(ImportKit)`
+TRUE and the REAL classes in place** — her binding compiles against Paul's actual API
+(`DemucsEngine.init(modelPath:threads:policy:)`, `separationRun()`, `SongBundleImportEngine.init(libraryRoot:separator:)`,
+`importSong`, `ImportOutcome` — all verified present in `origin/paul`).
+(2) **MY OWN SHAPE WAS TECHNICALLY INFERIOR, and the reason is the manifest, not the taste.** The
+bundle's `song.json` needs facts that only the DECODE stage produces (the source hash, the decoded
+duration, the normalised mix). Splitting the flow into `importAudio` → `separate` forces a SECOND
+decode/hash to build the manifest, and splits the all-or-nothing guarantee (C-8: no partial bundle,
+NO residue) across two calls with the APP in between — exactly the atomicity C-2.2/C-8 exist to
+provide. Jess's shape keeps the whole import inside ONE atomic, already-tested, already-written
+engine call (`ImportOrchestrator.run(source:…)`, with staging discipline + pre-publish validation +
+the C-9 publish + the global monotonic progress bands).
+**Ruling:**
+1. **D-35 §1 (the facade) and §2 (the one-line factory change) are SUPERSEDED. D-35's FINDING —
+   the C-3 pair as it stood could not publish, and the real-engine import would have failed the
+   app's own C-2.2 completeness check — STANDS and is the reason for this ruling. The contract
+   clause D-35 added is RESTATED in v1.0.3 to be shape-agnostic.**
+2. **The M2 real path is the ATOMIC whole-import call (Jess's shape), and it is RATIFIED.**
+   The app drives ONE call that owns decode → separate → assemble → atomic publish; the app
+   translates the outcome at ONE seam point (`PublishedImport`); the mock keeps the frozen C-3
+   pair; the UI changes not at all. The app owns the weights path (J-207) and constructs the
+   engine behind its factory (D-34 §3) — that is the app's job and it is lane-correct.
+3. **C-9.1 IS ADDED (CONTRACTS v1.0.3):** the M2 bundle-producing engine exposes a whole-import
+   entry point — `importSong(source: URL, title: String) async throws -> ImportOutcome` — and the
+   app drives an engine that has it through that call (an engine without it is driven with the
+   frozen C-3 pair, as the mock is). **NO NEW SWIFT PROTOCOL IS REQUIRED** — the app-side
+   `runImport` closure IS the interface, and the app binds the concrete engine at its factory
+   (which is exactly what compiles today). Paul MAY publish an `AtomicBundleImporting` protocol
+   in EngineCore as an additive nicety; it is **NOT a gate item**. Naming the entry point in the
+   contract is what protects Jess's binding from a rename.
+4. **C-9 RULE 5 IS RESTATED (shape-agnostic):** what the contract requires is the OUTCOME — the
+   import flow the app drives ENDS with a COMPLETE published bundle (`song.json` present) and
+   `importedBundleID` set. HOW the engine gets there (the atomic call, or a C-3 pair whose
+   `separate` publishes) is the engine's business. My v1.0.2 wording ("by the time `separate`
+   returns…") was over-specified and is withdrawn.
+5. **PAUL'S REMAINING WORK SHRINKS — X-211 (the facade) IS CANCELLED.** Paul owes: X-213 (the
+   `ALACStemWriter` compile fix — now also a `build-ipa` red once step 5(a) lands), P-202 L3 (the
+   D-25 numbers) + L4(a) (the 4-minute no-OOM run), P-204/P-205 close (bundle sizes logged), and
+   the D-25 arm as `DemucsEngine`'s default `policy` (see §6). **No new facade, no new orchestrator
+   entry point, no change to `separate`.** Jess's session-7 finding and her probe already reported
+   the two ALAC facts Paul needs (`AVAssetWriterInput.sourceFormatHint` is GET-ONLY ⇒ delete the
+   assignment; `AVAudioFile.read(into:frameCount:)` returns Void ⇒ the count is
+   `buffer.frameLength` after the read); the remaining work is the `CMSampleBuffer` conversion.
+6. **THE D-25 PICK MAPS ONTO `DemucsEngine.init(modelPath:threads:policy:)` — the `policy:`
+   DEFAULT (currently `.planDefault`).** The app constructs `DemucsEngine` and does NOT know about
+   `ChunkPolicy`, so the arm chosen under the D-25 protocol MUST land as that default (or the app
+   must be taught the arm — worse). Paul: the D-25 ruling therefore has a REQUIRED landing site.
+   Rules 1–4 (QUEUE 21:00Z §6) are unchanged, the tie goes to `planDefault`, and runner numbers
+   are never device numbers.
+7. **STEP 5 IS RESHAPED (X-209 updated):** (a) project.yml `packages:` += `ImportKit: {path:
+   Engine/ImportKit}` + app `dependencies:` += `- package: ImportKit` / `product: ImportKit`
+   (PROVEN by BOTH probes — mine `45097390536` and Jess's `45098520720` wired it the same way);
+   (b) app `sources:` += `Models/manifest.json` (X-207) — AFTER paul→main lands the manifest that
+   carries the `htdemucs` entry; (c) **the `SEPARATION_IMPORT_ENGINE` compilation condition ALONE**
+   — **NO `Engine/Separation/SeparationImportEngine.swift` source path (the class does not exist and
+   is no longer needed)** — LAST and as its own commit, after (a)+(b) and after Jess's binding is
+   on main. Plus, at step 5: drop `optional: true` from the two `Engine/Separation` entries, remove
+   the X-201 branch-state adapter from build.yml, and add the Info.plist Files-container keys.
+8. **THE ORDER IS UNCHANGED** (D-34 §5): paul→main → Jess rebase + swap seam #1 → jess→main →
+   leto→main step 5(a)+(b) then (c) → main gate run ALL 8 → human device demo → Tier B ask → tag m2
+   → open M3. The merge order is CONTRACTUAL and is not re-opened.
+**Affects:** CONTRACTS.md (v1.0.3 — C-9 rule 5 restated + NEW C-9.1 + changelog), QUEUE (X-209
+reshaped, X-211 CANCELLED, X-212 SUPERSEDED by Jess's rewrite, L-204), `Engine/ImportKit`
+(`SongBundleImportEngine.importSong` — unchanged, now the ratified entry point),
+`App/Sources/Features/Import/{ImportEngineSeam,RealImportEngineFactory,ImportModel}.swift`
+(Jess's rewrite, as built), `project.yml` (step 5(a)+(b)+(c) — no facade path).
+
+## D-35 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9; the M2 real-engine seam surface is FIXED + the C-3 import flow must END in a PUBLISHED bundle) — **§1/§2 SUPERSEDED BY D-36 (same session); the FINDING and the spirit stand**
+**Context:** Session-9 gate review, after both lanes moved past the session-8 checkpoint
+(paul @2d9f7f8, jess @772c112). Three facts, all found by reading code — not by trusting a row:
+(1) **The X-208 surface does not exist.** Paul landed P-204's Apple side as
+`SongBundleImportEngine` inside the `Engine/ImportKit` SPM package — `init(libraryRoot:separator:)`,
+NON-throwing, separator injected — and Jess's committed binding expects an APP-TARGET
+`SeparationImportEngine` with a THROWING `init(modelPath:)`. Session-8 Finding 1 stands
+(`Engine/Separation/SeparationImportEngine.swift` is still absent from origin/paul); the two
+lanes have now built to two different surfaces, and D-34 §2/X-208 were written before either
+implementation existed.
+(2) **NEW, GATE-BREAKING — the C-3 import flow cannot publish a bundle as it stands.**
+Jess's flow (J-201 `ImportModel`) drives the FROZEN C-3 API — `importAudio(url:)` then
+`separate(audio, mode:)` — and then REQUIRES a complete published bundle: she resolves the id
+via C-9 and throws `EngineError.importFailed("completed bundle failed the completeness check")`
+unless `<libraryRoot>/<id>/song.json` exists. Paul's ONLY publish path is `importSong(source:title:)`
+(the whole-path orchestrator: decode → separate → assemble → publish); `SongBundleImportEngine.separate()`
+returns the separator's RAW stem URLs, never assembles, never publishes, and leaves
+`importedBundleID` nil. ⇒ With the real engine compiled in, the M2 demo would import, separate,
+and then FAIL THE APP'S OWN COMPLETENESS CHECK: no bundle in the library, no stems in the mixer.
+This would have surfaced only at the human demo, after the entire gate.
+(3) **Session-8 Finding 2 is RESOLVED** — the C-9 `BundleProducingEngine` protocol now exists in
+EngineCore (Paul @5258632, `Engine/Sources/EngineCore/ImportProgress.swift`), verbatim per §C-9.
+**Ruling:**
+1. **The M2 real-engine seam is ONE app-target facade — `Engine/Separation/SeparationImportEngine.swift`
+   (Paul's lane; X-211). Exact surface, frozen for both lanes:**
+   ```swift
+   public final class SeparationImportEngine: ProgressReportingEngine, BundleProducingEngine, @unchecked Sendable {
+       public init(modelPath: URL, libraryRoot: URL) throws
+   }
+   ```
+   - `init` THROWS when the htdemucs ggml weights cannot be loaded. Jess's factory catches it
+     and surfaces an actionable error; it must NOT fall back to the mock (D-34 §3, D-12 honesty).
+   - `importAudio(url:)` → decode + normalize to the 44.1 kHz mix (staged; NO publish).
+   - `separate(audio, mode: .twoStem)` → separate + assemble (ALAC stems + `song.json` v1.0) +
+     ATOMIC PUBLISH under `libraryRoot`; set `importedBundleID` to the published DIRECTORY name;
+     return the PUBLISHED stem URLs. On failure/cancellation: throw, `importedBundleID` stays
+     nil, NO partial bundle (C-2.2).
+   - C-8 progress stays monotonic across the whole flow; 1.0 only AFTER the publish rename.
+   - The facade is the ONLY place that knows the vendor bridge: it constructs `DemucsEngine`
+     (app target) and injects it into the ImportKit `SongBundleImportEngine` (SPM package).
+     ImportKit stays free of the C++ bridge; EngineCore stays portable (Linux loop clean).
+   - The source MUST be decoded ONCE per import. The C-3 flow already decoded in `importAudio`;
+     the facade must not decode the source a second time.
+   - **The APP MUST NOT CONSTRUCT THE ASSEMBLER OR THE BRIDGE ITSELF.** The app target does
+     not import `ImportKit` for the import path and does not build a `DemucsEngine`; the facade
+     owns that wiring. (This SUPERSEDES the app-side-construction sketch Jess recorded in her
+     session-7 LOG — "both call shapes … the app injects `DemucsEngine.separationRun()`" — which
+     would have put the vendor-bridge wiring in the APP lane and created a second import path.
+     Her independent FINDING is the same one this ruling encodes; her proposed SHAPE is not.)
+2. **Jess's `RealImportEngineFactory` changes by ONE LINE** (X-212, Jess's lane):
+   `try SeparationImportEngine(modelPath: modelURL, libraryRoot: bundleRoot)` — she already
+   receives `bundleRoot` in `makeEngine(bundleRoot:)`. No other app change, no view change, no
+   UI/UX change (the J-105 precedent). **The app's import path stays the frozen C-3 pair**
+   (`importAudio` → `separate`) — there is ONE import path in the app, not two, and the app
+   does not need to know whether the engine conforms to anything beyond C-8 + C-9.
+3. **C-3/C-9 semantics CLARIFIED (CONTRACTS v1.0.2 — additive clarification, NO signature
+   changed):** the C-3 import flow IS `importAudio` → `separate`, so the publish happens INSIDE
+   that flow. By the time `separate` returns, a conforming M2 engine MUST have published a
+   COMPLETE bundle under the library root (C-2.2 completion marker `song.json` present) and MUST
+   have set `importedBundleID`. An engine that returns stems without publishing satisfies C-3 but
+   NOT C-9 for M2, and the consumer rejects it with the C-2.2 completeness check. This pins down
+   WHEN the publish happens; it changes no signature and re-opens nothing (C-9 rule 1 already
+   implied it, and C-9 rule 3's derivation fallback presupposes it — a published stem's parent
+   IS the bundle directory).
+4. **Paul's `SongBundleImportEngine` (ImportKit) is the ASSEMBLER, not the app-facing engine.**
+   It stays — the facade delegates to it — and the orchestrator gains the entry point that takes
+   an ALREADY-DECODED mix (the C-3 flow decodes first, then separates). Implementation is Paul's;
+   the REQUIREMENTS are: decode once, publish once, no partial bundle, no residue.
+5. **X-210 is CLOSED** (the C-9 protocol landed) and **session-8 Finding 1 is RE-STATED, NOT
+   REVERSED**: the app-target facade must EXIST before gate step 5(c) lands the compilation
+   condition + the source path (the X-201-r1 missing-file red). Step 5(c) stays LAST and stays
+   ONE COMMIT (X-209).
+6. **The D-25 decision is NOT pre-empted and NOT re-litigated.** Paul owns the 30 s paired run;
+   the protocol (QUEUE 21:00Z §6 Rules 1–4) stands. Preliminary numbers are not a ruling, and
+   runner numbers are never presented as device numbers.
+7. **Merge order is UNCHANGED** (D-34 §5): paul→main → Jess swap seam #1 → jess→main → leto→main
+   step 5(a)+(b) then (c) → main gate run ALL 8 → human device demo → Tier B ask → tag m2 → open M3.
+**Affects:** CONTRACTS.md (v1.0.2 — C-3 note + C-9 rule 5 + changelog), QUEUE (X-211 Paul,
+X-212 Jess, X-209 dependency updated, X-210 closed), `Engine/Separation/SeparationImportEngine.swift`
+(NEW — Paul), `App/Sources/Features/Import/RealImportEngineFactory.swift` (one line — Jess),
+`project.yml` (gate step 5c: condition + source path, unchanged in shape).
+
 ## D-34 | 2026-11-22 UTC | Leto | RULED (M2 gate session 7; the bundle-identity seam + two demo-blocking gaps closed by ruling)
 **Context:** Gate review for L-204 surfaced two facts that would have failed the M2 device
 demo on the day, both found by reading the code rather than the rows:

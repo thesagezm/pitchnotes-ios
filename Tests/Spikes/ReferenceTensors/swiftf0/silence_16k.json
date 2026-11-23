@@ -1,0 +1,50 @@
+{
+  "referenceVersion": 1,
+  "engine": "SWIFTF0",
+  "fixture": "silence_16k.wav",
+  "fixture_sha256": "20eaebffe1816e0ffa6f7f854f5ef4ea80d5349faaf0ce1fec1b713e7fde58fa",
+  "model_sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22",
+  "export": {
+    "source": "lars76/swift-f0 (manifest 1.0.0+hf7877fba, sha 6385e8c2ebc3\u2026)",
+    "script": "Tests/Spikes/swiftf0_real.py --export-c7",
+    "date": "2026-11-22"
+  },
+  "tensors": [
+    {
+      "name": "pitch_hz",
+      "file": "silence_16k.pitch_hz.f64.bin",
+      "shape": [
+        125
+      ],
+      "dtype": "float64"
+    },
+    {
+      "name": "confidence_raw",
+      "file": "silence_16k.confidence_raw.f32.bin",
+      "shape": [
+        125
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "confidence_gated",
+      "file": "silence_16k.confidence_gated.f32.bin",
+      "shape": [
+        125
+      ],
+      "dtype": "float32"
+    },
+    {
+      "name": "loudness_db",
+      "file": "silence_16k.loudness_db.f64.bin",
+      "shape": [
+        125
+      ],
+      "dtype": "float64"
+    }
+  ],
+  "tolerance": {
+    "abs": 0.001,
+    "rel": 0.0001
+  }
+}
