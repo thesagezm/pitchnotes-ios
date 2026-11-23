@@ -46,22 +46,39 @@ packages:
     # Engine only); static by default. Mic permission string already in the
     # Info.plist above.
     path: Engine/MicCapture
+  ImportKit:
+    # Paul's Apple-only import kit (P-204; package boundary answered in
+    # Docs/ENGINE.md v1.4 — EXTEND Engine/ImportKit, product name `ImportKit`,
+    # NO new package, NO identity surprise). Carries the AVFoundation side of
+    # the M2 import: ALACStemWriter + AVAudioFileDecoder + SongBundleImportEngine
+    # (the C-9 whole-import entry point, D-36). NEEDS AVFoundation ⇒ it can
+    # NOT live in the portable EngineCore. Wired into the app target by gate
+    # step 5(a) (X-209) — AFTER paul→main landed the package on main, because
+    # an SPM path-dependency on a missing directory hard-fails resolution
+    # (that was the X-201-r1 red).
+    path: Engine/ImportKit
 targets:
   PitchNotesIOS:
     type: application
     platform: iOS
     sources:
       - App/Sources
-      # X-201 (P-201c compile proof): DemucsEngine bridge + vendored demucs.cpp.
-      # Engine/Separation entries are OPTIONAL until paul→main lands them at the
-      # M2 gate merge — branches without the files skip them (main stays green),
-      # paul's branch compiles the full Swift↔C++ bridge on macOS CI. The vendor
-      # .cpp files exist everywhere (Leto intake @ef63422, threading patch
-      # @d007780 per X-202) and are compiled unconditionally (Apple-clang proof).
+      # M2 GATE STEP 5(b) (X-207): the model registry travels INTO the app
+      # bundle, so the app can resolve a model's URL + SHA256 + size offline
+      # (J-207's runtime download verifies against these bytes). The manifest
+      # that lands here carries the `htdemucs` entry (Paul, D-32.6) — main's
+      # pre-paul merge manifest had NO htdemucs entry, so the downloader could
+      # never match it. Wired only AFTER paul→main landed that manifest
+      # (session-8 Finding 3).
+      - path: Models/manifest.json
+      # M2 GATE STEP 5 (M2 gate merge #11 @9909415): the DemucsEngine bridge +
+      # vendored demucs.cpp are on MAIN now, so these entries are NO LONGER
+      # optional — a missing bridge file must FAIL LOUDLY instead of silently
+      # producing an app with no separation engine (the X-201 branch-state
+      # adapter in build.yml, which stripped these entries when the files were
+      # absent, is REMOVED in the same commit — it is now a permanent no-op).
       - path: Engine/Separation/DemucsEngine.swift
-        optional: true
       - path: Engine/Separation/DemucsShim.cpp
-        optional: true
       - path: vendor/demucs.cpp/src/crosstransformer.cpp
       - path: vendor/demucs.cpp/src/dsp.cpp
       - path: vendor/demucs.cpp/src/encdec.cpp
@@ -80,6 +97,15 @@ targets:
         product: PitchORT
       - package: MicCapture
         product: MicCapture
+      # M2 GATE STEP 5(a) (X-209): the real import engine enters the app
+      # target. ImportKit is a local path-package (Paul's declared boundary —
+      # EXTEND Engine/ImportKit, product `ImportKit`), so there is no new
+      # remote dependency and no identity surprise. The `SEPARATION_IMPORT_ENGINE`
+      # compilation condition that OPENS Jess's real-engine binding is NOT set
+      # here — it is gate step 5(c), its own commit, fired only after Jess's
+      # binding is on main (D-36 §7).
+      - package: ImportKit
+        product: ImportKit
     info:
       path: App/Resources/Info.plist
       properties:
@@ -94,6 +120,15 @@ targets:
         # (100% offline at runtime; models download once, AGENTS §0/§11).
         NSMicrophoneUsageDescription: "PitchNotes listens to your singing to show live pitch feedback and grade your takes. Audio is processed on this device only and never leaves your iPhone."
         ITSAppUsesNonExemptEncryption: false
+        # M2 GATE STEP 5: the Files-container fallback for the separation
+        # weights (J-207) — the user can drop the 84 MB htdemucs file into the
+        # app's Documents folder over USB/Finder and the app adopts it after
+        # verifying its SHA256 against the bundled manifest. Both keys are
+        # required together: UIFileSharingEnabled exposes Documents in Files;
+        # LSSupportsOpeningDocumentsInPlace lets the app open what is already
+        # there without copying it out of the container.
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
         # Stem playback continues with the screen locked (J-203 mixer). Exactly
         # [audio] — the build-ipa verify step guards against drift in both
         # directions (speechnotes precedent).
@@ -126,7 +161,8 @@ targets:
         # X-201: vendored demucs.cpp is C++17 (ZERO OpenMP pragmas, D-32.4 — do
         # NOT add -fopenmp); Eigen headers incl. unsupported/Eigen/CXX11/Tensor;
         # SWIFT_INCLUDE_PATHS resolves `import DemucsShim` via
-        # Engine/Separation/module.modulemap (paul branch until gate merge).
+        # Engine/Separation/module.modulemap (the bridge is on main since the
+        # M2 gate merge #11 @9909415).
         CLANG_CXX_LANGUAGE_STANDARD: gnu++17
         HEADER_SEARCH_PATHS:
           - "$(SRCROOT)/Engine/Separation"
