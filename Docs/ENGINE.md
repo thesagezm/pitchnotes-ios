@@ -131,6 +131,7 @@ to counted drops + contiguous recent audio, never stale feedback.
 DemucsEngine (Engine/Separation/DemucsEngine.swift, app target — X-201 wiring)
   │  ProgressReportingEngine: C-8 emitter (monotonic clamp), Task cancellation
   │  separate(): PCMWaveReader → shim infer → DemucsOutputMapper → PCM16 staging
+  │  (the staged stems are STREAMED to disk — P-209, no whole-song arrays)
   ▼
 DemucsShim (DemucsShim.h/.cpp, plain-C ABI — no C++/Eigen types cross the seam)
   │  load/num_sources/set_threads/infer(status codes, finite gate, progress cb)
@@ -177,6 +178,26 @@ DemucsOutputMapper (EngineCore, Linux-tested): vocals = target_3,
   the shim maps it to `DEMUCS_SHIM_ERR_ABORTED` → Swift `CancellationError`. multiStem
   mode throws in M2 (per-voice stems are the M3 assignment path). `hasInstrumental`
   (D-9 near-silence) = P-205.
+- **STREAMING SEPARATION (P-209 — the O(song) term removed):** the separation stage
+  no longer holds the song in memory. `ChunkedSeparationDriver.runStreaming` blends
+  into a PENDING buffer bounded by ONE window and writes the finalised frames to
+  the stem files as it goes; the staged mix is read WINDOW BY WINDOW from disk
+  (`PCMF32WavWindowSource` — the header is parsed by scanning chunk headers, the
+  file is never loaded into memory). Two portable seams carry it: `AudioWindowSource`
+  (the mix) and `StemStreamSink` (the stems — a streaming 16-bit PCM WAV writer
+  whose quantisation is BYTE-IDENTICAL to `PCMWavWriter`, so the ALAC path and the
+  staged-stem bytes do not change). **The output is BIT-IDENTICAL to the old
+  accumulate path** (the Linux test compares both paths on the same fixture + mock
+  SegmentEngine) — the refactor changes WHEN the frames are written, never WHAT is
+  written. **Why one window is enough:** consecutive windows overlap and the
+  crossfade is recursive (`out = out·(1−t) + next·t`), so a frame is final only
+  once the next window's start has passed it — the frames still in play are exactly
+  the tail of the accumulated output, i.e. one window's worth. **C-8 discipline kept:**
+  a failed or cancelled run ABORTS the sinks (the partial stem file is removed — no
+  residue) and the progress stays monotonic inside the separating band. **What this
+  does NOT claim:** the A14 device peak-RSS number is P-603's job; the DECODE stage
+  still holds the decoded song once (the decoder's own buffer) — that is a separate
+  term, not part of the separation stage.
 
 ### 1.4 M2 import/decode stack (P-203, D-8 / C-2.1)
 
@@ -322,4 +343,5 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.3 | 2026-11-22 | P-208 (D-24/C-7): §4.1 spike parity harness — C-7 sidecar exporter (--export-c7, JSON+f32/f64 bins, model+fixture sha binding), Swift/ORT parity tests in PitchORTTests (SwiftF0 3 fixtures × 4 tensors incl. EngineCore postprocess outputs; silero 4 fixtures), tolerance abs 1e-3 OR rel 1e-4; engine-parity CI job spec = X-205 (Leto). |
 | v1.4 | 2026-11-23 | P-202 L2 (chunked driver + abort seam, no vendor patch) + P-203 (import/decode): §1.4 import stack (ImportPipeline / AVAudioFileDecoder / BLAKE3 / manifest v1.0), the **ImportKit package declaration** answered for Leto's step-5 wiring (extend `Engine/ImportKit`, product `ImportKit`), and the **measured MP3 gapless behaviour** (AVAudioFile keeps the LAME encoder delay + padding → 111744 vs ffmpeg's 110250 frames; duration_s up to ~51 ms long; padding proven frame-aligned + SNR-vs-source 26.0 dB). §1.3 abort seam replaced with the landed design. |
 | v1.5 | 2026-11-23 | P-204 (ALAC stem writer, GREEN on the macOS runner 45156291152@1935a0f): §1.4 gains the **ALAC stem-writing** note — `AVAudioFile` + float32 PLANAR, `AVAssetWriterInput` avoided (CMSampleBuffer-only on this SDK), 8 192-frame streaming chunks, and the **measured runtime root cause**: `AVAudioFile.read(into:frameCount:)` THROWS when fewer frames remain than requested (the tail chunk) — request exactly what remains; the encode reports the failing step (open/read/copy/write) with the NSError details; a failed import surfaces the REAL error (cleanup can no longer mask it). |
+| v1.6 | 2026-11-23 | P-209 (streaming separation — the P-202 follow-up): §1.3 gains the **streaming separation** note — the separation stage no longer holds the song in memory (`AudioWindowSource` reads the staged mix window-by-window from disk; `StemStreamSink` writes each window's blended stems to the stem file as they are finalised; the driver's retained buffer is bounded by ONE window and the streamed output is BIT-IDENTICAL to the old accumulate path). C-8 kept: cancel/failure aborts the sinks (no partial stem file) and the progress stays monotonic. The A14 device peak-RSS number remains P-603's job. |
 

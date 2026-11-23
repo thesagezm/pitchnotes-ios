@@ -287,15 +287,23 @@ bound while the song grows 8×.**
   L3 rows carry the median-of-3 spread; this row is a single long run), and a
   synthetic fixture. It says nothing about the A14, the device RAM budget
   (§8's 1.5 GB is the DEVICE target — P-603), or real-music quality.
-- **THE STREAMING FOLLOW-UP (recorded, not re-litigated):** the Swift driver
-  still ACCUMULATES the blended stems for the whole song in memory
-  (`ChunkedSeparationDriver.acc`), while P-202's own task line says "streaming
-  decode→process→write". This row shows the accumulation is NOT the peak
-  driver on the mirror (the vendor's working set is), but it is still a term
-  that grows with song length — on a 12-minute song it is ~2.5× this row's
-  additive term. **A streaming writer (write each window's blended stems to
-  disk instead of accumulating them) is the follow-up item; it is NOT
-  refactored into this gate.**
+- **THE STREAMING FOLLOW-UP (RESOLVED by P-209 — the Swift-side term is
+  gone; the C++ MIRROR still accumulates, which is what this row measures):**
+  the Swift driver used to ACCUMULATE the blended stems for the whole song in
+  memory (`ChunkedSeparationDriver.acc`), while P-202's own task line says
+  "streaming decode→process→write". This row shows the accumulation is NOT the
+  peak driver on the mirror (the vendor's working set is), but it was still a
+  term that grew with song length. **P-209 removed it from the SHIPPING Swift
+  path:** the driver now blends into a pending buffer bounded by ONE window and
+  writes each window's blended stems to disk as they are finalised, and the
+  staged mix is read window-by-window from disk (so the separation stage holds
+  no O(song) buffer at all). The streamed output is asserted **BIT-IDENTICAL** to
+  the old accumulate path (Linux test, same fixture + mock SegmentEngine) and
+  the C-8 discipline is kept (cancel/failure aborts the sinks — no partial stem
+  file). **The numbers in THIS ROW are unchanged** — they measure the C++ mirror
+  harness, which still accumulates in RAM; the Swift-side saving is a CODE
+  change, and the A14 device peak-RSS number remains **P-603's job** (the
+  decode stage still holds the decoded song once — the decoder's own buffer).
 
 ## 5. Results — note tracking (M3)
 
@@ -327,4 +335,5 @@ the PawCT 0.225 ceiling.*
 | v1.5 | 2026-11-22 | P-208: §1 parity methodology bullet (D-24/C-7 — Python reference vs Swift/ORT, tolerance abs 1e-3 OR rel 1e-4, sha binding first). Parity is a CORRECTNESS check, not a benchmark row; no numbers change. engine-parity CI job spec = X-205 (Leto). |
 | v1.6 | 2026-11-23 | **P-202 L3 (D-25 chunk benchmark) FILLED — §4.1 added.** 30 s deterministic synthetic mix, htdemucs fp16 ggml sha 72b17c42…df0064 (Tier B, D-30), 1 vendor thread, 3 PAIRED repeats, median + spread, Linux dev box (env-labeled — NOT A14 numbers). medians: reference (whole-song) RTF 23.07 / RSS 1829 MB; muskeyRecipe (4.5 s/1 s) SDR all-src 1.63 dB, instr 8.07 dB, NSDR −21.28 dB, RTF 34.94, RSS 1767 MB; planDefault (8 s/2 s) SDR all-src 6.39 dB, instr 12.11 dB, NSDR −16.51 dB, RTF 43.28, RSS 1778 MB. **D-25 protocol outcome = Rule 3 (ESCALATION):** Rule 1 fails on the SDR gate (muskey 4.76 dB behind plan), Rule 2's "both in budget" precondition fails (neither arm meets RTF ≤ 2× or RSS < 1.5 GB; the reference itself is RTF 23.07) ⇒ escalated to Leto WITH the numbers; reversible option = **planDefault, flagged** (not silently shipped). Recorded honestly: chunking LOSES on RTF by construction (the vendor pads every window to a full 7.8 s segment) and buys ~3 % peak RSS at 30 s; the vocals-SDR column is flagged as not meaningful on this fixture (htdemucs routes the tone energy to OTHER); the C++ harness is a MIRROR of the Swift driver's window plan + linear crossfade (Swift blend math unit-proven in EngineCore); the A14 numbers remain P-603. |
 | v1.7 | 2026-11-23 | **P-202 L4(a) — the 4-minute no-OOM run — FILLED (§4.2 added).** 240.0 s deterministic synthetic mix (8× the L3 fixture), planDefault arm (8 s/2 s), 1 vendor thread, 1 repeat, Linux dev box (env-labeled — NOT A14 numbers): **40 external windows / 80 vendor segments, wall 8717.6 s, RTF 36.32, peak RSS 1805 MB**. **The ac is MET: the peak does NOT scale with song length — 8× the audio cost +27 MB (+1.5 %) vs the 30 s row's 1778 MB, and 1805 MB stays under the Linux 2.0 GB spike sanity bound (~195 MB of headroom), because the peak is the vendor's per-segment working set (~1.7–1.8 GB), not the whole-song accumulation.** The SDR/NSDR cells read n/a honestly (the 30 s reference outputs were moved aside, so no mismatched-length comparison was possible — the paired quality comparison stays in §4.1). RTF improved with length (36.32 vs 43.28) because the vendor's fixed per-window padding amortises over a longer song — and it is still 36× the audio duration, far above §8's ≤ 2× device budget (A14 numbers remain P-603). Recorded as a follow-up, not refactored into this gate: the Swift driver still accumulates the blended stems for the whole song (`ChunkedSeparationDriver.acc`) while P-202's task line says "streaming decode→process→write". Also: the missing "## 5" header above the M3 table is restored. |
+| v1.8 | 2026-11-23 | **P-209 — the streaming writer — the Swift-side O(song) term is GONE (no numbers change in §4).** The separation stage no longer holds the song: the driver blends into a pending buffer bounded by ONE window and writes each window's blended stems to disk as they are finalised, and the staged mix is read window-by-window from disk. The streamed output is asserted **BIT-IDENTICAL** to the old accumulate path (Linux test, same fixture + mock SegmentEngine) and cancel/failure aborts the sinks (no partial stem file). **The §4 / §4.1 / §4.2 numbers are UNCHANGED** — they measure the C++ MIRROR harness (which still accumulates in RAM); the Swift-side saving is a CODE change, and the A14 device peak-RSS number remains **P-603's job** (the decode stage still holds the decoded song once — the decoder's own buffer). |
 
