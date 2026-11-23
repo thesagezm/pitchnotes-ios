@@ -150,9 +150,34 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
         self.progress = progress
     }
 
+    /// The window plan shared by `run` and `runStreaming`.
+    ///
+    /// Starts advance by `hop` while a full window fits; the tail window is
+    /// truncated (shorter, still ≥ overlap against the previous window because
+    /// hop < window). Every frame is covered ≥ once.
+    static func windowStarts(frames: Int, window: Int, hop: Int) -> [Int] {
+        var starts: [Int] = []
+        if frames <= window {
+            starts = [0]
+        } else {
+            var s = 0
+            while s + window < frames {
+                starts.append(s)
+                s += hop
+            }
+            starts.append(s) // tail window: s + window >= frames → truncate to frames
+        }
+        return starts
+    }
+
     /// Runs chunked separation over the whole staged mix. Returns per-part
     /// full-length interleaved stems ONLY on success; throws CancellationError
     /// if the surrounding task is cancelled (checked before/after each window).
+    ///
+    /// THIS IS THE REFERENCE IMPLEMENTATION: it accumulates the whole song in
+    /// memory (`acc`). P-209's `runStreaming` produces the SAME output without
+    /// the accumulation (the Linux test asserts they are bit-identical).
+    ///
     /// - Parameters:
     ///   - audio: interleaved f32 mix, `frames * channels` samples.
     ///   - channels: 1 (mono) or 2 (stereo) per D-8.
@@ -171,17 +196,7 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
         // Window plan: starts advance by `hop` while a full window fits; the
         // tail window is truncated (shorter, still ≥ overlap against the
         // previous window because hop < window). Every frame covered ≥ once.
-        var starts: [Int] = []
-        if frames <= window {
-            starts = [0]
-        } else {
-            var s = 0
-            while s + window < frames {
-                starts.append(s)
-                s += hop
-            }
-            starts.append(s) // tail window: s + window >= frames → truncate to frames
-        }
+        let starts = Self.windowStarts(frames: frames, window: window, hop: hop)
 
         var acc: [Part: [Float]] = [:] // accumulated (blended) output, interleaved
         var parts: Set<Part>? = nil    // key set consistency guard
@@ -303,5 +318,231 @@ public final class ChunkedSeparationDriver: @unchecked Sendable {
             emitCompletion()
         }
         return acc
+    }
+
+    // MARK: - Streaming (P-209)
+
+    /// What one streaming run cost.
+    ///
+    /// The MEMORY BOUND is the point of P-209: `maxRetainedFrames` is the
+    /// driver's peak pending buffer per part and it is bounded by ONE window —
+    /// it does NOT grow with the song's length (the accumulate path above
+    /// grows with the song: that was the O(song) term P-209 removes).
+    public struct StreamingStats: Sendable {
+        /// Windows processed.
+        public let windows: Int
+        /// Frames written per part (the song length).
+        public let frames: Int
+        /// Peak retained frames per part (≤ one window).
+        public let maxRetainedFrames: Int
+        /// The largest chunk handed to a sink in one write.
+        public let maxWriteFrames: Int
+    }
+
+    /// Runs chunked separation over a WINDOW SOURCE and writes the blended
+    /// stems out as they are finalised — the song is never held in memory.
+    ///
+    /// The blend is the SAME linear crossfade as `run` and the output is
+    /// BIT-IDENTICAL to it (the Linux test compares both paths on the same
+    /// fixture + mock engine). The difference is only WHEN the frames are
+    /// written:
+    ///
+    ///  - the accumulate path keeps every blended frame and returns it;
+    ///  - this path keeps at most ONE window of pending frames per part and
+    ///    writes the finalised frames to the sink as soon as no later window
+    ///    can touch them.
+    ///
+    /// WHY THE PENDING BUFFER IS ONE WINDOW: consecutive windows overlap, so
+    /// the frames in the overlap are blended AGAIN by the next window (the
+    /// crossfade is recursive: `out = out·(1−t) + next·t`). A frame can only
+    /// be finalised once the next window's start has passed it — the frames
+    /// still in play are exactly the tail of the accumulated output, i.e. one
+    /// window's worth. Everything before that is written out.
+    ///
+    /// - Parameters:
+    ///   - source: the staged mix, read window by window (never slurped).
+    ///   - engine: the per-window separator (same seam as `run`).
+    ///   - sinkFactory: creates the sink for a part (called once per part, on
+    ///     the first window that produces it).
+    /// - Throws: `CancellationError` when the surrounding task is cancelled;
+    ///   every sink is ABORTED (no partial stem file) before the error leaves.
+    public func runStreaming(source: any AudioWindowSource,
+                             engine: any SegmentEngine,
+                             sinkFactory: @escaping @Sendable (Part) throws -> any StemStreamSink)
+        async throws -> StreamingStats {
+        let frames = source.totalFrames
+        let channels = source.channels
+        guard frames > 0 else {
+            throw EngineError.contractViolation("ChunkedSeparationDriver: empty audio")
+        }
+        guard channels == 1 || channels == 2 else {
+            throw EngineError.contractViolation(
+                "ChunkedSeparationDriver: channels \(channels) outside the D-8 mix policy {1, 2}")
+        }
+        let window = policy.windowSamples
+        let hop = policy.hopSamples
+        let starts = Self.windowStarts(frames: frames, window: window, hop: hop)
+
+        var sinks: [Part: any StemStreamSink] = [:]
+        var pending: [Part: [Float]] = [:]
+        var pendingFrames = 0      // frames retained per part (≤ one window)
+        var emittedFrames = 0      // frames already finalised and written
+        var ingestedFrames = 0     // frames processed so far (the progress axis)
+        var maxRetained = 0
+        var maxWrite = 0
+        var parts: Set<Part>? = nil
+
+        let bandLow = config.progressBand.low
+        let bandHigh = config.progressBand.high
+        let progressHandler = progress
+
+        func emit(_ fraction: Double, _ detail: String) {
+            let f = bandLow + (bandHigh - bandLow) * min(1.0, max(0.0, fraction))
+            progressHandler?(ImportProgress(stage: .separating, fraction: f, detail: detail))
+        }
+
+        func abortSinks() {
+            for sink in sinks.values { try? sink.abort() }
+        }
+
+        emit(0.0, "chunked separation: \(starts.count) window(s)")
+
+        do {
+            for (idx, s) in starts.enumerated() {
+                try Task.checkCancellation()
+
+                // Thermal pacing BEFORE the window (nominal/fair → no delay).
+                let delay = config.paceDelays[thermalProvider()] ?? 0.0
+                if delay > 0 {
+                    emit(Double(ingestedFrames) / Double(frames), "thermal pacing \(delay)s")
+                    try await config.sleeper(delay)
+                    try Task.checkCancellation()
+                }
+
+                let wLen = min(window, frames - s)
+                // The mix is read WINDOW BY WINDOW — the song is never in
+                // memory (P-209: this is the O(song) input term).
+                let win = try source.read(startFrame: s, frameCount: wLen)
+
+                // Within-window progress: the engine reports [0, 1] INSIDE this
+                // window; the driver scales it into this window's slice of the
+                // band (same mapping as `run` — the driver is the single
+                // writer of the band). The slice starts at the frames ALREADY
+                // PROCESSED (ingestedFrames), not at the window's own start:
+                // consecutive windows overlap, so slicing from the window start
+                // would make the fraction DECREASE at every boundary (C-8).
+                let windowStart = Double(ingestedFrames) / Double(frames)
+                let windowSpan = Double(s + wLen - ingestedFrames) / Double(frames)
+                let stems = try await engine.separate(window: win, channels: channels) { v, detail in
+                    let vc = min(1.0, max(0.0, v))
+                    let jobFraction = windowStart + windowSpan * vc
+                    let f = bandLow + (bandHigh - bandLow) * jobFraction
+                    progressHandler?(ImportProgress(stage: .separating, fraction: f, detail: detail))
+                }
+
+                let keys = Set(stems.keys)
+                if let p = parts {
+                    guard keys == p else {
+                        throw EngineError.contractViolation(
+                            "ChunkedSeparationDriver: engine returned inconsistent part keys \(keys.sorted()) vs \(p.sorted())")
+                    }
+                }
+                parts = keys
+                for (part, stem) in stems {
+                    guard stem.count == wLen * channels else {
+                        throw EngineError.contractViolation(
+                            "ChunkedSeparationDriver: engine returned \(stem.count) samples for a \(wLen * channels)-sample window (part \(part))")
+                    }
+                }
+
+                if sinks.isEmpty {
+                    // First window: create the sinks (one per part).
+                    for part in keys.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+                        sinks[part] = try sinkFactory(part)
+                    }
+                }
+
+                if pendingFrames == 0 {
+                    // First window: the whole window is pending (the next
+                    // window will blend its head).
+                    for (part, stem) in stems { pending[part] = stem }
+                    pendingFrames = wLen
+                } else {
+                    // The frames before this window's start are final (no later
+                    // window can touch them) → write them out.
+                    let headFrames = s - emittedFrames
+                    let overlap = pendingFrames - headFrames
+                    guard overlap >= 0, overlap <= wLen else {
+                        throw EngineError.contractViolation(
+                            "ChunkedSeparationDriver: window plan gap — pending \(pendingFrames) frames vs start \(s)")
+                    }
+                    if headFrames > 0 {
+                        for (part, buf) in pending {
+                            let slice = Array(buf[0..<(headFrames * channels)])
+                            try sinks[part]!.append(frames: slice)
+                            maxWrite = max(maxWrite, headFrames)
+                            pending[part] = Array(buf[(headFrames * channels)...])
+                        }
+                        emittedFrames = s
+                    }
+                    // Blend the overlap (the pending buffer now starts at the
+                    // new window's start): out = out·(1−t) + window·t, the
+                    // SAME arithmetic as the accumulate path.
+                    for (part, stem) in stems {
+                        var buf = pending[part]!
+                        for j in 0..<overlap {
+                            let t = Double(j) / Double(overlap)
+                            for c in 0..<channels {
+                                let k = j * channels + c
+                                buf[k] = buf[k] * Float(1 - t) + stem[k] * Float(t)
+                            }
+                        }
+                        if stem.count > overlap * channels {
+                            buf.append(contentsOf: stem[(overlap * channels)...])
+                        }
+                        pending[part] = buf
+                    }
+                    pendingFrames = wLen
+                }
+                maxRetained = max(maxRetained, pendingFrames)
+                ingestedFrames = s + wLen
+                // The retained buffer is bounded by ONE window — that is the
+                // invariant P-209 buys (it must never grow with the song).
+                guard pendingFrames <= window else {
+                    throw EngineError.contractViolation(
+                        "ChunkedSeparationDriver: retained \(pendingFrames) frames exceeds the window (\(window))")
+                }
+
+                emit(min(1.0, Double(s + wLen) / Double(frames)),
+                     "window \(idx + 1)/\(starts.count)")
+            }
+
+            try Task.checkCancellation()
+
+            // The last window's truncated plan leaves the tail pending: write
+            // it, then finish the sinks (a finished sink = a complete file).
+            guard !pending.isEmpty else {
+                throw EngineError.contractViolation(
+                    "ChunkedSeparationDriver: separation produced no stems")
+            }
+            for (part, buf) in pending {
+                try sinks[part]!.append(frames: buf)
+                maxWrite = max(maxWrite, buf.count / channels)
+            }
+            for part in sinks.keys.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+                try sinks[part]!.finish()
+            }
+
+            if config.emitCompletion {
+                progressHandler?(ImportProgress(stage: .separating, fraction: 1.0,
+                                                detail: "separation complete"))
+            }
+            return StreamingStats(windows: starts.count, frames: frames,
+                                  maxRetainedFrames: maxRetained, maxWriteFrames: maxWrite)
+        } catch {
+            // C-8: a failed or cancelled run leaves NO partial stem file.
+            abortSinks()
+            throw error
+        }
     }
 }
