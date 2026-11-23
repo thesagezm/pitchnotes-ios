@@ -219,6 +219,21 @@ AVAudioFileDecoder (Engine/ImportKit — APPLE-ONLY package, AVFoundation)
   would truncate quiet real endings). WAV/FLAC/ALAC are exact (bit-identical to
   ffmpeg's decode — **PROVEN on the macOS runner**, run 45078702137: ffmpeg's f32
   output is bit-for-bit `s16/32768`).
+- **ALAC STEM WRITING (P-204, GREEN on the macOS runner — run 45156291152@1935a0f,
+  8/8):** `ALACStemWriter` (Engine/ImportKit) writes the stems as native ALAC
+  `.m4a` through `AVAudioFile(forWriting:settings:commonFormat:.pcmFormatFloat32,
+  interleaved:false)` — float32 PLANAR, the only layout the ALAC encoder accepts —
+  streaming 8 192-frame chunks (a 4-minute stem never materialises as one buffer,
+  §8). `AVAssetWriterInput` is NOT used: on this SDK it only accepts a
+  `CMSampleBuffer`. **THE RUNTIME ROOT CAUSE (measured, and worth remembering for
+  every other streaming writer in this project): `AVAudioFile.read(into:frameCount:)`
+  THROWS when the source has fewer frames left than the requested count** — asking
+  for a full 8 192-frame chunk at the tail of a 44 100-frame stem failed with the
+  opaque "Foundation._GenericObjCError error 0". The fix is to request exactly the
+  frames that remain. The encode now reports the step it failed in (open / read /
+  copy / write) with the NSError's domain, code and userInfo — "it didn't work" is
+  not an acceptable error message for a native-codec path. The engine's failed
+  import surfaces the REAL error (the cleanup can no longer mask it).
 
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
@@ -306,3 +321,5 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.2 | 2026-11-22 | P-201a CONTRACTS v1.0 wired in EngineCore (C-1 += VOCALS sortOrder 10, C-2.1 notesFile optional, V14/V15 era-scoped, C-8 verbatim + ImportProgressEmitter) — 103/103 Linux; P-201c M2 separation stack: §1.3 architecture (shim C-ABI + DemucsEngine bridge + DemucsOutputMapper/PCMWavWriter portable layer), demucs model row → Tier B provenance (D-30/D-32.6) + std::thread pair parallelism spec (D-32.4, apply_demucs_threading.py). EngineCore 112/112 Linux. |
 | v1.3 | 2026-11-22 | P-208 (D-24/C-7): §4.1 spike parity harness — C-7 sidecar exporter (--export-c7, JSON+f32/f64 bins, model+fixture sha binding), Swift/ORT parity tests in PitchORTTests (SwiftF0 3 fixtures × 4 tensors incl. EngineCore postprocess outputs; silero 4 fixtures), tolerance abs 1e-3 OR rel 1e-4; engine-parity CI job spec = X-205 (Leto). |
 | v1.4 | 2026-11-23 | P-202 L2 (chunked driver + abort seam, no vendor patch) + P-203 (import/decode): §1.4 import stack (ImportPipeline / AVAudioFileDecoder / BLAKE3 / manifest v1.0), the **ImportKit package declaration** answered for Leto's step-5 wiring (extend `Engine/ImportKit`, product `ImportKit`), and the **measured MP3 gapless behaviour** (AVAudioFile keeps the LAME encoder delay + padding → 111744 vs ffmpeg's 110250 frames; duration_s up to ~51 ms long; padding proven frame-aligned + SNR-vs-source 26.0 dB). §1.3 abort seam replaced with the landed design. |
+| v1.5 | 2026-11-23 | P-204 (ALAC stem writer, GREEN on the macOS runner 45156291152@1935a0f): §1.4 gains the **ALAC stem-writing** note — `AVAudioFile` + float32 PLANAR, `AVAssetWriterInput` avoided (CMSampleBuffer-only on this SDK), 8 192-frame streaming chunks, and the **measured runtime root cause**: `AVAudioFile.read(into:frameCount:)` THROWS when fewer frames remain than requested (the tail chunk) — request exactly what remains; the encode reports the failing step (open/read/copy/write) with the NSError details; a failed import surfaces the REAL error (cleanup can no longer mask it). |
+
