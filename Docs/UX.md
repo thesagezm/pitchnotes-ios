@@ -447,6 +447,38 @@ Failure states (unchanged from the drawing, as shipped): unsupported file →
 → needed-vs-available bytes (ImportDiskBudget pre-flight); thermal → advice
 banner (ImportThermalGate).
 
+**AS-BUILT v0.3 (J-209, session 8) — THE FAILURE SCREEN SHOWS WHY.**
+The failure screen is **title + the specific reason + the advice**, in that
+order, and the two "not ready yet" states have their OWN advice (they must
+never be told to retry):
+
+```
+Failure screen (ImportView.failureView):
+  title      ImportError.title            "Separation model unavailable" ·
+                                            "Real separation unavailable" ·
+                                            "Not enough storage" · …
+  reason     ImportError.detail           the SPECIFIC reason, e.g.
+                                            "The separation model (htdemucs, 84 MB) is not on
+                                             this device yet. Download it in Settings → Models…"
+                                            "This import needs about 12.0 MB of free space;
+                                             this iPhone has 3.2 MB free."   (disk full, MB)
+  advice     ImportError.recoverySuggestion   the fix FOR THAT STATE:
+                                            model  → "Download the separation model in
+                                                      Settings → Models, then import again."
+                                            build  → "This build of PitchNotes cannot separate
+                                                      audio for real. Use a build with the real
+                                                      separation engine — a demo (mock) build
+                                                      cannot make a real import."
+                                            other  → retry / re-pick advice (unchanged)
+  WHY: the app has always written ACTIONABLE messages into the error cases;
+  the screen rendered only title + advice, so the reason never reached the
+  human. The copy was written for the screen and the screen dropped it.
+  D-12 honesty: "Retrying usually helps" is NEVER offered for a state that a
+  retry cannot fix (a missing model, a mock-only build).
+  A bad weights file fails FAST at the START of the import (the weights are
+  loaded there, off the main actor), not half-way through the separation.
+```
+
 ### 5.2 Library & Song detail (M2) — **AS-BUILT v0.2 (J-202, 2026-11-22)**
 
 ```
