@@ -12,12 +12,16 @@ import PitchLogic
 //
 // Shape of the seam (the J-105 precedent: a seam is not a UI change):
 //   · `ImportEngineFactory` produces the engine for one import.
-//   · `ImportEngineHandle` = the engine + how to ask "which bundle did this
-//     publish?" (C-9 `importedBundleID`, preferred) — the C-9 rule-3
-//     derivation lives in `BundleIdentityResolver` and is used as the fallback.
+//   · `ImportEngineHandle` = the engine + `runImport`, the ONE call shape the
+//     app uses. `runImport` hides whether the engine publishes ATOMICALLY
+//     (Paul's P-204 `importSong`) or during the frozen C-3 pair (the mock).
+//   · `PublishedImport` carries what was published: the C-9 bundle id
+//     (preferred), the source duration and the stems. The C-9 rule-3
+//     derivation lives in `BundleIdentityResolver` and is the fallback.
 //   · The MOCK stays the default for previews/tests; the REAL engine is
 //     constructed by `RealImportEngineFactory` (guarded by `#if canImport(
-//     DemucsShim)` — FALSE before the paul→main merge, TRUE after it).
+//     ImportKit) && canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE` — FALSE
+//     before the paul→main merge, TRUE after it).
 //   · Every import states WHICH engine ran (`ImportEngineKind`), so a mock
 //     demo can never be mistaken for a real separation (D-12 honesty).
 //
@@ -34,22 +38,55 @@ protocol ImportEngineFactory {
     func makeEngine(bundleRoot: URL) throws -> ImportEngineHandle
 }
 
-/// The engine plus the C-9 fact carrier.
-struct ImportEngineHandle: Sendable {
-    /// The engine itself (C-8 progress reporting + C-3 EngineAPI).
-    let engine: any ProgressReportingEngine
-    /// C-9 `importedBundleID` — nil until the bundle is PUBLISHED (C-9 rule 1:
-    /// set only after the atomic rename; nil on cancel/failure).
-    let bundleID: @Sendable () -> String?
-    /// Which engine this is (for the honest status line).
-    let kind: ImportEngineKind
+/// What an import PUBLISHED — the app-side result, engine-agnostic.
+///
+/// The app needs three facts after an import: which bundle was published
+/// (C-9), how long the separated source was (J-206's RTF denominator), and
+/// the stems (the C-9 rule-3 derivation fallback).
+///
+/// It is deliberately NOT EngineCore's `ImportOutcome`: that type is part of
+/// the contract ratification still in flight (X-209's C-9.1 clause), and the
+/// app must not be the thing that guesses a contract's shape. The engine's
+/// own result is TRANSLATED into this app-side type at the seam, so the app
+/// compiles against a shape it owns — and against the real engine's shape
+/// once the contract clause lands.
+struct PublishedImport: Sendable {
+    /// C-9 `importedBundleID` — the bundle DIRECTORY name, set only after
+    /// the atomic publish (C-9 rule 1). nil when the engine published
+    /// nothing (never a stale id pointing at staging).
+    let bundleID: String?
+    /// The duration of the separated source, in seconds. For the mock this is
+    /// a size-based ESTIMATE and the UI says so.
+    let duration_s: Double
+    /// The published stems (for the C-9 rule-3 derivation fallback). May be
+    /// empty when the engine reports its bundle id explicitly — the id is
+    /// then preferred and the derivation is never needed.
+    let stems: [Part: URL]
 }
 
-/// The C-9 producer, as seen by the app. ScriptedImportEngine already exposes
-/// `importedBundleID`; the real engine conforms to EngineCore's C-9 protocol
-/// after the paul→main merge (see `RealImportEngineFactory`).
-protocol BundleIDReporting {
-    var importedBundleID: String? { get }
+/// The engine plus the way to run an import through it.
+struct ImportEngineHandle: Sendable {
+    /// The engine itself (C-8 progress reporting + C-3 EngineAPI). The caller
+    /// sets the progress handler on THIS object before running the import.
+    let engine: any ProgressReportingEngine
+    /// Which engine this is (for the honest status line).
+    let kind: ImportEngineKind
+    /// Runs one import end-to-end and returns what was published.
+    ///
+    /// TWO CALL SHAPES, and the handle hides which one it is:
+    ///   · **atomic** — the engine owns the whole import (decode → separate →
+    ///     assemble → atomic publish) and returns the published bundle. This
+    ///     is Paul's P-204 engine (`SongBundleImportEngine.importSong`, the
+    ///     shape X-209 asks the contract to ratify).
+    ///   · **frozen C-3 pair** — the app drives `importAudio` → `separate`,
+    ///     and the engine publishes during `separate` (the C-3 semantics the
+    ///     mock follows).
+    ///
+    /// The distinction is NOT cosmetic: the real engine's `separate` returns
+    /// raw stem URLs and publishes NOTHING, so an app that drove the C-3 pair
+    /// against it would get stems but no bundle — and then fail its own
+    /// completeness check with an error that looks like a separation failure.
+    let runImport: @Sendable (URL, String) async throws -> PublishedImport
 }
 
 // MARK: - Mock factory (previews, tests, UI regression)
@@ -65,8 +102,16 @@ struct MockImportEngineFactory: ImportEngineFactory {
         let engine = ScriptedImportEngine(bundleRoot: bundleRoot, scenario: scenario, seed: seed)
         return ImportEngineHandle(
             engine: engine,
-            bundleID: { engine.importedBundleID },
-            kind: .mock)
+            kind: .mock,
+            runImport: { source, _ in
+                // The frozen C-3 pair — the mock publishes during `separate`.
+                let audio = try await engine.importAudio(url: source)
+                let stems = try await engine.separate(audio, mode: .twoStem)
+                return PublishedImport(
+                    bundleID: engine.importedBundleID,
+                    duration_s: audio.duration_s,
+                    stems: stems)
+            })
     }
 }
 
@@ -81,8 +126,16 @@ struct MockImportEngineFactory: ImportEngineFactory {
 /// check).
 enum RealEngineBuild {
     /// TRUE when the real separation engine is compiled into this build.
+    ///
+    /// The guard has THREE parts (session 7), because the real engine needs
+    /// three things to be reachable from the app target:
+    ///   · `canImport(ImportKit)` — the SPM package carrying Paul's P-204
+    ///     engine (`SongBundleImportEngine`);
+    ///   · `canImport(DemucsShim)` — the vendored demucs.cpp bridge, because
+    ///     the app INJECTS `DemucsEngine` as the engine's separator;
+    ///   · `SEPARATION_IMPORT_ENGINE` — Leto's deliberate switch (X-209 §1c).
     static var isCompiledIn: Bool {
-        #if canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
+        #if canImport(ImportKit) && canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
         return true
         #else
         return false
@@ -123,7 +176,7 @@ enum ImportEngineResolver {
             modelURL: modelURL)
         switch availability {
         case .realReady, .realModelMissing:
-            #if canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
+            #if canImport(ImportKit) && canImport(DemucsShim) && SEPARATION_IMPORT_ENGINE
             // The real engine reports a missing model itself, with an
             // actionable message ("download it in Settings → Models").
             return RealImportEngineFactory(modelURL: modelURL)

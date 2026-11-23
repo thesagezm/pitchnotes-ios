@@ -79,6 +79,14 @@ final class ImportModel: ObservableObject {
     private var store: BundleStore?
     private var importTask: Task<Void, Never>?
     private var tracker = ImportProgressTracker()
+    /// The separation pass, measured from the C-8 stage stream (J-206).
+    /// See `SeparationTimer` for why the number comes from the progress
+    /// events and not from wrapping the `separate()` call.
+    private var separationTimer = SeparationTimer()
+    /// The thermal state at the band edges (the AC: thermal at start/end of
+    /// the separation pass). Sampled on the band transitions, not per event.
+    private var thermalAtSeparationStart: ThermalLevel = .nominal
+    private var thermalAtSeparationEnd: ThermalLevel = .nominal
     private var scopedURL: URL?
     private var thermalObserver: NSObjectProtocol?
     /// The import-pass metrics collector (J-206) — samples the resident
@@ -188,6 +196,9 @@ final class ImportModel: ObservableObject {
         }
 
         tracker = ImportProgressTracker()
+        separationTimer = SeparationTimer()
+        thermalAtSeparationStart = ThermalLevelBridge.current
+        thermalAtSeparationEnd = ThermalLevelBridge.current
         progress = nil
         progressViolations = 0
         importStartedAt = Date()
@@ -230,28 +241,49 @@ final class ImportModel: ObservableObject {
                     self.progress = enforced
                     self.progressViolations =
                         self.tracker.clippedNonMonotonicEvents + self.tracker.rejectedEvents
+                    // J-206: the separation band is measured from the stage
+                    // stream (the one signal both call shapes share — the
+                    // atomic `importSong` path has no app-visible `separate`
+                    // call to wrap). The thermal state is sampled exactly at
+                    // the band edges (the AC: thermal at start/end).
+                    switch self.separationTimer.observe(stage: progress.stage, at: Date()) {
+                    case .opened:
+                        self.thermalAtSeparationStart = ThermalLevelBridge.current
+                    case .closed:
+                        self.thermalAtSeparationEnd = ThermalLevelBridge.current
+                    case .none:
+                        break
+                    }
                 }
             }
             do {
-                let audio = try await engine.importAudio(url: sourceURL)
+                // ONE call shape for both engines (J-208, session 7): the
+                // seam's `runImport` is the ATOMIC import for the real engine
+                // (it owns decode → separate → assemble → atomic publish) and
+                // the frozen C-3 pair for the mock. The app never names a
+                // concrete engine and never has to know which shape it got.
+                let published = try await handle.runImport(sourceURL, title)
                 // J-206: the metrics cover the SEPARATION pass (the engine
                 // work the §8 budget and the L-204 AC talk about): its wall
-                // time, the source duration it separated, and the thermal
-                // state at both ends of the pass.
-                let thermalAtStart = ThermalLevelBridge.current
-                let separationStartedAt = Date()
-                let stems = try await engine.separate(audio, mode: .twoStem) // D-9: two-stem always
-                let separationWallTime = Date().timeIntervalSince(separationStartedAt)
-                let thermalAtEnd = ThermalLevelBridge.current
+                // time (from the stage band), the source duration it
+                // separated, and the thermal state at both ends of the pass.
                 let peakBytes = metricsCollector.stop()
                 self.livePeakResidentBytes = peakBytes
-                self.metrics = ImportDeviceMetrics(
-                    separationWallTime_s: separationWallTime,
-                    sourceDuration_s: audio.duration_s,
-                    peakResidentBytes: peakBytes,
-                    thermalAtStart: thermalAtStart,
-                    thermalAtEnd: thermalAtEnd,
-                    sourceDurationIsEstimate: handle.kind == .mock)
+                // HONESTY (D-12): if the band was never observed, there is NO
+                // separation number to report — a fabricated 0.0 would read as
+                // "infinitely fast" in the RTF line. No metrics at all is the
+                // truthful state.
+                if let separationWallTime = self.separationTimer.separationWallTime_s {
+                    self.metrics = ImportDeviceMetrics(
+                        separationWallTime_s: separationWallTime,
+                        sourceDuration_s: published.duration_s,
+                        peakResidentBytes: peakBytes,
+                        thermalAtStart: self.thermalAtSeparationStart,
+                        thermalAtEnd: self.thermalAtSeparationEnd,
+                        sourceDurationIsEstimate: handle.kind == .mock)
+                } else {
+                    self.metrics = nil
+                }
 
                 // Post-separate bookkeeping OFF the main actor (file I/O):
                 // consumer-rule completeness check (C-2.2) + index register.
@@ -261,8 +293,8 @@ final class ImportModel: ObservableObject {
                 // registered).
                 let record = try await Task.detached(priority: .utility) { () -> BundleRecord in
                     let resolvedID = BundleIdentityResolver.resolveBundleID(
-                        producerID: handle.bundleID(),
-                        stems: stems,
+                        producerID: published.bundleID,
+                        stems: published.stems,
                         bundleRoot: store.root)
                     guard let id = resolvedID,
                           store.isCompleteBundle(at: store.root.appendingPathComponent(id, isDirectory: true)) else {
@@ -275,7 +307,7 @@ final class ImportModel: ObservableObject {
                         sourceFileName: sourceURL.lastPathComponent,
                         sourceBookmark: bookmark,
                         addedAt: Date(),
-                        duration_s: audio.duration_s)
+                        duration_s: published.duration_s)
                 }.value
                 try await Task.detached(priority: .utility) {
                     try store.register(record)
@@ -310,6 +342,7 @@ final class ImportModel: ObservableObject {
         importTask?.cancel()
         importTask = nil
         tracker = ImportProgressTracker()
+        separationTimer = SeparationTimer()
         progress = nil
         importStartedAt = nil
         livePeakResidentBytes = metricsCollector.stop()
