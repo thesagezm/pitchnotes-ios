@@ -229,9 +229,80 @@ applied to vendor/ @d007780 (Leto, + patches.log) with one ternary correction
 origin/leto). Device target: ≤ 2× song length (stretch ≤ 1×) — A14 rows land
 at P-603 device runs.
 
+### 4.2 P-202 L4(a) — the 4-minute no-OOM run (240 s planDefault arm)
+
+**What this measures (P-202's ac leg: "4-min synthetic processes without OOM").**
+One arm — the **planDefault** policy (8.0 s window / 2.0 s overlap / linear
+crossfade), i.e. the Rule-3 reversible option — on a **240.0 s** deterministic
+music-shaped synthetic mix, so the song is **8× the L3 fixture's 30 s**. The
+question is narrow and it is the memory one: **does the peak RSS stay inside
+the Linux 2.0 GB spike sanity bound while the song grows 8×?** (the D-25
+quality comparison stays in the 30 s L3 rows — the reference outputs for that
+length were deliberately moved aside, so no mismatched-length SDR could be
+computed; the SDR/NSDR cells here read n/a honestly rather than n/m-by-mistake).
+Harness: `Tests/Spikes/demucs_chunk_bench.py --seconds 240 --repeats 1 --arms
+planDefault` (+ the `demucs_runner` chunked mirror); report artifact
+`Tests/Spikes/.demucs-build/chunk_bench_report_l4a_240s.json` (gitignored),
+table `chunk_bench_table_l4a_240s.md`. Fixture `bench_mix_240s.wav` (240.0 s —
+**not committed**, >1 MB policy). Weights: htdemucs fp16 ggml, sha256
+`72b17c42…df0064` (D-32.6 FALLBACK Retrobear, **Tier B per D-30**). Vendor
+threads: 1 (the same setting as §4/§4.1). Model load: 0.893 s.
+
+| Engine | Fixture | SDR | NSDR | Chunk | Time | RSS | Thermal | Env |
+|---|---|---|---|---|---|---|---|---|
+| demucs.cpp htdemucs fp16 ggml — **planDefault arm, 240 s (L4(a))** | bench_mix_240s.wav (240.0 s) | n/a — the 30 s reference outputs were moved aside, so no mismatched-length comparison was possible (the paired quality comparison lives in the §4.1 L3 rows) | n/a | 8.0 s / 2.0 s crossfade → **40 external windows / 80 vendor segments** | wall **8717.6 s** (2 h 25 min 18 s); **RTF 36.32** | **1805 MB** (1 848 088 KB) | n/m (Linux dev box — no thermal API) | Linux x86_64 dev box, g++ -O2, 1 vendor thread, htdemucs fp16 ggml sha 72b17c42…df0064, paul @b01cd9e, 2026-11-23 |
+
+**THE VERDICT — the ac is MET: peak RSS stays under the Linux 2.0 GB spike
+bound while the song grows 8×.**
+
+| | 30 s (L3, §4.1 planDefault) | 240 s (L4(a), this row) | Δ |
+|---|---|---|---|
+| song length | 30.0 s | 240.0 s | **8×** |
+| external windows | 5 | 40 | 8× |
+| vendor segments | 10 | 80 | 8× |
+| **peak RSS** | **1778 MB** (median of 3; 1740–1788) | **1805 MB** (1 repeat) | **+27 MB (+1.5 %)** |
+| RTF | 43.28 (40.53–43.73) | 36.32 | −16 % (better, see below) |
+| wall | 1298.5 s | 8717.6 s | 6.7× |
+
+- **The peak does NOT scale with song length on this path.** Eight times the
+  audio cost **+27 MB (+1.5 %)**, not 8× the memory: the peak is the vendor's
+  per-segment working set (~1.7–1.8 GB), which is the same for every window,
+  while the whole-song accumulation (the C++ mirror keeps the blended stems in
+  RAM; the Swift driver keeps the two blended output stems) is a small
+  additive term on top of it. **1805 MB < the Linux 2.0 GB spike sanity bound**
+  ⇒ the 4-minute synthetic processed without OOM, with ~195 MB of headroom.
+- **RTF improved with length (36.32 vs 43.28), and the cost model says why:**
+  the vendor pads every external window to full internal 7.8 s segments, so a
+  SHORT song pays proportionally more padding (a 30 s fixture = 5 windows, each
+  costing 2 segments; the tail + the first window's padding are a big fraction
+  of 30 s). At 240 s the same fixed overhead is amortised over 8× more audio.
+  The 30 s number is therefore the PESSIMISTIC end of the range and the 240 s
+  number the optimistic one — the long-form RTF is the one that matters for a
+  real song, and it is still **36× the audio duration**, i.e. **far above §8's
+  ≤ 2× song-length device budget** (unchanged by this run; the A14 numbers are
+  P-603).
+- **Honest scope of the row:** it is a **Linux dev-box** measurement of the
+  **C++ MIRROR** of the Swift driver's window plan (the Swift blend math is
+  separately unit-proven in EngineCore), **1 vendor thread**, **1 repeat** (the
+  L3 rows carry the median-of-3 spread; this row is a single long run), and a
+  synthetic fixture. It says nothing about the A14, the device RAM budget
+  (§8's 1.5 GB is the DEVICE target — P-603), or real-music quality.
+- **THE STREAMING FOLLOW-UP (recorded, not re-litigated):** the Swift driver
+  still ACCUMULATES the blended stems for the whole song in memory
+  (`ChunkedSeparationDriver.acc`), while P-202's own task line says "streaming
+  decode→process→write". This row shows the accumulation is NOT the peak
+  driver on the mirror (the vendor's working set is), but it is still a term
+  that grows with song length — on a 12-minute song it is ~2.5× this row's
+  additive term. **A streaming writer (write each window's blended stems to
+  disk instead of accumulating them) is the follow-up item; it is NOT
+  refactored into this gate.**
+
+## 5. Results — note tracking (M3)
+
 *Empty — fills at M3. Columns: stage | fixture | onset F1@50ms | part-aware macro
 F1 | multi-f0 P/R/F1 | RTF | env. Real-fixture results stated honestly against
 the PawCT 0.225 ceiling.*
+
 
 | Stage | Fixture | Onset F1 | Part-aware F1 | Multi-f0 P/R/F1 | RTF | Env |
 |---|---|---|---|---|---|---|
@@ -255,3 +326,5 @@ the PawCT 0.225 ceiling.*
 | v1.4 | 2026-11-22 | P-201 real-weights rows FILLED: serial RTF 45.24 (pristine intake) / patched-binary rows 38.07 (1-thr) / 40.52 (2-thr) / 34.50 (4-thr) — **byte-identical stems at every thread count (dev box + macOS runner), NO reliable thread speedup on dev box (verdict for D-25: chunk policy + quality mode are the levers, patch kept as harmless)**; recon-SDR 38.28 dB; S4 → honest instrumental gate (tone fixture routes to OTHER); S8 → per-OS spike bound (Linux 2.0 GB / macOS-runner 3.75 GB ceiling after fixing the ru_maxrss bytes-vs-KiB bug found by runner run 45023115947 — S3/S4/S5/S6 all passed on the runner's first real-path run); long-form RTF ~12–13 derived estimate noted; §8 1.5 GB DEVICE target unchanged (P-603). |
 | v1.5 | 2026-11-22 | P-208: §1 parity methodology bullet (D-24/C-7 — Python reference vs Swift/ORT, tolerance abs 1e-3 OR rel 1e-4, sha binding first). Parity is a CORRECTNESS check, not a benchmark row; no numbers change. engine-parity CI job spec = X-205 (Leto). |
 | v1.6 | 2026-11-23 | **P-202 L3 (D-25 chunk benchmark) FILLED — §4.1 added.** 30 s deterministic synthetic mix, htdemucs fp16 ggml sha 72b17c42…df0064 (Tier B, D-30), 1 vendor thread, 3 PAIRED repeats, median + spread, Linux dev box (env-labeled — NOT A14 numbers). medians: reference (whole-song) RTF 23.07 / RSS 1829 MB; muskeyRecipe (4.5 s/1 s) SDR all-src 1.63 dB, instr 8.07 dB, NSDR −21.28 dB, RTF 34.94, RSS 1767 MB; planDefault (8 s/2 s) SDR all-src 6.39 dB, instr 12.11 dB, NSDR −16.51 dB, RTF 43.28, RSS 1778 MB. **D-25 protocol outcome = Rule 3 (ESCALATION):** Rule 1 fails on the SDR gate (muskey 4.76 dB behind plan), Rule 2's "both in budget" precondition fails (neither arm meets RTF ≤ 2× or RSS < 1.5 GB; the reference itself is RTF 23.07) ⇒ escalated to Leto WITH the numbers; reversible option = **planDefault, flagged** (not silently shipped). Recorded honestly: chunking LOSES on RTF by construction (the vendor pads every window to a full 7.8 s segment) and buys ~3 % peak RSS at 30 s; the vocals-SDR column is flagged as not meaningful on this fixture (htdemucs routes the tone energy to OTHER); the C++ harness is a MIRROR of the Swift driver's window plan + linear crossfade (Swift blend math unit-proven in EngineCore); the A14 numbers remain P-603. |
+| v1.7 | 2026-11-23 | **P-202 L4(a) — the 4-minute no-OOM run — FILLED (§4.2 added).** 240.0 s deterministic synthetic mix (8× the L3 fixture), planDefault arm (8 s/2 s), 1 vendor thread, 1 repeat, Linux dev box (env-labeled — NOT A14 numbers): **40 external windows / 80 vendor segments, wall 8717.6 s, RTF 36.32, peak RSS 1805 MB**. **The ac is MET: the peak does NOT scale with song length — 8× the audio cost +27 MB (+1.5 %) vs the 30 s row's 1778 MB, and 1805 MB stays under the Linux 2.0 GB spike sanity bound (~195 MB of headroom), because the peak is the vendor's per-segment working set (~1.7–1.8 GB), not the whole-song accumulation.** The SDR/NSDR cells read n/a honestly (the 30 s reference outputs were moved aside, so no mismatched-length comparison was possible — the paired quality comparison stays in §4.1). RTF improved with length (36.32 vs 43.28) because the vendor's fixed per-window padding amortises over a longer song — and it is still 36× the audio duration, far above §8's ≤ 2× device budget (A14 numbers remain P-603). Recorded as a follow-up, not refactored into this gate: the Swift driver still accumulates the blended stems for the whole song (`ChunkedSeparationDriver.acc`) while P-202's task line says "streaming decode→process→write". Also: the missing "## 5" header above the M3 table is restored. |
+
