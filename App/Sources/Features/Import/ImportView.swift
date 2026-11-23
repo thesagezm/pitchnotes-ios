@@ -347,6 +347,18 @@ struct ImportFlowSheet: View {
                 .accessibilityHidden(true)
             Text(error.title)
                 .font(Token.Fonts.heading)
+            // The SPECIFIC reason (session 8). The app has always written
+            // actionable messages into the error cases ("download it in
+            // Settings → Models"); the failure screen rendered only the
+            // title and the recovery line, so the reason never reached the
+            // human.
+            if let detail = error.detail {
+                Text(detail)
+                    .font(Token.Fonts.body)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Token.Spacing.s4)
+                    .accessibilityLabel("Details: \(detail)")
+            }
             Text(error.recoverySuggestion)
                 .font(Token.Fonts.body)
                 .foregroundStyle(Color.pnTextSecondary)

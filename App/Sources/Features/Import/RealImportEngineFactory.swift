@@ -77,34 +77,48 @@ struct RealImportEngineFactory: ImportEngineFactory {
 
     func makeEngine(bundleRoot: URL) throws -> ImportEngineHandle {
         guard let modelURL else {
-            throw ImportError.engineFailure(
+            throw ImportError.separationUnavailable(
                 "The separation model (htdemucs, 84 MB) is not on this device yet. Download it in Settings → Models, then import again.")
         }
         guard FileManager.default.fileExists(atPath: modelURL.path) else {
-            throw ImportError.engineFailure(
+            throw ImportError.separationUnavailable(
                 "The separation model file is missing from the app's cache. Download it again in Settings → Models.")
         }
-        do {
-            // The app owns the weights path; the engine owns the separation.
-            let demucs = DemucsEngine(modelPath: modelURL)
-            let engine = SongBundleImportEngine(libraryRoot: bundleRoot,
-                                                 separator: demucs.separationRun())
-            return ImportEngineHandle(
-                engine: engine,
-                kind: .real,
-                runImport: { source, title in
-                    // The ATOMIC call shape: the engine owns decode → separate
-                    // → assemble → publish. (The frozen C-3 pair is NOT used
-                    // here — the real engine's `separate` publishes nothing.)
-                    let outcome = try await engine.importSong(source: source, title: title)
-                    return PublishedImport(
-                        bundleID: outcome.bundleID,
-                        duration_s: outcome.manifest.duration_s,
-                        stems: Self.publishedStems(in: outcome))
-                })
-        } catch {
-            throw ImportError.engineFailure("The separation model could not be loaded: \(error)")
-        }
+        // The app owns the weights path; the engine owns the separation.
+        //
+        // `DemucsEngine.init` does NOT throw — the weights are loaded LAZILY
+        // (Paul's `loadModelIfNeeded()`), so a corrupt file used to surface
+        // MID-SEPARATION as a cryptic engine error, half-way through a long
+        // import. The load is done HERE, at the START of the import, so it
+        // fails fast with the actionable message (Leto's note on X-212).
+        //
+        // It runs OFF the main actor: `runImport` is a non-isolated async
+        // closure, so the 84 MB dequantize never blocks the UI thread (the
+        // factory itself is called from the main actor — putting the load
+        // there would freeze the screen for the length of the load).
+        let demucs = DemucsEngine(modelPath: modelURL)
+        let engine = SongBundleImportEngine(libraryRoot: bundleRoot,
+                                             separator: demucs.separationRun())
+        return ImportEngineHandle(
+            engine: engine,
+            kind: .real,
+            runImport: { source, title in
+                // Fail fast on a bad weights file, BEFORE the long job.
+                do {
+                    try demucs.loadModelIfNeeded()
+                } catch {
+                    throw ImportError.separationUnavailable(
+                        "The separation model could not be loaded (\(error)). Download it again in Settings → Models.")
+                }
+                // The ATOMIC call shape: the engine owns decode → separate
+                // → assemble → publish. (The frozen C-3 pair is NOT used
+                // here — the real engine's `separate` publishes nothing.)
+                let outcome = try await engine.importSong(source: source, title: title)
+                return PublishedImport(
+                    bundleID: outcome.bundleID,
+                    duration_s: outcome.manifest.duration_s,
+                    stems: Self.publishedStems(in: outcome))
+            })
     }
 
     /// The published stems, read off the manifest the engine wrote.

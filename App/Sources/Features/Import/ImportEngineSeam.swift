@@ -206,7 +206,10 @@ struct UnavailableRealEngineFactory: ImportEngineFactory {
     let reason: String
 
     func makeEngine(bundleRoot: URL) throws -> ImportEngineHandle {
-        throw ImportError.engineFailure(
+        // Its own case (session 8): the human cannot fix this by retrying or
+        // downloading — this BUILD has no real separation engine. Saying
+        // "retry" here would send the demo into a loop.
+        throw ImportError.engineUnavailable(
             "Real separation is not available: \(reason). A demo import on the mock engine is not a real separation.")
     }
 }

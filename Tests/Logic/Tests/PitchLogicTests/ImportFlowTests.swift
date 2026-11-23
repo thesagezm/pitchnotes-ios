@@ -115,8 +115,11 @@ final class ImportFailureMappingTests: XCTestCase {
                        .decodeFailed("bad"))
         XCTAssertEqual(ImportFailure.cause(from: EngineError.separationFailed("s")),
                        .engineFailure("s"))
+        // The weights could not be loaded ⇒ the human's next step is the
+        // DOWNLOAD, not a retry — so it maps to its own case (session 8).
         XCTAssertEqual(ImportFailure.cause(from: EngineError.modelMissing("m")),
-                       .engineFailure("m"))
+                       .separationUnavailable(
+                        "The separation model could not be loaded. Download it again in Settings → Models."))
         XCTAssertEqual(ImportFailure.cause(from: EngineError.contractViolation("v")),
                        .engineFailure("v"))
     }
@@ -149,12 +152,51 @@ final class ImportFailureMappingTests: XCTestCase {
         let cases: [ImportError] = [
             .unsupportedFile("x"), .permissionDenied,
             .diskFull(neededBytes: 1, availableBytes: 0),
-            .decodeFailed("x"), .engineFailure("x"), .cancelled, .unknown("x"),
+            .decodeFailed("x"), .engineFailure("x"),
+            .separationUnavailable("x"), .engineUnavailable("x"),
+            .cancelled, .unknown("x"),
         ]
         for e in cases {
             XCTAssertFalse(e.title.isEmpty)
             XCTAssertFalse(e.recoverySuggestion.isEmpty)
         }
+    }
+
+    /// The specific reason must REACH the screen (session 8): the app has
+    /// always written actionable messages into the error cases, and the
+    /// failure view used to render only the title + the recovery line — so
+    /// "download it in Settings → Models" never appeared.
+    func testDetailCarriesTheSpecificReason() {
+        XCTAssertEqual(ImportError.separationUnavailable("download the model").detail,
+                       "download the model")
+        XCTAssertEqual(ImportError.engineUnavailable("no real engine").detail,
+                       "no real engine")
+        XCTAssertEqual(ImportError.engineFailure("boom").detail, "boom")
+        XCTAssertNil(ImportError.cancelled.detail)
+        XCTAssertNotNil(ImportError.permissionDenied.detail)
+    }
+
+    /// The two new cases must NOT give "retry" advice — the fix is different
+    /// for each (download the model / use a real build).
+    func testModelAndBuildFailuresGetTheirOwnAdvice() {
+        let model = ImportError.separationUnavailable("x")
+        XCTAssertTrue(model.recoverySuggestion.contains("Settings → Models"))
+        XCTAssertFalse(model.recoverySuggestion.contains("Retrying usually helps"))
+
+        let build = ImportError.engineUnavailable("x")
+        XCTAssertTrue(build.recoverySuggestion.contains("build"))
+        XCTAssertFalse(build.recoverySuggestion.contains("Retrying usually helps"))
+    }
+
+    /// The disk-full state shows needed-vs-available (UX §5.1) — in units the
+    /// human can act on, not raw bytes.
+    func testDiskFullDetailShowsNeededVersusAvailableInMegabytes() {
+        let e = ImportError.diskFull(neededBytes: 2_097_152, availableBytes: 1_048_576)
+        let detail = e.detail ?? ""
+        XCTAssertTrue(detail.contains("2.0 MB"), detail)
+        XCTAssertTrue(detail.contains("1.0 MB"), detail)
+        XCTAssertEqual(ImportByteFormat.megabytes(1_048_576), "1.0 MB")
+        XCTAssertEqual(ImportByteFormat.megabytes(0), "0.0 MB")
     }
 }
 

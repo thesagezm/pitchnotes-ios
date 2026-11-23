@@ -15,6 +15,21 @@ public enum ImportError: Error, Equatable, Sendable {
     case diskFull(neededBytes: Int64, availableBytes: Int64)
     case decodeFailed(String)
     case engineFailure(String)
+    /// The SEPARATION MODEL is not usable for this import — it was never
+    /// downloaded, the cached file is corrupt, or the weights could not be
+    /// loaded. The app owns the download (J-207), so this case always carries
+    /// the instruction that actually fixes it.
+    ///
+    /// It exists as its OWN case (not `.engineFailure`) because the advice
+    /// differs: "download the model" is the fix here, while "retry" is the
+    /// fix for a transient engine failure. Telling a human to retry a missing
+    /// 84 MB download is exactly the wrong advice at the demo (UX §10.2
+    /// step 0 — the human checks the model state BEFORE importing).
+    case separationUnavailable(String)
+    /// THIS BUILD cannot do a real separation (the real engine is not
+    /// compiled in). The user cannot fix this by retrying or downloading —
+    /// it needs a build with the real engine, so it gets its own advice too.
+    case engineUnavailable(String)
     case cancelled
     case unknown(String)
 
@@ -27,6 +42,8 @@ public enum ImportError: Error, Equatable, Sendable {
         case .diskFull: return "Not enough storage"
         case .decodeFailed: return "Couldn't read the audio"
         case .engineFailure: return "Import failed"
+        case .separationUnavailable: return "Separation model unavailable"
+        case .engineUnavailable: return "Real separation unavailable"
         case .cancelled: return "Import cancelled"
         case .unknown: return "Import failed"
         }
@@ -39,9 +56,45 @@ public enum ImportError: Error, Equatable, Sendable {
         case .diskFull: return "Free up space (Settings → Storage shows per-song usage) and try again."
         case .decodeFailed: return "The file may be corrupt or an unusual codec. Try exporting it as WAV or FLAC."
         case .engineFailure: return "Something went wrong while processing. Retrying usually helps; nothing partial was saved."
+        case .separationUnavailable: return "Download the separation model in Settings → Models, then import again. Nothing partial was saved."
+        case .engineUnavailable: return "This build of PitchNotes cannot separate audio for real. Use a build with the real separation engine — a demo (mock) build cannot make a real import."
         case .cancelled: return "No partial import was saved."
         case .unknown: return "Nothing partial was saved. Retrying usually helps."
         }
+    }
+
+    /// The SPECIFIC reason, rendered under the title (nil when the title and
+    /// the recovery line already say everything).
+    ///
+    /// WHY THIS EXISTS (session 8): the app has always written ACTIONABLE
+    /// messages into the error cases ("The separation model (htdemucs, 84 MB)
+    /// is not on this device yet. Download it in Settings → Models…"), but
+    /// the failure screen rendered only the title and the recovery line —
+    /// so the reason never reached the human. The copy was written for the
+    /// screen and the screen dropped it.
+    public var detail: String? {
+        switch self {
+        case .unsupportedFile(let msg): return msg
+        case .permissionDenied: return "PitchNotes could not open the selected file."
+        case .diskFull(let needed, let available):
+            // UX §5.1: the disk-full state shows needed-vs-available bytes.
+            return "This import needs about \(ImportByteFormat.megabytes(needed)) of free space; this iPhone has \(ImportByteFormat.megabytes(available)) free."
+        case .decodeFailed(let msg): return msg
+        case .engineFailure(let msg): return msg
+        case .separationUnavailable(let msg): return msg
+        case .engineUnavailable(let msg): return msg
+        case .cancelled: return nil
+        case .unknown(let msg): return msg
+        }
+    }
+}
+
+/// Byte formatting for the user-facing copy (the disk-full state).
+public enum ImportByteFormat {
+    /// A megabyte with one decimal — the unit the human can act on (the raw
+    /// byte count is a developer's number).
+    public static func megabytes(_ bytes: Int64) -> String {
+        String(format: "%.1f MB", Double(bytes) / 1_048_576)
     }
 }
 
@@ -54,8 +107,14 @@ public enum ImportFailure {
         switch error {
         case EngineError.unsupportedFormat(let msg): return .unsupportedFile(msg)
         case EngineError.importFailed(let msg): return .decodeFailed(msg)
+        case EngineError.modelMissing:
+            // The ENGINE could not load the weights. The raw engine text
+            // ("demucs ggml load failed (status …)") is a developer's number;
+            // the human's next step is the same in every case — download the
+            // model again (J-207 owns the download) — so the app says THAT.
+            return .separationUnavailable(
+                "The separation model could not be loaded. Download it again in Settings → Models.")
         case EngineError.separationFailed(let msg),
-             EngineError.modelMissing(let msg),
              EngineError.contractViolation(let msg):
             return .engineFailure(msg)
         default: break
