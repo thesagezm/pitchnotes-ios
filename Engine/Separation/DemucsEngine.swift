@@ -179,18 +179,20 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
         try Task.checkCancellation()
         try loadModelIfNeeded()
 
-        // The staged mix: float32 WAV (P-203 staging format), channel-
-        // preserving (PCMWaveReader mono-folds and would lose stereo).
-        let (frames, sampleRate, mixChannels) = try readStagedMix(url: audio.url)
-        guard sampleRate == 44100 else {
+        // P-209 (the P-202 follow-up): the staged mix is read WINDOW BY WINDOW
+        // from disk — the song is NEVER held in memory (the old path read the
+        // whole f32 staging WAV, upmixed it to stereo and accumulated every
+        // blended frame: two O(song) terms).
+        let source = try PCMF32WavWindowSource(url: audio.url)
+        guard source.sampleRate == 44100 else {
             throw EngineError.unsupportedFormat(
-                "separate input must be the decoded 44.1 kHz mix (got \(sampleRate))")
+                "separate input must be the decoded 44.1 kHz mix (got \(source.sampleRate))")
         }
-
         // Processing layout is always stereo (the shim's contract): a mono mix
-        // is upmixed. D-8's stem policy (voice MONO / instrumental STEREO) is
-        // applied at staging time, after the blend.
-        let stereo = try SeparationChannels.upmixToStereo(frames: frames, channels: mixChannels)
+        // is upmixed per window — the same math as the old whole-song path.
+        // D-8's stem policy (voice MONO / instrumental STEREO) is applied by
+        // the SINK as the frames are written, never mid-blend.
+        let stereoSource = StereoWindowSource(base: source)
 
         var config = ChunkedSeparationDriver.Config()
         config.progressBand = (0.05, 0.90)
@@ -208,22 +210,30 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
         do {
             try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
 
-            let stems = try await driver.run(audio: stereo, channels: 2, engine: self)
-            guard let vocalsStem = stems[.vocals], let instrumentalStem = stems[.instrumental] else {
-                throw EngineError.contractViolation(
-                    "separation returned no two-stem pair (D-9): \(stems.keys.sorted())")
+            let vocalsURL = staging.appendingPathComponent("vocals.wav")
+            let instrumentalURL = staging.appendingPathComponent("instrumental.wav")
+            // The streaming path: each window's blended stems are written to
+            // disk as soon as they are final (the driver's retained buffer is
+            // bounded by ONE window). On failure or cancellation the sinks
+            // are aborted — no partial stem file survives.
+            _ = try await driver.runStreaming(source: stereoSource, engine: self) { part in
+                switch part {
+                case .vocals:
+                    // D-8: voice MONO.
+                    return try PCM16StreamWriter(url: vocalsURL, sampleRate: 44100,
+                                                 outputChannels: 1)
+                case .instrumental:
+                    // D-8: instrumental STEREO.
+                    return try PCM16StreamWriter(url: instrumentalURL, sampleRate: 44100,
+                                                 outputChannels: 2)
+                default:
+                    throw EngineError.contractViolation(
+                        "separation produced an unexpected part \(part.rawValue) (M2 is the D-9 two-stem pair)")
+                }
             }
 
             emitter.emit(ImportProgress(stage: .separating, fraction: 0.95,
                                         detail: "staging stems"))
-            let vocalsURL = staging.appendingPathComponent("vocals.wav")
-            let instrumentalURL = staging.appendingPathComponent("instrumental.wav")
-            // D-8: voice MONO, instrumental STEREO.
-            try PCMWavWriter.write(url: vocalsURL,
-                                   samples: try SeparationChannels.toMono(stereo: vocalsStem),
-                                   sampleRate: 44100, channels: 1)
-            try PCMWavWriter.write(url: instrumentalURL, samples: instrumentalStem,
-                                   sampleRate: 44100, channels: 2)
             emitter.emit(ImportProgress(stage: .separating, fraction: 1.0,
                                         detail: "separation complete"))
             return [.vocals: vocalsURL, .instrumental: instrumentalURL]
@@ -358,19 +368,6 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
 
         let nSources = Int(demucs_shim_num_sources(handle))
         return Array(UnsafeBufferPointer(start: stems, count: nSources * 2 * Int(out.count)))
-    }
-
-    /// Reads the staged mix, channel-preserving. The P-203 staging format is
-    /// float32 WAV (PCMF32Wav); the legacy PCM16 path (PCMWaveReader,
-    /// mono-folded) is accepted as a fallback for older staging files.
-    private func readStagedMix(url: URL) throws -> (frames: [Float], sampleRate: Int, channels: Int) {
-        do {
-            let mix = try PCMF32Wav.read(url: url)
-            return (mix.frames, mix.sampleRate, mix.channels)
-        } catch {
-            let legacy = try PCMWaveReader.read(url: url)
-            return (legacy.samples, legacy.sampleRate, 1)
-        }
     }
 
     /// Portable thermal state (ProcessInfo.thermalState is Darwin-only; the
