@@ -24,25 +24,30 @@ import EngineCore
 // does the same job natively — it owns the ALAC encoder, accepts plain PCM
 // buffers and finalises the `.m4a` container when it is released — so the
 // writer uses `AVAudioFile(forWriting:settings:commonFormat:interleaved:)`
-// and copies the source's deinterleaved planes into it.
+// with a float32 / non-interleaved processing format (the only layout the
+// ALAC encoder accepts) and copies the source's deinterleaved planes into it.
 //
-// WHY A STRATEGY LADDER (P-204, after the first macOS RUNTIME verdict):
-// the ALAC encode failed at runtime in every test with ONE opaque error —
-// "The operation couldn't be completed. (Foundation._GenericObjCError error
-// 0.)" — which says nothing about WHICH step failed (opening the output,
-// reading the source, or writing a chunk) nor WHY. Linux cannot run
-// AVFoundation at all, so the only way to make progress is to make ONE CI
-// round trip DECISIVE: every plausible strategy is tried in order, every
-// failure is recorded with its per-step diagnostics (domain, code, userInfo),
-// and the aggregate error names every attempt. Two causes could not be ruled
-// out from the source alone:
-//   (a) the bit-depth HINT (`AVEncoderBitDepthHintKey`) contradicting the
-//       float32 client format the encoder is fed;
-//   (b) the `read(into:frameCount:)` overload refusing a SHORT final read
-//       (a 44 100-frame source ends on a partial 3 140-frame chunk).
-// The ladder covers both, plus the int16 client layout, and the first
-// strategy that works wins — the winner is logged, so the next session
-// knows which strategy the shipping path uses.
+// THE RUNTIME FAILURE AND ITS ROOT CAUSE (P-204, measured on the macOS
+// runner — run 45156291152@1935a0f GREEN, 8/8): the encode used to die with
+// ONE opaque error ("The operation couldn't be completed.
+// (Foundation._GenericObjCError error 0.)") for every stem, mono and stereo.
+// The cause is NOT the encoder, NOT the settings and NOT the bit-depth hint:
+// `AVAudioFile.read(into:frameCount:)` **throws when the source has fewer
+// frames left than the requested count**, and the old loop always asked for a
+// FULL 8 192-frame chunk — a 44 100-frame stem ends on a 3 140-frame
+// remainder, so every encode failed on its LAST read. The fix is to request
+// exactly the frames that remain. (This was found with a temporary STRATEGY
+// LADDER — six variants of the client layout / read overload, every failure
+// reported per step with its NSError domain, code and userInfo — because
+// Linux cannot run AVFoundation and the failure mode was identical for every
+// cause. The ladder's winner was the first, documented variant, which pinned
+// the cause; the ladder is GONE and only the proven path remains, with the
+// per-step diagnostics kept so a future failure names the step that broke.)
+//
+// PER-STEP DIAGNOSTICS (kept deliberately): the encode reports the step it
+// failed in — open / read / copy / write — with the NSError's domain, code
+// and userInfo. "It didn't work" is not an acceptable error message for a
+// native-codec path.
 
 public struct ALACStemWriter: StemEncoding {
 
@@ -60,19 +65,12 @@ public struct ALACStemWriter: StemEncoding {
         public let channels: Int
         public let bytes: Int
         public let durationSeconds: Double
-        /// Which encode strategy actually produced the file (the ladder's
-        /// winner — e.g. "float32+hint16+frameCount"). Reported so the
-        /// ladder can be trimmed to the ONE strategy the shipping path uses
-        /// once the macOS verdict is recorded.
-        public let strategy: String
 
-        public init(part: Part, channels: Int, bytes: Int, durationSeconds: Double,
-                    strategy: String = "") {
+        public init(part: Part, channels: Int, bytes: Int, durationSeconds: Double) {
             self.part = part
             self.channels = channels
             self.bytes = bytes
             self.durationSeconds = durationSeconds
-            self.strategy = strategy
         }
 
         /// Megabytes (10^6 bytes) per minute of audio.
@@ -123,142 +121,71 @@ public struct ALACStemWriter: StemEncoding {
         let sourceBitDepth = (probe.fileFormat.settings[AVLinearPCMBitDepthKey] as? Int) ?? 16
         let frames = Int(probe.length)
 
-        let baseSettings: [String: Any] = [
+        let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatAppleLossless),
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: channels,
+            AVEncoderBitDepthHintKey: sourceBitDepth,
         ]
 
-        // The ladder: every strategy is tried; EVERY failure is kept.
-        var failures: [String] = []
-        for plan in Self.plans(sourceBitDepth: sourceBitDepth) {
-            do {
-                try Self.encode(plan: plan,
-                                source: source,
+        do {
+            try Self.encodeALAC(source: source,
                                 destination: destination,
-                                baseSettings: baseSettings)
-            } catch let error as EngineError {
-                failures.append(error.message)
-                try? fm.removeItem(at: destination)
-                continue
-            } catch {
-                failures.append("\(plan.name): \(Self.describe(error))")
-                try? fm.removeItem(at: destination)
-                continue
-            }
-
-            // SUCCESS — the `.m4a` is finalised (the output file was released
-            // when the strategy returned), so the size can be measured.
-            let attributes = try? fm.attributesOfItem(atPath: destination.path)
-            let byteCount = (attributes?[.size] as? NSNumber)?.intValue ?? 0
-            let duration = sampleRate > 0 ? Double(frames) / sampleRate : 0
-            let info = EncodedStemInfo(part: part, channels: channels,
-                                       bytes: byteCount, durationSeconds: duration,
-                                       strategy: plan.name)
-
-            let mbPerMinute = String(format: "%.3f", info.megabytesPerMinute)
-            let seconds = String(format: "%.1f", duration)
-            Self.logger.info("stem \(part.rawValue, privacy: .public) encoded via \(plan.name, privacy: .public): \(byteCount) bytes (\(mbPerMinute, privacy: .public) MB/min over \(seconds, privacy: .public) s, \(channels) ch, ALAC)")
-
-            return info
+                                settings: settings,
+                                part: part)
+        } catch let error as EngineError {
+            // A partial `.m4a` must never survive a failed encode.
+            try? fm.removeItem(at: destination)
+            throw error
+        } catch {
+            try? fm.removeItem(at: destination)
+            throw EngineError.importFailed(
+                "ALACStemWriter: ALAC encode failed for \(part.rawValue): \(Self.describe(error))")
         }
 
-        throw EngineError.importFailed(
-            "ALACStemWriter: every ALAC strategy failed for \(part.rawValue) "
-            + "(\(failures.count) attempts): " + failures.joined(separator: " || "))
+        // The `.m4a` is finalised (the output file was released when the
+        // encode returned), so the size can be measured.
+        let attributes = try? fm.attributesOfItem(atPath: destination.path)
+        let byteCount = (attributes?[.size] as? NSNumber)?.intValue ?? 0
+        let duration = sampleRate > 0 ? Double(frames) / sampleRate : 0
+        let info = EncodedStemInfo(part: part, channels: channels,
+                                   bytes: byteCount, durationSeconds: duration)
+
+        let mbPerMinute = String(format: "%.3f", info.megabytesPerMinute)
+        let seconds = String(format: "%.1f", duration)
+        Self.logger.info("stem \(part.rawValue, privacy: .public) encoded: \(byteCount) bytes (\(mbPerMinute, privacy: .public) MB/min over \(seconds, privacy: .public) s, \(channels) ch, ALAC)")
+
+        return info
     }
 
-    // MARK: - The strategy ladder
+    // MARK: - The ALAC encode
 
-    /// The client (processing) layout the ALAC encoder is fed.
-    private enum ClientLayout {
-        case float32
-        case int16
-
-        var commonFormat: AVAudioCommonFormat {
-            switch self {
-            case .float32: return .pcmFormatFloat32
-            case .int16: return .pcmFormatInt16
-            }
-        }
-    }
-
-    /// How the source is read.
-    private enum ReadStrategy {
-        /// `read(into:frameCount:)` — exact frame counts (the newer overload).
-        case frameCount
-        /// `read(into:)` — the older overload the decoder uses (proven on
-        /// every committed fixture); it fills the buffer up to its capacity
-        /// and reports the frames it read in the buffer's `frameLength`.
-        case wholeBuffer
-    }
-
-    /// One encode strategy.
-    private struct EncodePlan {
-        let name: String
-        let layout: ClientLayout
-        /// `nil` ⇒ no `AVEncoderBitDepthHintKey` in the settings at all.
-        let bitDepthHint: Int?
-        let read: ReadStrategy
-    }
-
-    /// The strategies, in the order they are tried.
+    /// Streams `source` into an ALAC `.m4a` at `destination`.
     ///
-    /// The FIRST plan is the one the docs describe (float32, planar, with the
-    /// source's bit-depth hint). The variants below cover the two plausible
-    /// causes of the opaque runtime failure, plus the int16 client layout:
-    /// the hint contradicting the client format, and the frame-count read
-    /// refusing a short final chunk.
-    private static func plans(sourceBitDepth: Int) -> [EncodePlan] {
-        [
-            EncodePlan(name: "float32+hint\(sourceBitDepth)+frameCount",
-                       layout: .float32, bitDepthHint: sourceBitDepth, read: .frameCount),
-            EncodePlan(name: "float32+nohint+frameCount",
-                       layout: .float32, bitDepthHint: nil, read: .frameCount),
-            EncodePlan(name: "float32+hint\(sourceBitDepth)+wholeBuffer",
-                       layout: .float32, bitDepthHint: sourceBitDepth, read: .wholeBuffer),
-            EncodePlan(name: "float32+nohint+wholeBuffer",
-                       layout: .float32, bitDepthHint: nil, read: .wholeBuffer),
-            EncodePlan(name: "int16+hint16+wholeBuffer",
-                       layout: .int16, bitDepthHint: 16, read: .wholeBuffer),
-            EncodePlan(name: "int16+nohint+wholeBuffer",
-                       layout: .int16, bitDepthHint: nil, read: .wholeBuffer),
-        ]
-    }
-
-    /// Runs one strategy end to end.
-    ///
-    /// Every failure carries the step it happened in (open / read / copy /
-    /// write) plus the NSError's domain, code and userInfo — the aggregate
-    /// report is what makes the next CI round trip decisive.
-    private static func encode(plan: EncodePlan,
-                               source: URL,
-                               destination: URL,
-                               baseSettings: [String: Any]) throws {
-        var settings = baseSettings
-        if let hint = plan.bitDepthHint {
-            settings[AVEncoderBitDepthHintKey] = hint
-        }
-
-        // A FRESH input file per strategy: a failed attempt leaves the read
-        // position in the middle of the source.
+    /// The encoder is fed 8 192-frame chunks so a whole song's stem never
+    /// exists as one buffer (§8 memory budget). Every failure carries the
+    /// step it happened in (open / read / copy / write).
+    private static func encodeALAC(source: URL,
+                                   destination: URL,
+                                   settings: [String: Any],
+                                   part: Part) throws {
         let input: AVAudioFile
         do {
             input = try AVAudioFile(forReading: source)
         } catch {
             throw EngineError.importFailed(
-                "ALACStemWriter: [\(plan.name)] cannot open the source: \(describe(error))")
+                "ALACStemWriter: [\(part.rawValue)] cannot open the source: \(describe(error))")
         }
 
         let outputFile: AVAudioFile
         do {
             outputFile = try AVAudioFile(forWriting: destination,
                                         settings: settings,
-                                        commonFormat: plan.layout.commonFormat,
+                                        commonFormat: .pcmFormatFloat32,
                                         interleaved: false)
         } catch {
             throw EngineError.importFailed(
-                "ALACStemWriter: [\(plan.name)] cannot create \(destination.lastPathComponent): \(describe(error))")
+                "ALACStemWriter: [\(part.rawValue)] cannot create \(destination.lastPathComponent): \(describe(error))")
         }
 
         let inFormat = input.processingFormat
@@ -266,105 +193,76 @@ public struct ALACStemWriter: StemEncoding {
         guard outFormat.channelCount == inFormat.channelCount,
               outFormat.sampleRate == inFormat.sampleRate else {
             throw EngineError.contractViolation(
-                "ALACStemWriter: [\(plan.name)] output processing format "
-                + "(\(outFormat.channelCount) ch @ \(outFormat.sampleRate) Hz) does not match the source "
-                + "(\(inFormat.channelCount) ch @ \(inFormat.sampleRate) Hz)")
+                "ALACStemWriter: output processing format (\(outFormat.channelCount) ch @ \(outFormat.sampleRate) Hz) "
+                + "does not match the source (\(inFormat.channelCount) ch @ \(inFormat.sampleRate) Hz)")
         }
-        // The encoder is fed PLANAR buffers (the ALAC encoder's own layout);
-        // AVAudioFile's processing format is float32 deinterleaved, so both
-        // sides are planar and the copy is a straight per-plane copy.
+        // The ALAC encoder takes float32 PLANAR buffers; AVAudioFile's
+        // processing format is float32 deinterleaved, so both sides are
+        // planar float32 and the copy is a straight per-plane copy.
         guard !inFormat.isInterleaved, !outFormat.isInterleaved else {
             throw EngineError.contractViolation(
-                "ALACStemWriter: [\(plan.name)] interleaved processing formats are not supported "
+                "ALACStemWriter: interleaved processing formats are not supported "
                 + "(in interleaved=\(inFormat.isInterleaved), out interleaved=\(outFormat.isInterleaved))")
         }
 
         let chunkFrames: AVAudioFrameCount = 8192
         guard let readBuffer = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: chunkFrames),
               let writeBuffer = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: chunkFrames) else {
-            throw EngineError.importFailed(
-                "ALACStemWriter: [\(plan.name)] cannot allocate the PCM buffers")
+            throw EngineError.importFailed("ALACStemWriter: cannot allocate the PCM buffers")
         }
 
         let totalFrames = Int(input.length)
         var framesWritten = 0
         while framesWritten < totalFrames {
+            // **Ask for exactly the frames that remain.** `read(into:frameCount:)`
+            // THROWS when the source has fewer frames left than requested —
+            // asking for a full chunk at the tail of the file was the root
+            // cause of the opaque encode failure (see the file header).
             let remaining = totalFrames - framesWritten
             let want = AVAudioFrameCount(min(Int(chunkFrames), remaining))
-            let count: Int
-            switch plan.read {
-            case .frameCount:
-                do {
-                    try input.read(into: readBuffer, frameCount: want)
-                } catch {
-                    throw EngineError.importFailed(
-                        "ALACStemWriter: [\(plan.name)] read failed at frame \(framesWritten)/\(totalFrames): \(describe(error))")
-                }
-                count = Int(readBuffer.frameLength)
-            case .wholeBuffer:
-                // The older overload: it reads up to the buffer's capacity and
-                // reports the frames it read in the buffer's `frameLength`.
-                do {
-                    try input.read(into: readBuffer)
-                } catch {
-                    throw EngineError.importFailed(
-                        "ALACStemWriter: [\(plan.name)] read failed at frame \(framesWritten)/\(totalFrames): \(describe(error))")
-                }
-                count = Int(readBuffer.frameLength)
+            do {
+                try input.read(into: readBuffer, frameCount: want)
+            } catch {
+                throw EngineError.importFailed(
+                    "ALACStemWriter: [\(part.rawValue)] read failed at frame \(framesWritten)/\(totalFrames): \(describe(error))")
             }
+            let count = Int(readBuffer.frameLength)
             if count == 0 {
                 throw EngineError.importFailed(
-                    "ALACStemWriter: [\(plan.name)] the source ended after \(framesWritten)/\(totalFrames) frames")
+                    "ALACStemWriter: [\(part.rawValue)] the source ended after \(framesWritten)/\(totalFrames) frames")
             }
-            let copied = count
             do {
-                try copyFrames(from: readBuffer, to: writeBuffer, frames: copied)
-            } catch let error as EngineError {
+                try copyFrames(from: readBuffer, to: writeBuffer, frames: count)
+            } catch {
                 throw EngineError.importFailed(
-                    "ALACStemWriter: [\(plan.name)] copy failed: \(error.message)")
+                    "ALACStemWriter: [\(part.rawValue)] copy failed: \(error.localizedDescription)")
             }
-            writeBuffer.frameLength = AVAudioFrameCount(copied)
+            writeBuffer.frameLength = AVAudioFrameCount(count)
             do {
                 try outputFile.write(from: writeBuffer)
             } catch {
                 throw EngineError.importFailed(
-                    "ALACStemWriter: [\(plan.name)] write failed at frame \(framesWritten): \(describe(error))")
+                    "ALACStemWriter: [\(part.rawValue)] write failed at frame \(framesWritten): \(describe(error))")
             }
-            framesWritten += copied
+            framesWritten += count
         }
         // `outputFile` is released here → the ALAC encoder flushes and the
         // `.m4a` container is finalised.
     }
 
     /// Copies `frames` frames from the source buffer (float32 planes — the
-    /// format AVAudioFile decodes into) into the destination buffer (whatever
-    /// client layout the encoder accepted).
+    /// format AVAudioFile decodes into) into the destination buffer.
     private static func copyFrames(from source: AVAudioPCMBuffer,
                                    to destination: AVAudioPCMBuffer,
                                    frames: Int) throws {
         let channels = Int(source.format.channelCount)
-        guard let srcPlanes = source.floatChannelData else {
-            throw EngineError.importFailed("the source buffer has no float channel data")
+        guard let srcPlanes = source.floatChannelData,
+              let dstPlanes = destination.floatChannelData else {
+            throw EngineError.importFailed("the PCM buffers have no float channel data")
         }
-        if let dstPlanes = destination.floatChannelData {
-            for c in 0..<channels {
-                dstPlanes[c].update(from: srcPlanes[c], count: frames)
-            }
-            return
+        for c in 0..<channels {
+            dstPlanes[c].update(from: srcPlanes[c], count: frames)
         }
-        if let dstPlanes = destination.int16ChannelData {
-            for c in 0..<channels {
-                let src = srcPlanes[c]
-                let dst = dstPlanes[c]
-                for f in 0..<frames {
-                    let scaled = Double(src[f]) * 32767.0
-                    let clamped = max(-32768.0, min(32767.0, scaled))
-                    dst[f] = Int16(clamping: Int32(clamped))
-                }
-            }
-            return
-        }
-        throw EngineError.importFailed("the destination buffer has no supported PCM layout")
     }
 
     /// A compact diagnostic rendering of an error: domain, code, the localized
@@ -378,17 +276,5 @@ public struct ALACStemWriter: StemEncoding {
             text += " userInfo=" + String(rendered.prefix(400))
         }
         return text
-    }
-}
-
-private extension EngineError {
-    /// The error's message (every case carries a human-readable string).
-    var message: String {
-        switch self {
-        case .importFailed(let text), .unsupportedFormat(let text),
-             .separationFailed(let text), .modelMissing(let text),
-             .contractViolation(let text):
-            return text
-        }
     }
 }
