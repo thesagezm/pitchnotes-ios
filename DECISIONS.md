@@ -16,6 +16,84 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-37 | 2026-11-23 UTC | Leto | RULED (M2 gate session 10 — the D-25 chunk-policy arm is decided BY MEASUREMENT; Rule 3 escalation answered)
+**Context:** The D-25 protocol was fixed at QUEUE 2026-11-22T21:00Z §6 (Rules 1–4) so the gate could
+never stall on a judgement call. Paul has now landed both measurement legs and escalated the
+outcome with the numbers, as Rule 3 requires:
+- **L3** (BENCHMARKS §4.1, v1.6): 30.0 s synthetic mix, **3 paired repeats × 3 arms**, same fixture,
+  same weights (htdemucs fp16 ggml, sha256 `72b17c42…df0064`), same runner class, 1 vendor thread,
+  **Linux dev box — ENV-LABELED, NOT A14**.
+- **L4(a)** (BENCHMARKS §4.2, v1.7): 240.0 s synthetic mix (8× the L3 fixture), `planDefault` arm,
+  1 repeat, same env.
+The numbers below are quoted from Paul's own tables in `Docs/BENCHMARKS.md` §4.1/§4.2; they are not
+re-derived here. I am answering the Rule-3 escalation.
+
+| arm | all-sources SDR | instrumental SDR | vocals SDR | NSDR (all-src) | wall | RTF | peak RSS |
+|---|---|---|---|---|---|---|---|
+| reference (whole song) | n/m (it IS the baseline) | n/m | n/m | n/m | 692.2 s | **23.07** (22.17–27.50) | 1829 MB (1781–1885) |
+| muskeyRecipe (4.5 s / 1.0 s) | **1.63 dB** | 8.07 dB | 1.11 dB ⚠ | −21.28 dB | 1048.2 s | **34.94** (33.19–36.72) | 1767 MB (1738–1785) |
+| **planDefault (8.0 s / 2.0 s)** | **6.39 dB** | **12.11 dB** | 5.06 dB ⚠ | **−16.51 dB** | 1298.5 s | **43.28** (40.53–43.73) | 1778 MB (1740–1788) |
+| planDefault @ 240 s (L4(a)) | n/a (paired comparison lives in the 30 s rows) | n/a | n/a | n/a | 8717.6 s | 36.32 | **1805 MB** |
+
+**Ruling:**
+1. **RULE 1 FAILS — `muskeyRecipe` IS REJECTED.** Its SDR gate is decisive: 1.63 dB vs 6.39 dB
+   all-sources = **4.76 dB behind** (instrumental 8.07 vs 12.11 = 4.04 dB behind). Its other two
+   gates pass (RTF 34.94 ≤ 1.25 × 43.28 = 54.10 ✓; peak RSS 1767 ≤ 1778 MB ✓), but Rule 1 requires
+   ALL of them. **⇒ No §8 window deviation is recorded, and none is needed: the shipped arm keeps a
+   §8-native 5–10 s window.**
+2. **RULE 2's PRECONDITION FAILS ⇒ RULE 3 TRIGGERED ⇒ ESCALATED TO ME ⇒ RULED HERE.** Rule 2 would
+   have selected `planDefault` had both arms been in budget; neither is (see §4). The Rule-3
+   reversible option was designated "the better-quality arm at `planDefault`, flagged".
+   **THE SHIPPED DEFAULT IS `planDefault` — 8.0 s window / 2.0 s overlap / linear crossfade.**
+3. **THE REQUIRED LANDING SITE IS ALREADY SATISFIED — PAUL OWES ZERO CODE FOR D-25.**
+   D-36 §6 made the arm land as `DemucsEngine.init(modelPath:threads:policy:)`'s default `policy`.
+   Verified on `origin/paul` @599b441, `Engine/Separation/DemucsEngine.swift:80–81`:
+   `policy: ChunkPolicy = .planDefault` — **already the default.** Nothing to change, no new ruling
+   to implement. **P-202's only open item (this ruling) is now closed; the row is gate-closable.**
+4. **THE BUDGET MISS IS RECORDED, NOT PAPERED OVER.** No arm meets §8's device budgets on any
+   measured environment: dev-box RTF 34.94 / 43.28 against the ≤ 2.0 target, and peak RSS 1767 /
+   1778 MB against the < 1.5 GB target. **The miss is NOT caused by chunking** — the whole-song
+   REFERENCE itself is RTF 23.07. The derived macOS-runner factor (≈3.7×, from the §4 CI row) puts
+   the long-form arms at ≈ 9.4 (muskey) / ≈ 11.7 (plan) — still ≫ 2.0. **§8's RTF ≤ 2× and
+   RSS < 1.5 GB are NOT amended by this ruling; they remain the targets** — but they are **NOT MET**
+   by M2's CPU path. The honest product consequence: **M2 separation is an OFFLINE / QUALITY-MODE
+   job** (foreground progress, or `BGProcessingTask` while charging, per §8) — not a
+   "≤ 2× song length" interactive path. **Closing the RTF gap belongs to the M6 acceleration phase
+   (CoreML EP, same ONNX models — AGENTS §0 hard rail 2), not to M2.** The A14 numbers arrive from
+   the §10.2 device demo (P-603 / Jess's J-206 readout) and go into BENCHMARKS §6 — **runner
+   numbers are never presented as device numbers, and these are not.**
+5. **THE MEMORY CLAIM IS THE ONE THAT HOLDS.** L4(a): 8× the audio cost grew peak RSS by **+27 MB
+   (+1.5 %)** — the peak is the vendor's per-segment working set (~1.7–1.8 GB), not whole-song
+   accumulation — and 1805 MB is under the Linux 2.0 GB spike sanity bound. **P-202's "4-minute
+   synthetic processes without OOM" ac leg is MET on this path.** But the measurement comes from the
+   **C++ MIRROR**, which accumulates MORE than the Swift shipping path (four source stems vs the
+   Swift driver's two blended output stems) — and the Swift driver's own whole-song accumulation
+   term DOES scale with length. **A streaming stem writer (write each window's blended stems to
+   disk instead of accumulating them) is therefore a REAL follow-up, filed as X-214 (owner: paul,
+   M3-prep, NON-GATING for `m2`)** — recorded, not smuggled into this gate.
+6. **CHUNKING LOSES ON RTF BY CONSTRUCTION — a standing fact, not a re-litigation.** The vendor pads
+   every external window to full 7.8 s internal segments (an 8 s window costs 15.6 s of vendor
+   compute; a 4.5 s window costs 7.8 s), and the measured ordering matches that cost model exactly
+   (reference 23.07 < muskey 34.94 < plan 43.28). **Any future window-policy change must beat this
+   cost model with measurement, not with opinion.** (Paul's honest cost model from the vendor source
+   is what predicted the outcome before the run — it was right.)
+7. **TWO SMALL POINTS ACCEPTED (no new row, no contract change):** (a) the D-9 near-silent
+   instrumental threshold (**−50 dBFS RMS**) is **ACCEPTED** as the M2 heuristic constant — it lives
+   in EngineCore, it is **not** a contract item, and it is revisited only with evidence; (b) the
+   engine-side cache index is **not** D-4's library index (that is Jess's J-202) — the distinction is
+   correct and stands as stated.
+8. **THE VOCALS-SDR COLUMN IS NOT A QUALITY CLAIM.** On the L3 fixture the tone energy routes to
+   other stems, so the vocals stem sits at ≈ −70 dB and the SDR of two near-silent signals is noise
+   (1.11 dB vs 5.06 dB — a 3.95 dB spread that is meaningless in itself). **The primary quality
+   numbers are all-sources + instrumental.** Any real vocal-separation quality claim needs a
+   truth-bearing fixture (known stems) — that is M3's eval-harness job (X-301/X-311), not M2's.
+9. **NOTHING HERE RE-OPENS ANYTHING.** Rules 1–4 were applied as written; D-22..D-36 stand; the
+   next decision letter is **D-38**.
+**Affects:** P-202 (REVIEW → gate-closable; the D-25 arm is ruled), P-201/P-203/P-204/P-205 (gate
+rows), P-206 (M6/D-31, non-gating), P-603 + J-206 (the A14 device numbers → BENCHMARKS §6),
+`Docs/BENCHMARKS.md` §4.1/§4.2/§6, `Docs/ENGINE.md`, **X-214 (new: streaming stem writer,
+owner paul, M3-prep, non-gating)**, L-204 (M2 gate).
+
 ## D-36 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9, same session — SUPERSEDES D-35 §1/§2 after Jess's in-flight work was read and PROVEN; the FINDING stands, the SHAPE changed)
 **Context:** D-35 (committed earlier this session, `029408c`) ruled that the M2 app-facing engine
 would be a NEW app-target facade (`SeparationImportEngine`, `init(modelPath:libraryRoot:)`) whose
