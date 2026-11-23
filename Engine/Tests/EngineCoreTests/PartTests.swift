@@ -9,8 +9,9 @@ final class PartTests: XCTestCase {
             (.bass, "BASS"), (.baritone, "BARITONE"), (.baritenor, "BARITENOR"),
             (.t2, "T2"), (.t1, "T1"), (.soprano, "SOPRANO"), (.alto, "ALTO"),
             (.vp, "VP"), (.lead, "LEAD"), (.instrumental, "INSTRUMENTAL"),
+            (.vocals, "VOCALS"), // v1.0 (L-203)
         ]
-        XCTAssertEqual(Part.allCases.count, 10)
+        XCTAssertEqual(Part.allCases.count, 11)
         for (part, raw) in expected {
             XCTAssertEqual(part.rawValue, raw)
             XCTAssertEqual(Part(rawValue: raw), part)
@@ -19,13 +20,15 @@ final class PartTests: XCTestCase {
 
     func testSortOrderMatchesContract() {
         // C-1 sortOrder is contractual AND numeric: soprano 0, alto 1, t1 2, t2 3,
-        // baritenor 4, baritone 5, bass 6, vp 7, lead 8, instrumental 9. The C-1
-        // sentence "bass < baritone < …" is the voice-RANK reading for the P-303
+        // baritenor 4, baritone 5, bass 6, vp 7, lead 8, instrumental 9, vocals 10
+        // (v1.0: appended — no pre-existing value changed). The C-1 sentence
+        // "bass < baritone < …" is the voice-RANK reading for the P-303
         // no-crossing constraint (bass = lowest voice); Comparable compares the
         // numeric sortOrder (score layout order). Both are asserted here.
         let expectedOrder: [(Part, Int)] = [
             (.soprano, 0), (.alto, 1), (.t1, 2), (.t2, 3), (.baritenor, 4),
             (.baritone, 5), (.bass, 6), (.vp, 7), (.lead, 8), (.instrumental, 9),
+            (.vocals, 10),
         ]
         for (part, order) in expectedOrder {
             XCTAssertEqual(part.sortOrder, order, part.rawValue)

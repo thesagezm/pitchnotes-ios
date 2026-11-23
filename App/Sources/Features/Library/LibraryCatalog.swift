@@ -111,17 +111,20 @@ enum LibraryCatalog {
                     ? []
                     : [ContractViolation("V2", "stemFile \(p.stemFile) does not exist in bundle")]))
 
-            // notes/<PART>.json (V7–V10 from disk).
-            let notesURL = dir.appendingPathComponent(p.notesFile)
+            // notes/<PART>.json (V7–V10 from disk). C-2.1 v1.0: notesFile is
+            // optional — nil takes the missing-file V1 path (semantics review
+            // at Jess ratify; lane-exception compile fix, P-FIX-201).
+            let notesName = p.notesFile ?? ""
+            let notesURL = dir.appendingPathComponent(notesName)
             if let data = try? Data(contentsOf: notesURL),
                let track = try? JSONDecoder().decode(NoteTrack.self, from: data) {
                 tracks[p.part] = track
                 reports.append(BundleFileReport(
-                    fileName: p.notesFile,
+                    fileName: notesName,
                     violations: BundleValidator.validate(noteTrack: track).violations))
             } else {
                 reports.append(BundleFileReport(
-                    fileName: p.notesFile,
+                    fileName: notesName,
                     violations: [ContractViolation("V1", "notes file missing or does not parse as NoteTrack")]))
             }
 

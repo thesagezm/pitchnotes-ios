@@ -1,58 +1,71 @@
 {
-  "schemaVersion": 1,
-  "_notes": "Model registry (L-005). Every entry carries exactly {name, version, url, sha256, size, license, runtime, io}. Weights NEVER live in git (AGENTS \u00a74): real models are hosted in HF repo thesagezm/pitchnotes-models (D-2, BLOCKED(human)) and verified by scripts/models/download.py before use. D-2 LIVE (2026-11-21): thesagezm/pitchnotes-models created (public) by Leto per human authorization; test-blob/swiftf0/silero-vad uploaded byte-identical (hf_upload.sh verifies re-hosted bytes against manifest sha256). http-probe remains as the independent generic network-path check (pinned third-party blob). CI file:// test-blob override retained to exercise the override path.",
-  "models": [
-    {
-      "name": "test-blob",
-      "version": "1.0.0",
-      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/test-blob/test-blob.bin",
-      "sha256": "785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9",
-      "size": 1024,
-      "license": "MIT",
-      "runtime": "none",
-      "io": {
-        "role": "committed download/verify-path validation blob for CI (L-005 / D-2 placeholder)",
-        "format": "raw bytes, 1024 x (i mod 256)"
-      }
-    },
-    {
-      "name": "http-probe",
-      "version": "1.0.0",
-      "url": "https://raw.githubusercontent.com/thesagezm/speechnotes-ios/567f11d80dc7152ff0e6f115d2a7f67202ecad7f/README.md",
-      "sha256": "64bf1444aea29c19b4d11c9658021e81a28652dba49f67704f736ce05747e2a0",
-      "size": 15616,
-      "license": "MIT",
-      "runtime": "none",
-      "io": {
-        "role": "public-network HTTP+SHA256 validation (pinned immutable blob; swap to HF repo file when D-2 unblocks)",
-        "format": "markdown text"
-      }
-    },
-    {
-      "name": "swiftf0",
-      "version": "1.0.0+hf7877fba",
-      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/swiftf0/model.onnx",
-      "sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22",
-      "size": 135090,
-      "license": "MIT",
-      "runtime": "onnx-cpu",
-      "io": {
-        "role": "grading-grade pitch engine (C-6 SWIFTF0; P-101/P-105). D-2 LIVE: hosted on thesagezm/pitchnotes-models (public, created 2026-11-21 by Leto per human authorization); uploaded byte-identical from HF rev 7877fba \u2014 sha256 is the trust anchor and MUST NOT change. Leto verified 2026-11-21: computed == upstream SHA256SUMS == HF LFS oid.",
-        "format": "ONNX; 16 kHz mono in, per-16ms-frame hz/confidence out, streaming lookahead 176 ms; fmin/fmax band filter per C-6.1"
-      }
-    },
-    {
-      "name": "silero-vad",
-      "version": "data@bfdc019",
-      "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/silero-vad/silero_vad.onnx",
-      "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
-      "size": 2327524,
-      "license": "MIT",
-      "runtime": "onnx-cpu",
-      "io": {
-        "role": "mic VAD gating (P-103/P-104). D-2 LIVE: hosted on thesagezm/pitchnotes-models (public, created 2026-11-21 by Leto per human authorization); uploaded byte-identical from upstream snakers4 commit bfdc019 \u2014 sha256 is the trust anchor and MUST NOT change. Leto verified 2026-11-21 (downloaded + hashed at pin time).",
-        "format": "ONNX; 16 kHz mono in, 30 ms chunks, speech-probability out, <1 ms/chunk target"
-      }
-    }
-  ]
+ "schemaVersion": 1,
+ "_notes": "Model registry (L-005). Every entry carries exactly {name, version, url, sha256, size, license, runtime, io}. Weights NEVER live in git (AGENTS \u00a74): real models are hosted in HF repo thesagezm/pitchnotes-models (D-2, BLOCKED(human)) and verified by scripts/models/download.py before use. D-2 LIVE (2026-11-21): thesagezm/pitchnotes-models created (public) by Leto per human authorization; test-blob/swiftf0/silero-vad uploaded byte-identical (hf_upload.sh verifies re-hosted bytes against manifest sha256). http-probe remains as the independent generic network-path check (pinned third-party blob). CI file:// test-blob override retained to exercise the override path.",
+ "models": [
+  {
+   "name": "test-blob",
+   "version": "1.0.0",
+   "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/test-blob/test-blob.bin",
+   "sha256": "785b0751fc2c53dc14a4ce3d800e69ef9ce1009eb327ccf458afe09c242c26c9",
+   "size": 1024,
+   "license": "MIT",
+   "runtime": "none",
+   "io": {
+    "role": "committed download/verify-path validation blob for CI (L-005 / D-2 placeholder)",
+    "format": "raw bytes, 1024 x (i mod 256)"
+   }
+  },
+  {
+   "name": "http-probe",
+   "version": "1.0.0",
+   "url": "https://raw.githubusercontent.com/thesagezm/speechnotes-ios/567f11d80dc7152ff0e6f115d2a7f67202ecad7f/README.md",
+   "sha256": "64bf1444aea29c19b4d11c9658021e81a28652dba49f67704f736ce05747e2a0",
+   "size": 15616,
+   "license": "MIT",
+   "runtime": "none",
+   "io": {
+    "role": "public-network HTTP+SHA256 validation (pinned immutable blob; swap to HF repo file when D-2 unblocks)",
+    "format": "markdown text"
+   }
+  },
+  {
+   "name": "swiftf0",
+   "version": "1.0.0+hf7877fba",
+   "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/swiftf0/model.onnx",
+   "sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22",
+   "size": 135090,
+   "license": "MIT",
+   "runtime": "onnx-cpu",
+   "io": {
+    "role": "grading-grade pitch engine (C-6 SWIFTF0; P-101/P-105). D-2 LIVE: hosted on thesagezm/pitchnotes-models (public, created 2026-11-21 by Leto per human authorization); uploaded byte-identical from HF rev 7877fba \u2014 sha256 is the trust anchor and MUST NOT change. Leto verified 2026-11-21: computed == upstream SHA256SUMS == HF LFS oid.",
+    "format": "ONNX; 16 kHz mono in, per-16ms-frame hz/confidence out, streaming lookahead 176 ms; fmin/fmax band filter per C-6.1"
+   }
+  },
+  {
+   "name": "silero-vad",
+   "version": "data@bfdc019",
+   "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/silero-vad/silero_vad.onnx",
+   "sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+   "size": 2327524,
+   "license": "MIT",
+   "runtime": "onnx-cpu",
+   "io": {
+    "role": "mic VAD gating (P-103/P-104). D-2 LIVE: hosted on thesagezm/pitchnotes-models (public, created 2026-11-21 by Leto per human authorization); uploaded byte-identical from upstream snakers4 commit bfdc019 \u2014 sha256 is the trust anchor and MUST NOT change. Leto verified 2026-11-21 (downloaded + hashed at pin time).",
+    "format": "ONNX; 16 kHz mono in, 30 ms chunks, speech-probability out, <1 ms/chunk target"
+   }
+  },
+  {
+   "name": "htdemucs",
+   "version": "1.0.0+ggml-retrobear",
+   "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/htdemucs/ggml-model-htdemucs-4s-f16.bin",
+   "sha256": "72b17c42d308982ddb5069bc3bf48b81a5aac4cb6516e4366c0fa7cef6df0064",
+   "size": 83994361,
+   "license": "MIT (Tier B per D-30: training-data risk recorded)",
+   "runtime": "demucs.cpp",
+   "io": {
+    "role": "htdemucs 4-source separation weights for the vendored demucs.cpp inference library (P-201/M2; vocals = target_3, instrumental = drums+bass+other residual, D-9 two-stem). PROVENANCE (D-32.6 FALLBACK path): Retrobear/demucs.cpp HF dataset ggml-model-htdemucs-4s-f16.bin (linked from the demucs.cpp README at the pinned upstream commit 4edae497; upstream's own pre-converted distribution), downloaded 2026-11-22 by paul with resume-verified byte count 83994361; sha256 above is the TRUST ANCHOR (D-19.4) and MUST NOT change across URL swaps. TIER B per D-30: MIT (c) Meta; htdemucs trained on MUSDB18 (CC BY-NC-SA) + an undocumented 800-song extra set \u2014 human sign-off required before any commercial/App Store distribution; never represented as clean. PRIMARY provenance chain (Meta .th @e976d93e via pinned convert-pth-to-ggml.py) remains available; Meta host download stalled on the dev box (dl.fbaipublicfiles.com) \u2014 operational fallback per D-32.6. Attribution lands in NOTICE + J-204 licenses screen.",
+    "format": "ggml fp16 (htdemucs 4-source); consumed by vendor/demucs.cpp load_demucs_model (magic+layout verified by the library at load); 44.1 kHz stereo float in/out per D-8; ~81 MB fp16 dequantizing to fp32 Eigen tensors in memory"
+   }
+  }
+ ]
 }

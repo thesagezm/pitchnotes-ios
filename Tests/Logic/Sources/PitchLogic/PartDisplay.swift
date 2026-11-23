@@ -23,6 +23,7 @@ extension Part {
         case .vp: return "VP"
         case .lead: return "Lead"
         case .instrumental: return "Instrumental"
+        case .vocals: return "Vocals"
         }
     }
 }

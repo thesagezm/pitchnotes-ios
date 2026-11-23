@@ -110,7 +110,7 @@ struct BundleInspectorView: View {
                             .foregroundStyle(Color.pnTextSecondary)
                     }
                     field("stem", partInfo.stemFile)
-                    field("notes", partInfo.notesFile)
+                    field("notes", partInfo.notesFile ?? "— (optional, absent)")
                     field("pitch", partInfo.pitchFile ?? "— (optional, absent)")
                     let unison = song.unisonPairs
                         .filter { $0.first == part || $0.second == part }

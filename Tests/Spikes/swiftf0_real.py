@@ -275,11 +275,47 @@ def export_reference_tensors(sess) -> Path:
         "# ReferenceTensors (D-24 / CONTRACTS C-7 spike-parity sidecars)\n\n"
         "Captured model outputs of the PINNED manifest entries on the committed "
         "fixtures (regenerable: `python3 Tests/Spikes/swiftf0_real.py --export-ref` "
-        "and `... silero_real.py --export-ref`). Consumed by P-208 parity tests "
+        "and `... silero_real.py --export-ref` for the npz regression format; "
+        "`--export-c7` on the same scripts for the P-208 C-7 JSON+bin parity "
+        "sidecars in swiftf0/ + silero-vad/). Consumed by P-208 parity tests "
         "(Python reference vs Swift/ORT outputs, tolerance-based). The model SHA "
         "travels INSIDE the npz (`_model_sha256`) — parity asserts it matches the "
         "manifest entry, so a model bump without regeneration fails loudly.\n")
     return out
+
+
+def export_c7_sidecars(sess) -> Path:
+    """P-208 (D-24): C-7 JSON+bin parity sidecars for the SWIFT tests.
+
+    Same fixtures/tensors as export_reference_tensors minus truth_hz (parity
+    compares MODEL outputs, not synthetic truth) in the C-7-ratified shape:
+    one JSON manifest + raw little-endian bins per fixture under
+    Tests/Spikes/ReferenceTensors/swiftf0/ (c7_export.py writer).
+    """
+    import json
+
+    import c7_export
+    entry = [m for m in json.loads((REPO_ROOT / "Models" / "manifest.json").read_text())["models"]
+             if m["name"] == "swiftf0"][0]
+    fx = REPO_ROOT / "Tests" / "Spikes" / "Fixtures"
+    tensors_by_stem: dict[str, dict[str, "np.ndarray"]] = {}
+    for name in ("sweep_46_2100Hz_16k.wav", "synthetic_voice_16k.wav", "silence_16k.wav"):
+        audio = read_wav_mono(fx / name)
+        pitch, conf_raw = run_session(sess, audio)
+        conf, loud = postprocess(audio, conf_raw)
+        tensors_by_stem[name.removesuffix(".wav")] = {
+            "pitch_hz": pitch,            # float64 (model-native output dtype)
+            "confidence_raw": conf_raw,   # float32 (model-native)
+            "confidence_gated": conf,     # float32 (gateConfidence parity)
+            "loudness_db": loud,          # float64 (postprocess math)
+        }
+    return c7_export.export_c7(
+        engine="SWIFTF0", slug="swiftf0",
+        stems=list(tensors_by_stem.keys()),
+        tensors_by_stem=tensors_by_stem,
+        model_entry=entry,
+        source=f"lars76/swift-f0 (manifest {entry.get('version', 'pin')}, sha {entry['sha256'][:12]}…)",
+        script="Tests/Spikes/swiftf0_real.py --export-c7")
 
 
 def main() -> int:
@@ -287,7 +323,17 @@ def main() -> int:
     ap.add_argument("--threads-only", action="store_true", help="only run the RTF/threads table")
     ap.add_argument("--export-ref", action="store_true",
                     help="write the D-24/C-7 reference-tensor sidecar and exit")
+    ap.add_argument("--export-c7", action="store_true",
+                    help="write the P-208 C-7 JSON+bin parity sidecars and exit")
     args = ap.parse_args()
+    if args.export_c7:
+        if real_available() is None:
+            print("FAILED: onnxruntime required for --export-c7")
+            return 1
+        sess = load_session(ensure_model(), threads=1)
+        out = export_c7_sidecars(sess)
+        print(f"C-7 parity sidecars written: {out}")
+        return 0
     if args.export_ref:
         if real_available() is None:
             print("FAILED: onnxruntime required for --export-ref")

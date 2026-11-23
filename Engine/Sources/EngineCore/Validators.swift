@@ -33,10 +33,28 @@ public struct ValidationResult: Equatable, Sendable {
 
 public enum BundleValidator {
 
-    // MARK: - V1–V6: song.json manifest
+    /// Manifest contract era. `nil` = unparseable version string (caller reports).
+    /// Known majors: 0 (v0.x, V1–V13) and 1 (v1.x, +V14/V15). Anything else is an
+    /// unknown MAJOR — consumers reject it (C-2.1 field rule).
+    static func manifestEra(_ contractVersion: String) -> Int? {
+        // Format "v<major>.<minor>".
+        guard contractVersion.hasPrefix("v") else { return nil }
+        let parts = contractVersion.dropFirst().split(separator: ".", maxSplits: 1)
+        guard parts.count == 2, let major = Int(parts[0]), Int(parts[1]) != nil else { return nil }
+        return major
+    }
+
+    // MARK: - V1–V6: song.json manifest (+ V14/V15, era-scoped v1.x)
 
     public static func validate(manifest: SongManifest) -> ValidationResult {
         var v: [ContractViolation] = []
+
+        // contractVersion: parseable "v<major>.<minor>" and a KNOWN major.
+        // Unknown majors are rejected by consumers (C-2.1 field rule).
+        let era = BundleValidator.manifestEra(manifest.contractVersion)
+        if era == nil || era! > 1 {
+            v.append(ContractViolation("V1", "contractVersion \"\(manifest.contractVersion)\" has an unknown major (supported: v0.x, v1.x)"))
+        }
 
         // V4: duration_s > 0, sampleRate == 44100.
         if !(manifest.duration_s > 0) {
@@ -65,13 +83,37 @@ public enum BundleValidator {
             if !seen.insert(p.part).inserted {
                 v.append(ContractViolation("V6", "duplicate part \(p.part.rawValue) in parts[]"))
             }
-            // V3 (declared policy, D-8): voice stems mono, INSTRUMENTAL stereo.
+            // V3 (declared policy, D-8): voice/VOCALS stems mono, INSTRUMENTAL stereo.
             let expected = p.part == .instrumental ? 2 : 1
             if p.channels != expected {
                 v.append(ContractViolation("V3", "part \(p.part.rawValue) declares channels=\(p.channels), D-8 expects \(expected)"))
             }
             if p.noteConfidence < 0 || p.noteConfidence > 1 {
                 v.append(ContractViolation("V9", "parts[].noteConfidence must be in [0,1] (got \(p.noteConfidence))"))
+            }
+        }
+
+        // V14/V15 — era-scoped to v1.x (C-2.2 back-compat: v0.x bundles stay
+        // valid under V1–V13 only).
+        if let era, era >= 1 {
+            // V14 — v1.0 required fields: channels (1|2) and tuning_cents
+            // (int, [−50,+50]). hasInstrumental is non-optional in the model.
+            if manifest.channels == nil {
+                v.append(ContractViolation("V14", "v1.x manifest requires channels (decoded mix, 1|2)"))
+            } else if let channels = manifest.channels, channels != 1 && channels != 2 {
+                v.append(ContractViolation("V14", "v1.x manifest channels must be 1 or 2 (got \(channels))"))
+            }
+            if manifest.tuning_cents == nil {
+                v.append(ContractViolation("V14", "v1.x manifest requires tuning_cents (int, [−50,+50]; D-22)"))
+            } else if let tuning = manifest.tuning_cents, tuning < -50 || tuning > 50 {
+                v.append(ContractViolation("V14", "v1.x manifest tuning_cents must be in [−50,+50] (got \(tuning))"))
+            }
+
+            // V15 — instrumental consistency (D-9): INSTRUMENTAL entry in parts[]
+            // ⇔ hasInstrumental == true.
+            let hasInstrumentalPart = manifest.parts.contains { $0.part == .instrumental }
+            if hasInstrumentalPart != manifest.hasInstrumental {
+                v.append(ContractViolation("V15", "parts[] \(hasInstrumentalPart ? "contains" : "lacks") an INSTRUMENTAL entry but hasInstrumental is \(manifest.hasInstrumental) (D-9: they must agree)"))
             }
         }
 
@@ -178,18 +220,21 @@ public enum BundleValidator {
                 v.append(ContractViolation("V3", "stem \(p.stemFile) has \(actual) channel(s), manifest declares \(p.channels)"))
             }
 
-            // Notes file (if declared) must parse and validate; V10 filename match.
-            let notesURL = bundleDirectory.appendingPathComponent(p.notesFile)
-            if let nd = try? Data(contentsOf: notesURL),
-               let track = try? JSONDecoder().decode(NoteTrack.self, from: nd) {
-                v.append(contentsOf: validate(noteTrack: track).violations)
-                // V10: `part` matches filename PART (case-sensitive rawValue).
-                let expectedName = "notes/\(p.part.rawValue).json"
-                if p.notesFile != expectedName {
-                    v.append(ContractViolation("V10", "notesFile \(p.notesFile) does not follow notes/<PART>.json (expected \(expectedName))"))
-                }
-                if track.part != p.part {
-                    v.append(ContractViolation("V10", "notes file \(p.notesFile) declares part \(track.part.rawValue), manifest says \(p.part.rawValue)"))
+            // Notes file (if declared — OPTIONAL since v1.0, C-2.1) must parse
+            // and validate; V10 filename match.
+            if let notesRel = p.notesFile {
+                let notesURL = bundleDirectory.appendingPathComponent(notesRel)
+                if let nd = try? Data(contentsOf: notesURL),
+                   let track = try? JSONDecoder().decode(NoteTrack.self, from: nd) {
+                    v.append(contentsOf: validate(noteTrack: track).violations)
+                    // V10: `part` matches filename PART (case-sensitive rawValue).
+                    let expectedName = "notes/\(p.part.rawValue).json"
+                    if notesRel != expectedName {
+                        v.append(ContractViolation("V10", "notesFile \(notesRel) does not follow notes/<PART>.json (expected \(expectedName))"))
+                    }
+                    if track.part != p.part {
+                        v.append(ContractViolation("V10", "notes file \(notesRel) declares part \(track.part.rawValue), manifest says \(p.part.rawValue)"))
+                    }
                 }
             }
 

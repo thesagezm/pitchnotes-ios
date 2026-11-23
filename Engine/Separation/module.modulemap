@@ -1,0 +1,4 @@
+module DemucsShim {
+    header "DemucsShim.h"
+    export *
+}

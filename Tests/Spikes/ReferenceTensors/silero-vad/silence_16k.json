@@ -1,0 +1,26 @@
+{
+  "referenceVersion": 1,
+  "engine": "SILERO_VAD",
+  "fixture": "silence_16k.wav",
+  "fixture_sha256": "20eaebffe1816e0ffa6f7f854f5ef4ea80d5349faaf0ce1fec1b713e7fde58fa",
+  "model_sha256": "1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3",
+  "export": {
+    "source": "snakers/silero-vad (manifest data@bfdc019, sha 1a153a22f450\u2026)",
+    "script": "Tests/Spikes/silero_real.py --export-c7",
+    "date": "2026-11-22"
+  },
+  "tensors": [
+    {
+      "name": "speech_prob",
+      "file": "silence_16k.speech_prob.f32.bin",
+      "shape": [
+        62
+      ],
+      "dtype": "float32"
+    }
+  ],
+  "tolerance": {
+    "abs": 0.001,
+    "rel": 0.0001
+  }
+}
