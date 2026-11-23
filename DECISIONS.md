@@ -59,10 +59,18 @@ EngineCore (Paul @5258632, `Engine/Sources/EngineCore/ImportProgress.swift`), ve
      ImportKit stays free of the C++ bridge; EngineCore stays portable (Linux loop clean).
    - The source MUST be decoded ONCE per import. The C-3 flow already decoded in `importAudio`;
      the facade must not decode the source a second time.
+   - **The APP MUST NOT CONSTRUCT THE ASSEMBLER OR THE BRIDGE ITSELF.** The app target does
+     not import `ImportKit` for the import path and does not build a `DemucsEngine`; the facade
+     owns that wiring. (This SUPERSEDES the app-side-construction sketch Jess recorded in her
+     session-7 LOG — "both call shapes … the app injects `DemucsEngine.separationRun()`" — which
+     would have put the vendor-bridge wiring in the APP lane and created a second import path.
+     Her independent FINDING is the same one this ruling encodes; her proposed SHAPE is not.)
 2. **Jess's `RealImportEngineFactory` changes by ONE LINE** (X-212, Jess's lane):
    `try SeparationImportEngine(modelPath: modelURL, libraryRoot: bundleRoot)` — she already
    receives `bundleRoot` in `makeEngine(bundleRoot:)`. No other app change, no view change, no
-   UI/UX change (the J-105 precedent).
+   UI/UX change (the J-105 precedent). **The app's import path stays the frozen C-3 pair**
+   (`importAudio` → `separate`) — there is ONE import path in the app, not two, and the app
+   does not need to know whether the engine conforms to anything beyond C-8 + C-9.
 3. **C-3/C-9 semantics CLARIFIED (CONTRACTS v1.0.2 — additive clarification, NO signature
    changed):** the C-3 import flow IS `importAudio` → `separate`, so the publish happens INSIDE
    that flow. By the time `separate` returns, a conforming M2 engine MUST have published a
