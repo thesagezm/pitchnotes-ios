@@ -69,6 +69,9 @@ public enum ImportOrchestrator {
     /// sink; it MUST report fractions inside the GLOBAL separating band
     /// [0.05, 0.90] (the seam contract — DemucsEngine's driver band is
     /// exactly that) and MUST return stems the caller may delete after use.
+    /// NOTE: Swift forbids `@escaping` on a typealias; engines that STORE a
+    /// SeparationRun declare `@escaping` at the storage/parameter site
+    /// (SongBundleImportEngine does).
     public typealias SeparationRun = @Sendable (
         DecodedAudio,
         @escaping @Sendable (ImportProgress) -> Void

@@ -41,6 +41,22 @@ public protocol ProgressReportingEngine: EngineAPI {
     func setImportProgressHandler(_ handler: ImportProgressHandler?)
 }
 
+/// C-9 · Bundle-producing import — NEW v1.0.1 (L-204, D-34, ADDITIVE).
+///
+/// M2 made the app depend on a fact the frozen C-3 `EngineAPI` cannot carry:
+/// **which SongBundle an import produced.** `separate` returns raw stem URLs,
+/// and `EngineAPI` is FROZEN at v1.0 (additive-only, L-203) — so the fact
+/// travels in a NEW additive protocol instead of a changed signature. Zero
+/// existing conformer breaks; v0.x/v1.0 engines that do not implement it keep
+/// working. Types below are VERBATIM from CONTRACTS.md C-9.
+public protocol BundleProducingEngine: ProgressReportingEngine {
+    /// Bundle id = the bundle DIRECTORY name under the library root. Set ONLY
+    /// after the atomic publish completes (C-2.2: the rename is the publish,
+    /// `song.json` inside it is the completion marker) — never mid-staging.
+    /// nil when no bundle has been produced by this engine instance.
+    var importedBundleID: String? { get }
+}
+
 /// Engine-side helper for the C-8 fraction-monotonicity guarantee: clamps the
 /// reported fraction to [0, 1] and to be >= the highest fraction already emitted
 /// by this emitter. The real engine (P-201/P-202) and MockEngine both drive their

@@ -65,7 +65,6 @@ public struct ALACStemWriter: StemEncoding {
         }
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
         input.expectsMediaDataInRealTime = false
-        input.sourceFormatHint = format
         guard writer.canAdd(input) else {
             throw EngineError.importFailed(
                 "ALACStemWriter: writer rejected the ALAC input for \(part.rawValue)")
@@ -92,21 +91,23 @@ public struct ALACStemWriter: StemEncoding {
 
         input.requestMediaDataWhenReady(on: queue) {
             while input.isReadyForMoreMediaData {
-                let frames: AVAudioFrameCount
+                // `read(into:frameCount:)` is non-throwing on the current
+                // AVFoundation SDK and reports EOF through `frameLength == 0`
+                // (an older overload returned the frame count instead — not
+                // available here).
                 do {
-                    frames = try inputFile.read(into: buffer, frameCount: chunkFrames)
+                    try inputFile.read(into: buffer, frameCount: chunkFrames)
                 } catch {
                     failure.set(error)
                     input.markAsFinished()
                     finished.signal()
                     return
                 }
-                if frames == 0 {
+                if buffer.frameLength == 0 {
                     input.markAsFinished()
                     finished.signal()
                     return
                 }
-                buffer.frameLength = frames
                 if !input.append(buffer) {
                     failure.set(writer.error ?? EngineError.importFailed(
                         "ALACStemWriter: append failed for \(part.rawValue)"))

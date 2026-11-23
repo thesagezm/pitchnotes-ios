@@ -47,7 +47,7 @@ public final class SongBundleImportEngine: ProgressReportingEngine, BundleProduc
     ///   - libraryRoot: the directory that holds the published bundles.
     ///   - separator: the chunked separation seam (the app injects
     ///     `DemucsEngine`'s implementation).
-    public init(libraryRoot: URL, separator: ImportOrchestrator.SeparationRun) {
+    public init(libraryRoot: URL, separator: @escaping ImportOrchestrator.SeparationRun) {
         self.libraryRoot = libraryRoot
         self.separator = separator
         self.workDir = libraryRoot.appendingPathComponent(".work", isDirectory: true)
