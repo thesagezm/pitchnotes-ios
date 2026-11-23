@@ -16,6 +16,80 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-35 | 2026-11-23 UTC | Leto | RULED (M2 gate session 9; the M2 real-engine seam surface is FIXED + the C-3 import flow must END in a PUBLISHED bundle)
+**Context:** Session-9 gate review, after both lanes moved past the session-8 checkpoint
+(paul @2d9f7f8, jess @772c112). Three facts, all found by reading code — not by trusting a row:
+(1) **The X-208 surface does not exist.** Paul landed P-204's Apple side as
+`SongBundleImportEngine` inside the `Engine/ImportKit` SPM package — `init(libraryRoot:separator:)`,
+NON-throwing, separator injected — and Jess's committed binding expects an APP-TARGET
+`SeparationImportEngine` with a THROWING `init(modelPath:)`. Session-8 Finding 1 stands
+(`Engine/Separation/SeparationImportEngine.swift` is still absent from origin/paul); the two
+lanes have now built to two different surfaces, and D-34 §2/X-208 were written before either
+implementation existed.
+(2) **NEW, GATE-BREAKING — the C-3 import flow cannot publish a bundle as it stands.**
+Jess's flow (J-201 `ImportModel`) drives the FROZEN C-3 API — `importAudio(url:)` then
+`separate(audio, mode:)` — and then REQUIRES a complete published bundle: she resolves the id
+via C-9 and throws `EngineError.importFailed("completed bundle failed the completeness check")`
+unless `<libraryRoot>/<id>/song.json` exists. Paul's ONLY publish path is `importSong(source:title:)`
+(the whole-path orchestrator: decode → separate → assemble → publish); `SongBundleImportEngine.separate()`
+returns the separator's RAW stem URLs, never assembles, never publishes, and leaves
+`importedBundleID` nil. ⇒ With the real engine compiled in, the M2 demo would import, separate,
+and then FAIL THE APP'S OWN COMPLETENESS CHECK: no bundle in the library, no stems in the mixer.
+This would have surfaced only at the human demo, after the entire gate.
+(3) **Session-8 Finding 2 is RESOLVED** — the C-9 `BundleProducingEngine` protocol now exists in
+EngineCore (Paul @5258632, `Engine/Sources/EngineCore/ImportProgress.swift`), verbatim per §C-9.
+**Ruling:**
+1. **The M2 real-engine seam is ONE app-target facade — `Engine/Separation/SeparationImportEngine.swift`
+   (Paul's lane; X-211). Exact surface, frozen for both lanes:**
+   ```swift
+   public final class SeparationImportEngine: ProgressReportingEngine, BundleProducingEngine, @unchecked Sendable {
+       public init(modelPath: URL, libraryRoot: URL) throws
+   }
+   ```
+   - `init` THROWS when the htdemucs ggml weights cannot be loaded. Jess's factory catches it
+     and surfaces an actionable error; it must NOT fall back to the mock (D-34 §3, D-12 honesty).
+   - `importAudio(url:)` → decode + normalize to the 44.1 kHz mix (staged; NO publish).
+   - `separate(audio, mode: .twoStem)` → separate + assemble (ALAC stems + `song.json` v1.0) +
+     ATOMIC PUBLISH under `libraryRoot`; set `importedBundleID` to the published DIRECTORY name;
+     return the PUBLISHED stem URLs. On failure/cancellation: throw, `importedBundleID` stays
+     nil, NO partial bundle (C-2.2).
+   - C-8 progress stays monotonic across the whole flow; 1.0 only AFTER the publish rename.
+   - The facade is the ONLY place that knows the vendor bridge: it constructs `DemucsEngine`
+     (app target) and injects it into the ImportKit `SongBundleImportEngine` (SPM package).
+     ImportKit stays free of the C++ bridge; EngineCore stays portable (Linux loop clean).
+   - The source MUST be decoded ONCE per import. The C-3 flow already decoded in `importAudio`;
+     the facade must not decode the source a second time.
+2. **Jess's `RealImportEngineFactory` changes by ONE LINE** (X-212, Jess's lane):
+   `try SeparationImportEngine(modelPath: modelURL, libraryRoot: bundleRoot)` — she already
+   receives `bundleRoot` in `makeEngine(bundleRoot:)`. No other app change, no view change, no
+   UI/UX change (the J-105 precedent).
+3. **C-3/C-9 semantics CLARIFIED (CONTRACTS v1.0.2 — additive clarification, NO signature
+   changed):** the C-3 import flow IS `importAudio` → `separate`, so the publish happens INSIDE
+   that flow. By the time `separate` returns, a conforming M2 engine MUST have published a
+   COMPLETE bundle under the library root (C-2.2 completion marker `song.json` present) and MUST
+   have set `importedBundleID`. An engine that returns stems without publishing satisfies C-3 but
+   NOT C-9 for M2, and the consumer rejects it with the C-2.2 completeness check. This pins down
+   WHEN the publish happens; it changes no signature and re-opens nothing (C-9 rule 1 already
+   implied it, and C-9 rule 3's derivation fallback presupposes it — a published stem's parent
+   IS the bundle directory).
+4. **Paul's `SongBundleImportEngine` (ImportKit) is the ASSEMBLER, not the app-facing engine.**
+   It stays — the facade delegates to it — and the orchestrator gains the entry point that takes
+   an ALREADY-DECODED mix (the C-3 flow decodes first, then separates). Implementation is Paul's;
+   the REQUIREMENTS are: decode once, publish once, no partial bundle, no residue.
+5. **X-210 is CLOSED** (the C-9 protocol landed) and **session-8 Finding 1 is RE-STATED, NOT
+   REVERSED**: the app-target facade must EXIST before gate step 5(c) lands the compilation
+   condition + the source path (the X-201-r1 missing-file red). Step 5(c) stays LAST and stays
+   ONE COMMIT (X-209).
+6. **The D-25 decision is NOT pre-empted and NOT re-litigated.** Paul owns the 30 s paired run;
+   the protocol (QUEUE 21:00Z §6 Rules 1–4) stands. Preliminary numbers are not a ruling, and
+   runner numbers are never presented as device numbers.
+7. **Merge order is UNCHANGED** (D-34 §5): paul→main → Jess swap seam #1 → jess→main → leto→main
+   step 5(a)+(b) then (c) → main gate run ALL 8 → human device demo → Tier B ask → tag m2 → open M3.
+**Affects:** CONTRACTS.md (v1.0.2 — C-3 note + C-9 rule 5 + changelog), QUEUE (X-211 Paul,
+X-212 Jess, X-209 dependency updated, X-210 closed), `Engine/Separation/SeparationImportEngine.swift`
+(NEW — Paul), `App/Sources/Features/Import/RealImportEngineFactory.swift` (one line — Jess),
+`project.yml` (gate step 5c: condition + source path, unchanged in shape).
+
 ## D-34 | 2026-11-22 UTC | Leto | RULED (M2 gate session 7; the bundle-identity seam + two demo-blocking gaps closed by ruling)
 **Context:** Gate review for L-204 surfaced two facts that would have failed the M2 device
 demo on the day, both found by reading the code rather than the rows:

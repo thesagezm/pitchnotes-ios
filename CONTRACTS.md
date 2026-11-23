@@ -4,12 +4,14 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v1.0 — RATIFIED 2026-11-22 UTC by Leto (L-203, M2 SongBundle manifest
-> FREEZE). Additive-only from here on**; breaking changes require a new version +
-> Leto ruling + a migration task (AGENTS §7). Paul + Jess: ack in QUEUE LOG when
-> you first implement against it. Change log at the bottom. v0.0 (L-006,
+> Status: **v1.0.2 — RATIFIED 2026-11-23 UTC by Leto (L-204, D-35 — M2 import-flow
+> CLARIFICATION: the C-3 flow must END in a published bundle). Additive-only from
+> here on**; breaking changes require a new version + Leto ruling + a migration
+> task (AGENTS §7). Paul + Jess: ack in QUEUE LOG when you first implement against it.
+> Change log at the bottom. v0.0 (L-006,
 > 2026-11-20); v0.0.1 (D-18.4); v0.1 (L-102, 2026-11-21); v0.1.1 (D-22/D-24);
-> **v1.0 (L-203, 2026-11-22 — the M2 freeze)**.
+> **v1.0 (L-203, 2026-11-22 — the M2 freeze); v1.0.1 (L-204, D-34 — C-9);
+> v1.0.2 (L-204, D-35 — C-9 rule 5 + the C-3 M2-flow note)**.
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -330,6 +332,13 @@ Threading model (v0.0; progress/cancellation refined in C-8, v1.0):
 a SongBundle on disk that passes the C-2 V-rules. Delivered by P-001; J-002 consumes.
 The real engine swaps in at M1/M2/M3 merges with ZERO UI changes (that is the point).
 
+**M2 real-engine note (v1.0.2, D-35 — CLARIFICATION, no signature changed):** the
+app-facing M2 engine is an APP-TARGET facade over C-8 + C-9 (the concrete class and
+initializer are fixed in DECISIONS D-35 and the QUEUE row X-211, because the app
+must construct it by name). The rule that matters here is the publish rule: the C-3
+flow is `importAudio` → `separate`, so the SongBundle is published INSIDE that flow —
+see C-9 rule 5.
+
 ## C-4 · Reference pitch format — UltraStar semantics (finalized)
 
 NoteTrack ↔ UltraStar `.txt` mapping (Jess implements export/import as a logic
@@ -546,6 +555,16 @@ public protocol BundleProducingEngine: ProgressReportingEngine {
    fact is EXPLICIT, not implied.
 4. The id is a directory name only (no path separators, no `..`); consumers join
    it to the library root themselves.
+5. **M2 flow rule (v1.0.2, D-35 — CLARIFICATION, no signature changed):** the C-3
+   import flow IS `importAudio` → `separate`, so the publish happens INSIDE that
+   flow. By the time `separate` returns, a conforming M2 engine MUST have published
+   a COMPLETE bundle under the library root (C-2.2 completion marker: `song.json`
+   present in `<libraryRoot>/<id>/`) and MUST have set `importedBundleID` to that
+   bundle's directory name. An engine that returns stems WITHOUT publishing
+   satisfies C-3 but NOT C-9 for M2 — the consumer rejects it with the C-2.2
+   completeness check (`"completed bundle failed the completeness check"`).
+   Rule 3's derivation fallback presupposes the same thing: a PUBLISHED stem's
+   parent directory IS the bundle directory.
 
 **Acks:** PAUL + JESS — ack C-9 in your next LOG line (L-006/L-102 precedent).
 Both lanes already depend on this fact (Paul's P-204 engine must publish it;
@@ -565,3 +584,4 @@ existing seam rather than inventing one.
 | **v0.1** | 2026-11-21 | **RATIFIED (L-102, additive over v0.0/v0.0.1):** C-3 PitchFrame gains `engine_id` (String) + `lookahead_ms` (Int) with decoding defaults ("", 0) — v0.0 JSON stays valid, no new V-rule; C-2.4 schema documents the optional keys; NEW C-6: `PitchEngineID` enum (RIBBON_MPM_YIN / SWIFTF0, rawValues stable forever) + `LivePitchEngine` facade (ribbonSource causal zero-lookahead vs gradingSource post-hoc 176 ms) + C-6.1 part range presets (X-001/UX §3.6 table verbatim, calibratable). EngineAPI signatures unchanged. | Leto |
 | **v1.0** | 2026-11-22 | **RATIFIED (L-203, M2 SongBundle manifest FREEZE — additive-only after this):** C-2.1 manifest v1.0 fields all REQUIRED — `tuning_cents` REQUIRED (was optional per v0.1.1/D-22) with NEW **V14** (v1.0 required-fields + ranges); top-level `channels` (decoded mix) NEW REQUIRED; `hasInstrumental` REQUIRED with NEW **V15** (INSTRUMENTAL entry ⇔ hasInstrumental, D-9); example shows the M2 two-stem shape. C-1 += `vocals = "VOCALS"` (structural, isSingableVoice false, sortOrder 10 appended — no pre-existing value changed). C-2.2 = freeze notes: stem naming (M2: VOCALS/INSTRUMENTAL; per-voice names M3+), atomic bundle write semantics (`<id>.tmp` staging + rename; song.json = complete marker), permanent v0.x back-compat. NEW C-8: ImportStage/ImportProgress/ImportProgressHandler + `ProgressReportingEngine` additive protocol + Task-cancellation contract (CancellationError, no partial bundles). EngineAPI signatures unchanged; C-5/C-6/C-7 untouched. | Leto |
 | **v1.0.1** | 2026-11-22 | **RATIFIED (L-204, D-34 — ADDITIVE, no signature changed):** NEW C-9 `BundleProducingEngine` (over C-8) carrying `importedBundleID` — the fact "which bundle did this import publish" — because C-3 is frozen and `separate` returns raw stem URLs. Set only AFTER the atomic publish (C-2.2), nil on cancel/failure; consumer MAY derive the bundle dir from a stem URL's parent when an engine does not conform (C-9 rule 3), so it can never become a blocker. EngineAPI signatures unchanged; C-1/C-2/C-3/C-5/C-6/C-7/C-8 untouched. | Leto |
+| **v1.0.2** | 2026-11-23 | **RATIFIED (L-204, D-35 — CLARIFICATION, no signature changed):** C-9 gains **rule 5 (M2 flow rule)** — because the C-3 flow is `importAudio` → `separate`, the PUBLISH happens inside that flow: by the time `separate` returns, a conforming M2 engine MUST have published a complete bundle (C-2.2 `song.json` marker) and MUST have set `importedBundleID`. C-3 gains an M2 real-engine note (the app-target facade over C-8 + C-9; concrete class/init fixed in DECISIONS D-35 + QUEUE X-211). Found by reading both implementations: Jess's flow requires the published bundle; Paul's C-3 `separate` returned raw stems without publishing ⇒ the real-engine import would have failed the app's own completeness check at the device demo. NO signature changed; no rule re-opened. | Leto |
