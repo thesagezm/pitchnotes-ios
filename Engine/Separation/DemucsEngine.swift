@@ -160,6 +160,22 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
             throw EngineError.contractViolation(
                 "multiStem mode not available in M2 (vocals+instrumental only per D-9)")
         }
+        return try await separateStagedMix(audio) { [emitter] p in emitter.emit(p) }
+    }
+
+    /// The separation core with an INJECTED progress sink.
+    ///
+    /// The C-8 `separate(_:mode:)` above routes progress through this
+    /// engine's own emitter (the app's handler). The import path (P-204)
+    /// needs the progress to reach the ORCHESTRATOR instead, without
+    /// hijacking the app's C-8 handler — hence this overload: the same
+    /// driver, the same staging discipline, a different sink.
+    ///
+    /// Progress fractions are GLOBAL and land in the separating band
+    /// [0.05, 0.90] (the driver's band) — the seam contract of
+    /// `ImportOrchestrator.SeparationRun`.
+    public func separateStagedMix(_ audio: DecodedAudio,
+                                  progress: @escaping @Sendable (ImportProgress) -> Void) async throws -> [Part: URL] {
         try Task.checkCancellation()
         try loadModelIfNeeded()
 
@@ -183,7 +199,7 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
             policy: policy,
             config: config,
             thermalProvider: { DemucsEngine.currentThermalState() },
-            progress: { [emitter] p in emitter.emit(p) })
+            progress: { p in progress(p) })
 
         // Staging dir is created up front and removed on ANY failure below
         // (including cancellation) — the C-2.2 no-partial-bundle discipline.
@@ -217,8 +233,35 @@ public final class DemucsEngine: ProgressReportingEngine, SegmentEngine, @unchec
         }
     }
 
-    // MARK: - SegmentEngine (P-202 L2)
+    // MARK: - Import seam (P-204)
 
+    /// The import seam: the app injects this into the real import engine
+    /// (`SongBundleImportEngine`, ImportKit) so the orchestrator can drive
+    /// the chunked separation without the portable core ever linking the
+    /// vendored C++ bridge.
+    ///
+    /// The returned closure OWNS the staging directory it creates (the one
+    /// the stems are written into) and hands the orchestrator the cleanup
+    /// that removes it once the stems have been encoded — so an import
+    /// leaves no scratch files behind, on success or on failure.
+    public func separationRun() -> ImportOrchestrator.SeparationRun {
+        { [weak self] mix, onProgress in
+            guard let self else {
+                throw EngineError.separationFailed("DemucsEngine was released before separation")
+            }
+            let stems = try await self.separateStagedMix(mix, progress: onProgress)
+            // The stems share one staging directory (created by separateStagedMix).
+            let directories = Set(stems.values.map { $0.deletingLastPathComponent() })
+            let cleanup: @Sendable () -> Void = {
+                for directory in directories {
+                    try? FileManager.default.removeItem(at: directory)
+                }
+            }
+            return SeparationOutput(stems: stems, cleanup: cleanup)
+        }
+    }
+
+    // MARK: - SegmentEngine (P-202 L2)
     /// One window of the mix → the C-1 two-stem pair, in the PROCESSING layout
     /// (stereo, interleaved) — the driver blends the overlaps there.
     ///
