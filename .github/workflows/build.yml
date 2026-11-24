@@ -329,7 +329,12 @@ jobs:
   basicpitch-spike:
     name: "BasicPitch spike (REAL basic-pitch ONNX via the vendored basicpitch.cpp — P-301 runner; RED until it lands, BLOCKING at the M3 gate)"
     runs-on: macos-latest
-    timeout-minutes: 20
+    # 30 min: this job runs the REAL pipeline THREE times — the harness run
+    # (which proves Paul's run_spike.py wiring), the direct parity run, and the
+    # corruption proof (which re-runs the whole thing against a perturbed
+    # vendored C++ side). The old 20-min bound was tuned for a job that only
+    # compiled; the real path also runs the model.
+    timeout-minutes: 30
     continue-on-error: true
     env:
       PITCHNOTES_SPIKE_REAL: required
@@ -382,80 +387,127 @@ jobs:
           PY
 
       # SHA-pinned weights (D-42 Tier B — never in git, never claimed clean).
+      # PITCHNOTES_MODEL_CACHE is exported so PAUL's runner
+      # (Tests/Spikes/basicpitch_real.py → ensure_model()) resolves the SAME
+      # cache dir this step populated — otherwise it re-downloads the weights
+      # into Models/downloads and the actions/cache above never helps.
       - name: Download + SHA256-verify basic-pitch weights (manifest-pinned, D-42 Tier B)
         run: |
+          export PITCHNOTES_MODEL_CACHE="$HOME/pitchnotes-model-cache"
           "$HOME/spike-venv/bin/python" -I scripts/models/download.py \
             --manifest Models/manifest.json \
             --entry basic-pitch \
-            --cache-dir "$HOME/pitchnotes-model-cache"
+            --cache-dir "$PITCHNOTES_MODEL_CACHE"
 
       - name: Run spike harness (REAL required — PITCHNOTES_SPIKE_REAL=required)
         run: |
           set -o pipefail
           "$HOME/spike-venv/bin/python" -I Tests/Spikes/run_spike.py --spike basicpitch 2>&1 | tee basicpitch-spike.log
 
-      # The harness prints "(real)" only when the real path ran (LAST_MODE).
+      # The harness prints "PASSED: basicpitch-spike (real)" only when the real
+      # path ran AND every real check passed (LAST_MODE + no violations).
       # Asserting it HERE is what makes this job real-gating: the harness
       # itself cannot fail on a missing basicpitch entry in real_runners, so
       # without this assertion the job would pass on the MOCK.
+      # NOTE the exact "PASSED:" prefix — a "FAILED: basicpitch-spike (real)"
+      # line also contains "(real)", and a failed real run must NOT satisfy
+      # this assertion (the step's own pipefail catches it too; this grep is
+      # the second, independent guard).
       - name: Assert the spike ran REAL (the P-002 mock may NOT pass this job)
         run: |
-          if ! grep -q "basicpitch-spike (real)" basicpitch-spike.log; then
-            echo "::error::The basicpitch spike did NOT run in REAL mode (no 'basicpitch-spike (real)' line in the harness output) — the P-002 MOCK ran instead. The real path is not wired, so this job would be GREEN-BUT-UNPROVEN. The wiring is PAUL's lane: add 'basicpitch' to real_runners and call _try_real() inside run_basicpitch() in Tests/Spikes/run_spike.py. Failing instead of accepting the mock."
+          if ! grep -q "PASSED: basicpitch-spike (real)" basicpitch-spike.log; then
+            echo "::error::The basicpitch spike did NOT pass in REAL mode (no 'PASSED: basicpitch-spike (real)' line in the harness output) — the P-002 MOCK ran instead, or the real run failed. The real path is not wired, so this job would be GREEN-BUT-UNPROVEN. The wiring is PAUL's lane: add 'basicpitch' to real_runners (module 'basicpitch_real', function 'run_basicpitch_real') and call _try_real('basicpitch', report) inside run_basicpitch() in Tests/Spikes/run_spike.py. Failing instead of accepting the mock."
             grep -E "basicpitch|PASSED|FAILED|mock|real" basicpitch-spike.log | tail -n 20 || true
             exit 1
           fi
           echo "OK: the basicpitch spike ran in REAL mode"
 
-      # CI CONTRACT (Leto, L-302): `python3 Tests/Spikes/basicpitch_real.py
-      # --parity` compares the vendored basicpitch.cpp runner's output against
-      # the committed C-7 reference sidecars (P-208 / D-24 / C-7) with
-      # tolerance abs 1e-3 OR rel 1e-4, and exits NON-ZERO on a mismatch.
-      # The next step proves that comparison is not vacuous.
-      - name: Parity vs the committed C-7 reference (P-208 harness, tolerance-based)
+      # CI CONTRACT (Leto, L-302) — REWRITTEN 2026-11-24 to match what PAUL
+      # ACTUALLY LANDED (`origin/paul` @da5fe31: Tests/Spikes/basicpitch_real.py
+      # + Tests/Spikes/basicpitch_runner.cpp).
+      #
+      # The earlier contract asked for a `--parity` flag and a COMMITTED C-7
+      # sidecar set under Tests/Spikes/ReferenceTensors/basicpitch/*.bin. PAUL
+      # built a DIFFERENT (and, for a live CI gate, better) shape: his runner
+      # script has NO `--parity` flag, and the parity is INSIDE the real run —
+      # it compares the vendored C++ pipeline's tensors and note events against
+      # an INDEPENDENT PYTHON ONNX RUNTIME reference (Tests/Spikes/basicpitch_ref.py)
+      # at the C-7 tolerance (abs 1e-3 OR rel 1e-4), and it exits NON-ZERO on a
+      # mismatch. That is a true CROSS-IMPLEMENTATION parity (two independent
+      # decoders, not one decoder compared with itself), so the CI below now
+      # consumes what he built instead of a shape that does not exist.
+      # (Per L-302: adjust LETO's CI to what PAUL landed — never his files.)
+      - name: Parity — the vendored pipeline vs the independent Python reference (C-7 tolerance)
         run: |
           set -o pipefail
-          "$HOME/spike-venv/bin/python" -I Tests/Spikes/basicpitch_real.py --parity 2>&1 | tee basicpitch-parity.log
-
-      # "A CORRUPTED PORT MUST FAIL" — PROVED, not asserted: corrupt one byte
-      # of the committed reference and require the SAME comparison to reject
-      # it. If it still passes, the comparison is vacuous and the job is red.
-      - name: Prove the parity comparison REJECTS a corrupted reference
-        run: |
-          REF_DIR=Tests/Spikes/ReferenceTensors/basicpitch
-          BIN=$(ls "$REF_DIR"/*.bin 2>/dev/null | head -n 1 || true)
-          if [ -z "$BIN" ]; then
-            echo "::error::no C-7 .bin sidecar under $REF_DIR — P-301's parity reference has not landed (PAUL's lane, Tests/Spikes/**). The parity leg cannot be PROVEN without a reference to compare against."
+          export PITCHNOTES_MODEL_CACHE="$HOME/pitchnotes-model-cache"
+          "$HOME/spike-venv/bin/python" -I Tests/Spikes/basicpitch_real.py 2>&1 | tee basicpitch-parity.log
+          echo "--- the parity evidence (S4 tensors / S5 events), which MUST be present and green ---"
+          grep -E "tensor parity|note events match|amplitude parity" basicpitch-parity.log || true
+          if ! grep -q "BASICPITCH REAL SPIKE GREEN" basicpitch-parity.log; then
+            echo "::error::the direct real run did not report GREEN — the parity leg (S4 tensor parity vs the independent Python reference, S5 event parity) is NOT satisfied. Failing instead of accepting it."
             exit 1
           fi
-          cp "$BIN" "$BIN.orig"
-          "$HOME/spike-venv/bin/python" -I - "$BIN" <<'PY'
+
+      # "A CORRUPTED PORT MUST FAIL" — PROVED, not asserted (D-24 / P-208).
+      #
+      # The corruption is applied to THE C++ SIDE ONLY: the vendored pipeline
+      # (vendor/basicpitch/src/ort_inference.cpp — LETO's lane, AGENTS §12) is
+      # perturbed ON PURPOSE in this checkout, and the SAME comparison must then
+      # REJECT it. The Python reference is untouched, so only a comparison that
+      # genuinely compares the two sides can catch this. If the comparison were
+      # vacuous (or absent), the corrupted run would still pass and this step
+      # fails the job.
+      #
+      # If the perturbation cannot be applied (the anchor moved), the step FAILS
+      # LOUDLY — a proof that cannot be applied is never a silent pass.
+      - name: Prove the parity comparison REJECTS a corrupted C++ side (vendor perturbed on purpose)
+        run: |
+          set -o pipefail
+          export PITCHNOTES_MODEL_CACHE="$HOME/pitchnotes-model-cache"
+          SRC=vendor/basicpitch/src/ort_inference.cpp
+          cp "$SRC" "$SRC.orig"
+          "$HOME/spike-venv/bin/python" -I - "$SRC" <<'PY'
           import sys
           p = sys.argv[1]
-          data = bytearray(open(p, "rb").read())
-          # Flip ONE byte at each of 5 evenly spaced positions: a comparison
-          # that only inspects part of the payload must still SEE the
-          # corruption (a single flipped byte in an unexamined region would
-          # let a weak comparison pass — which is exactly the vacuity this
-          # step is here to catch).
-          n = len(data)
-          for k in range(1, 6):
-              i = min(n - 1, (n * k) // 6)
-              data[i] ^= 0xFF
-              print(f"corrupted byte at offset {i} of {p}")
-          open(p, "wb").write(bytes(data))
+          src = open(p, encoding="utf-8").read()
+          anchor = "return InferenceResult{unwrapped_notes"
+          if anchor not in src:
+              print("::error::the corruption anchor moved in " + p +
+                    " ('return InferenceResult{unwrapped_notes' not found) — the parity "
+                    "NON-VACUITY PROOF cannot be applied. Failing loudly: a proof that "
+                    "cannot be applied is never a silent pass. Fix this step or the "
+                    "vendor file, do NOT skip it.")
+              sys.exit(1)
+          inject = (
+              "    // CI CORRUPTION PROOF (Leto, L-302) — PERTURBED ON PURPOSE.\n"
+              "    // The vendored C++ side is shifted by +0.05; the independent Python\n"
+              "    // reference is NOT touched. A real comparison MUST reject this.\n"
+              "    // An ADDITIVE constant is used deliberately: it changes EVERY element\n"
+              "    // (including exact zeros, which a multiplicative scale would leave\n"
+              "    // untouched), and |0.05| is far above the C-7 abs tolerance (1e-3).\n"
+              "    for (Eigen::Index ci = 0; ci < unwrapped_notes.size(); ++ci) {\n"
+              "        unwrapped_notes.data()[ci] += 0.05f;\n"
+              "    }\n\n"
+          )
+          open(p, "w", encoding="utf-8").write(src.replace(anchor, inject + anchor, 1))
+          print("perturbed " + p + " (notes tensor scaled 1.5x)")
           PY
           set +e
-          "$HOME/spike-venv/bin/python" -I Tests/Spikes/basicpitch_real.py --parity > corrupted-parity.log 2>&1
+          "$HOME/spike-venv/bin/python" -I Tests/Spikes/run_spike.py --spike basicpitch > corrupted-parity.log 2>&1
           RC=$?
           set -e
-          tail -n 20 corrupted-parity.log || true
-          mv -f "$BIN.orig" "$BIN"
+          tail -n 25 corrupted-parity.log || true
+          mv -f "$SRC.orig" "$SRC"
           if [ "$RC" -eq 0 ]; then
-            echo "::error::the parity comparison PASSED against a CORRUPTED reference — the comparison is VACUOUS (it does not actually compare the runner output to the reference). P-208's 'a corrupted port must FAIL' is NOT met."
+            echo "::error::the parity comparison PASSED against a CORRUPTED C++ side — the comparison is VACUOUS (it does not actually compare the vendored runner against the independent reference). D-24/P-208's 'a corrupted port must FAIL' is NOT met."
             exit 1
           fi
-          echo "OK: the parity comparison REJECTED the corrupted reference (exit $RC) — the comparison is not vacuous"
+          if ! grep -q "TENSOR PARITY FAILED" corrupted-parity.log; then
+            echo "::error::the corrupted run failed (exit $RC) but NOT with a parity violation — it failed for some other reason (e.g. a compile error), so this did NOT prove the parity comparison is non-vacuous. See corrupted-parity.log."
+            exit 1
+          fi
+          echo "OK: the parity comparison REJECTED the corrupted C++ side (exit $RC, TENSOR PARITY FAILED) — the comparison is not vacuous"
 
       - name: Upload basicpitch spike + parity logs
         if: always()
