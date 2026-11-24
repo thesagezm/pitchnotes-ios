@@ -18,7 +18,7 @@
                    `NoteTrack` for each stem: `Engine/` Swift bridge → this C++ core →
                    `NoteEvent[]` → CONTRACTS C-2 NoteTrack. Backs the real
                    `basicpitch-spike` job (L-302).
-- Local changes:   **4 patches, all mechanical and all logged in `patches.log`** — see
+- Local changes:   **5 patches, all mechanical and all logged in `patches.log`** — see
                    that file for the exact before/after. In one line: **the MIDI writer
                    is gone (no libremidi), the note-event function is exported, and the
                    model is loaded from a FILE PATH instead of a baked-in blob.**
