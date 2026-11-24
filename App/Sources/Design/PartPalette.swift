@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import EngineCore
 
 // PartPalette — one color per C-1 part, for the piano roll (J-301) and the
@@ -57,25 +56,5 @@ enum PartPalette {
         case .instrumental: return 0x7C828E
         case .vocals: return 0x7C828E
         }
-    }
-}
-
-private extension Color {
-    /// Dynamic light/dark color from a hex pair (resolved per trait).
-    init(hexLight light: UInt32, dark: UInt32) {
-        self.init(uiColor: UIColor { trait in
-            trait.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light)
-        })
-    }
-}
-
-private extension UIColor {
-    convenience init(hex: UInt32) {
-        self.init(
-            red: CGFloat((hex >> 16) & 0xFF) / 255.0,
-            green: CGFloat((hex >> 8) & 0xFF) / 255.0,
-            blue: CGFloat(hex & 0xFF) / 255.0,
-            alpha: 1
-        )
     }
 }

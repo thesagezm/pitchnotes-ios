@@ -45,7 +45,9 @@ enum PianoRollZoom: Double, CaseIterable, Identifiable {
     }
 
     /// Seconds visible across a ~390 pt-wide phone at this zoom.
-    var visibleSeconds(phoneWidth: Double) -> Double {
+    /// (A `func`, not a computed property: Swift computed properties cannot
+    /// take parameters — that was the J-301 build-ipa compile red.)
+    func visibleSeconds(phoneWidth: Double) -> Double {
         phoneWidth / rawValue
     }
 }
@@ -245,7 +247,7 @@ struct PianoRollView: View {
         let lastSecond = Int(ceil(visible.upperBound))
         var path = Path()
         for second in firstSecond...max(firstSecond, lastSecond) {
-            let x = layout.x(forTime: Double(second))
+            let x = CGFloat(layout.x(forTime: Double(second)))
             path.move(to: CGPoint(x: x, y: 0))
             path.addLine(to: CGPoint(x: x, y: size.height))
         }
@@ -256,8 +258,8 @@ struct PianoRollView: View {
             let x = layout.x(forTime: currentTime)
             if x >= 0 && x <= Double(size.width) {
                 var line = Path()
-                line.move(to: CGPoint(x: x, y: 0))
-                line.addLine(to: CGPoint(x: x, y: size.height))
+                line.move(to: CGPoint(x: CGFloat(x), y: 0))
+                line.addLine(to: CGPoint(x: CGFloat(x), y: size.height))
                 context.stroke(line, with: .color(Color.pnTextSecondary), lineWidth: 1.5)
             }
         }
@@ -267,7 +269,11 @@ struct PianoRollView: View {
         for note in model.notes(inTimeRange: visible) {
             let rect = model.rect(for: note, layout: layout)
             guard rect.x < Double(size.width) && rect.x + rect.width > 0 else { continue }
-            let cgRect = CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height)
+            // PitchLogic's geometry is portable Double; CoreGraphics wants
+            // CGFloat — convert at the drawing boundary (the green ribbon code
+            // does the same: `func y(_ cents: Double) -> CGFloat`).
+            let cgRect = CGRect(x: CGFloat(rect.x), y: CGFloat(rect.y),
+                                width: CGFloat(rect.width), height: CGFloat(rect.height))
             let present = model.isPresent(part: note.part, phraseIndex: note.phraseIndex)
             var fill = PartPalette.color(for: note.part)
             // D-41 §1 — band shading. CONFIRMED solid, PROVISIONAL shaded,
