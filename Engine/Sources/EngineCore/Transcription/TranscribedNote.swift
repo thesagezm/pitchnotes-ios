@@ -9,9 +9,11 @@ import Foundation
 // ports (AGENTS §0: C/C++/Swift engine code must not depend on UIKit/SwiftUI).
 //
 // The engine that produces them is the basic-pitch bridge (D-39: ONE ORT
-// runtime — the existing SPM ORT 1.24.2; the model file is `nmp.onnx`, Tier B
-// per D-42). The engine emits `TranscribedNote`s; `NoteTrackBuilder` turns them
-// into a contract NoteTrack (C-2.3) for one part.
+// runtime — the existing SPM ORT 1.24.2; the model file is `nmp.onnx`, whose
+// WEIGHTS are TIER C per D-46 — NC training data ⇒ STUDY-ONLY for commercial
+// distribution; the CODE is Apache-2.0/MIT and unaffected). The engine emits
+// `TranscribedNote`s; `NoteTrackBuilder` turns them into a contract NoteTrack
+// (C-2.3) for one part.
 //
 // TIMING CONVENTION: all times are seconds from the start of the AUDIO that was
 // transcribed (the stem), NOT from the start of the song. The caller adds the

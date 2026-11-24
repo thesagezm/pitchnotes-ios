@@ -2,10 +2,12 @@
 """Basic-pitch REAL spike (P-301, PAUL lane) — the vendored basicpitch.cpp
 (MIT, D-30 Tier A code) under the EXISTING ONNX Runtime (D-39: ONE runtime —
 the SPM ORT 1.24.2; the trimmed ort-builder route is REJECTED) on the pinned
-`nmp.onnx` weights (D-42: TIER B — Apache-2.0 code, ICASSP-2022 Spotify
-provenance, upstream training-mix licenses UNVERIFIED; never described as
-clean, human sign-off required before commercial/App Store distribution; the
-weights NEVER enter git).
+`nmp.onnx` weights (D-46: TIER C — the CODE is Apache-2.0/MIT and unaffected,
+but the WEIGHTS inherit NC training data (MAESTRO + MedleyDB-pitch = CC
+BY-NC-SA 4.0; iKala = academic-only/no-profit EULA) ⇒ STUDY-ONLY for
+commercial/App Store distribution, and NO human sign-off can promote them;
+never described as clean; the weights NEVER enter git. D-42's "Tier B" is
+superseded by reference — the M3 code path and sideloading are unaffected).
 
 Driver contract (mirrors demucs_real.py / ribbon_real.py):
   - compiles Tests/Spikes/basicpitch_runner.cpp against vendor/basicpitch/src
@@ -798,8 +800,11 @@ def run_basicpitch_real(report: sc.CheckReport) -> None:
 
     model = ensure_model()
     sha = hashlib.sha256(model.read_bytes()).hexdigest()
-    report.ok("S1", f"weights: {model.name} sha256 {sha[:16]}… (TIER B per D-30/D-42 — "
-                    f"upstream training-mix licenses UNVERIFIED; never described as clean)")
+    report.ok("S1", f"weights: {model.name} sha256 {sha[:16]}… (TIER C per D-30/D-46 — "
+                    f"NC training data (MAESTRO + MedleyDB-pitch = CC BY-NC-SA 4.0; "
+                    f"iKala = academic-only EULA) ⇒ STUDY-ONLY for commercial "
+                    f"distribution; the CODE is Apache-2.0/MIT and unaffected; "
+                    f"never described as clean)")
 
     for name in SPIKE_FIXTURES:
         wav = FIXTURES / f"{name}.wav"
@@ -987,7 +992,8 @@ def main() -> int:
     for line in report.passed:
         print(f"  ok {line}")
     print("BASICPITCH REAL SPIKE GREEN (vendored basicpitch.cpp under the ONE ORT — D-39; "
-          "nmp.onnx weights TIER B — D-42)")
+          "nmp.onnx weights TIER C — D-46: STUDY-ONLY for commercial distribution, "
+          "the CODE is Apache-2.0/MIT and unaffected)")
     return 0
 
 
