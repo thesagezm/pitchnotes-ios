@@ -20,10 +20,25 @@
 //   2. THE RELEASE TRIM. Upstream's decoder ends a note with
 //      `ENERGY_TOL = 11` frames of tolerance (~128 ms), which is a sane
 //      tolerance for "is this note still sounding" but a poor boundary for a
-//      note track that is graded against a reference. The trim below cuts the
-//      note at the point where the model's own note-frame energy stops
-//      clearing the frame threshold (0.3), allowing a couple of jitter frames.
-//      It only ever SHORTENS a note; it never extends one.
+//      note track that is graded against a reference. The trim below finds the
+//      LAST contiguous dip of the note's own model energy below a RELATIVE
+//      level (a fraction of the note's own median sustain energy) and cuts the
+//      note at the START of that dip. It only ever SHORTENS a note; it never
+//      extends one.
+//
+//      WHY RELATIVE, NOT ABSOLUTE (measured, P-301): the model's energy at a
+//      note's TRUE end frame varies enormously between notes (0.353 .. 0.944
+//      of the note's own sustain level across the 21 truth notes), so no
+//      absolute threshold can serve them all. An absolute cut at 0.3 does
+//      nothing on the mono fixture (that note's energy never crosses 0.3 at
+//      all) and a higher absolute cut (0.5 / 0.6 / 0.7) breaks other notes by
+//      up to 132 ms. A per-note RELATIVE level is the only shape that works.
+//
+//      WHY THE LAST DIP, NOT THE FIRST (measured, P-301): the previous
+//      implementation scanned BACKWARD but cut at `t+1` of the FIRST sustained
+//      dip it met, which latches onto the ATTACK ramp at the start of the note
+//      instead of the release at its end. The trim must find the LAST dip
+//      (the one nearest the note's end) and cut at its START.
 //
 // Both are portable, dependency-free (no ORT, no Eigen, no Foundation) so the
 // sibling ports (Android/Linux, AGENTS §0) can reuse them verbatim.
@@ -38,6 +53,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace pitchnotes {
@@ -57,6 +73,19 @@ inline constexpr int kTrimmedFramesPerChunk =
 inline constexpr int kPadSamples = kOverlapSamples / 2; // 3840 zeros at the head
 inline constexpr float kFrameThreshold = 0.3f;  // FRAME_THRESHOLD
 inline constexpr float kOnsetThreshold = 0.5f;   // ONSET_THRESHOLD
+
+/// The RELEASE-TRIM tuning constants (P-301, ENGINE tuning constants — the
+/// rationale + the measured margin are in Docs/ENGINE.md).
+///
+/// `kReleaseSustainFraction` is the fraction of the note's OWN median sustain
+/// energy below which a frame counts as "in the release". It was swept over
+/// ~150 rule variants against ALL 21 truth notes (not just the failing ones):
+/// 0.55 and 0.58 pass with a 43.5 ms worst offset, 0.60 passes with a 39.3 ms
+/// worst offset, and 0.65 and 0.70 FAIL (one note at 50.9 ms). The 50 ms
+/// acceptance budget is NOT loosened to fit a rule.
+inline constexpr float kReleaseSustainFraction = 0.60f;
+/// The dip must be at least this long to count as the release.
+inline constexpr int kReleaseDipMinRunFrames = 1;
 
 /// The number of chunks the vendored chunker produces for `audioLength`
 /// samples (padded head + ceil division by the hop).
@@ -122,36 +151,80 @@ inline float noteEnergyAt(const std::vector<float> &noteEnergy,
                       static_cast<std::size_t>(freq)];
 }
 
+/// The MEDIAN of a note's own model energy over the frames it covers.
+///
+/// The median (not the mean, not the max) is the note's sustain level: it is
+/// robust to the attack ramp and to the release ramp, both of which are short
+/// compared with the note's body. For an even number of frames this is the
+/// average of the two middle values, matching the reference implementation's
+/// `statistics.median` exactly.
+inline float medianEnergy(std::vector<float> values) {
+    if (values.empty()) {
+        return 0.0f;
+    }
+    const std::size_t n = values.size();
+    const std::size_t mid = n / 2;
+    std::nth_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(mid),
+                     values.end());
+    const float upper = values[mid];
+    if (n % 2 == 1) {
+        return upper;
+    }
+    const float lower =
+        *std::max_element(values.begin(), values.begin() + static_cast<std::ptrdiff_t>(mid));
+    return 0.5f * (lower + upper);
+}
+
 /// The release trim (see the file header).
 ///
-/// Scans BACKWARDS from the note's end frame and finds the last sustained
-/// stretch of frames below `threshold`; the note is cut at the START of that
-/// stretch. A dip of at most `jitterFrames` frames is tolerated (a brief
-/// wobble must not truncate a note), and a note whose energy never falls
-/// below the threshold keeps its original end. The trim only shortens.
+/// The note's sustain level is the MEDIAN of its own model energy over the
+/// frames it covers; the release level is `fraction` of that. The trim then
+/// scans BACKWARDS from the note's end frame and finds the LAST contiguous
+/// run of frames below the release level (the dip nearest the note's end),
+/// cutting the note at the START of that run. A run shorter than
+/// `minRunFrames` does not count as the release, and the scan continues
+/// further back. A note whose energy never dips keeps its original end.
+///
+/// The cut never moves the note's start and never extends the note: the
+/// returned frame is in `[startFrame + 1, endFrame]`.
 inline int trimmedEndFrame(const std::vector<float> &noteEnergy,
                            int timeFrames, int freqBins, int startFrame,
                            int endFrame, int pitchBin,
-                           float threshold = kFrameThreshold,
-                           int jitterFrames = 2) {
+                           float fraction = kReleaseSustainFraction,
+                           int minRunFrames = kReleaseDipMinRunFrames) {
     if (endFrame <= startFrame || endFrame > timeFrames) {
         return endFrame;
     }
-    int below = 0;
-    int cut = endFrame;
-    for (int t = endFrame - 1; t >= startFrame; --t) {
-        const float e = noteEnergyAt(noteEnergy, timeFrames, freqBins, t, pitchBin);
-        if (e < threshold) {
-            ++below;
-            if (below > jitterFrames) {
-                cut = t + 1; // the frame where the sustained dip began
-                break;
+    const int lastFrame = std::min(endFrame, timeFrames);
+    std::vector<float> own;
+    own.reserve(static_cast<std::size_t>(lastFrame - startFrame));
+    for (int t = startFrame; t < lastFrame; ++t) {
+        own.push_back(noteEnergyAt(noteEnergy, timeFrames, freqBins, t, pitchBin));
+    }
+    const float sustain = medianEnergy(std::move(own));
+    const float releaseLevel = fraction * sustain;
+    if (!(releaseLevel > 0.0f)) {
+        return endFrame; // no usable level — never touch the note
+    }
+
+    int t = endFrame - 1;
+    while (t >= startFrame) {
+        if (noteEnergyAt(noteEnergy, timeFrames, freqBins, t, pitchBin) < releaseLevel) {
+            const int runEnd = t;
+            while (t >= startFrame &&
+                   noteEnergyAt(noteEnergy, timeFrames, freqBins, t, pitchBin) <
+                       releaseLevel) {
+                --t;
+            }
+            const int runStart = t + 1;
+            if (runEnd - runStart + 1 >= minRunFrames) {
+                return std::max(runStart, startFrame + 1);
             }
         } else {
-            below = 0;
+            --t;
         }
     }
-    return cut;
+    return endFrame;
 }
 
 /// Turn the vendor's frame-domain notes into the time-domain notes the app
@@ -162,8 +235,8 @@ inline std::vector<TimedNote> toTimedNotes(const std::vector<FramedNote> &notes,
                                            const std::vector<float> &noteEnergy,
                                            int timeFrames, int freqBins,
                                            int audioLength,
-                                           float releaseThreshold = kFrameThreshold,
-                                           int jitterFrames = 2) {
+                                           float releaseFraction = kReleaseSustainFraction,
+                                           int minRunFrames = kReleaseDipMinRunFrames) {
     (void)audioLength; // the mapping is length-independent by construction
     std::vector<TimedNote> out;
     out.reserve(notes.size());
@@ -171,8 +244,8 @@ inline std::vector<TimedNote> toTimedNotes(const std::vector<FramedNote> &notes,
         const int pitchBin = n.midi - 21;
         const int endFrame = trimmedEndFrame(noteEnergy, timeFrames, freqBins,
                                              n.startFrame, n.endFrame,
-                                             pitchBin, releaseThreshold,
-                                             jitterFrames);
+                                             pitchBin, releaseFraction,
+                                             minRunFrames);
         TimedNote t;
         t.startSeconds = frameToSeconds(n.startFrame);
         t.endSeconds = frameToSeconds(endFrame);

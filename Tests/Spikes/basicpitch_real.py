@@ -358,6 +358,41 @@ def build_runner(include_dir: Path, link_flags: list[str]) -> Path:
     return binary
 
 
+def run_trim_unit_tests(report: sc.CheckReport) -> None:
+    """The release-trim + frame-mapping UNIT checks (P-301).
+
+    A separate, dependency-free C++ binary: the header under test
+    (Engine/Transcription/BasicPitchNotes.hpp) needs no ORT, no Eigen and no
+    vendor code, so the rules can be pinned down on any machine with a C++20
+    compiler. This leg names the behaviours the end-to-end truth check can
+    only catch indirectly — above all that the trim cuts the RELEASE dip and
+    never the ATTACK ramp.
+    """
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    binary = BUILD_DIR / "basicpitch_trim_test"
+    cmd = [compiler(), "-O2", "-std=c++20",
+           "-I", str(REPO_ROOT / "Engine" / "Transcription"),
+           str(REPO_ROOT / "Tests" / "Spikes" / "basicpitch_trim_test.cpp"),
+           "-o", str(binary)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        report.bad("S9", f"basicpitch_trim_test did not compile:\n{r.stderr[-1500:]}")
+        return
+    run = subprocess.run([str(binary)], capture_output=True, text=True)
+    if run.returncode != 0:
+        report.bad("S9", "basicpitch_trim_test FAILED — the release-trim / "
+                        "frame-mapping unit checks did not pass:\n" +
+                        run.stdout[-1500:])
+        return
+    checks = 0
+    for line in run.stdout.splitlines():
+        if line.startswith("ok "):
+            checks += 1
+    report.ok("S9", f"basicpitch_trim_test: {checks} release-trim + frame-mapping "
+                    f"unit checks green (the trim cuts the RELEASE dip, never the "
+                    f"attack ramp; it never extends a note)")
+
+
 def ensure_model() -> Path:
     """The pinned weights, fetched through the manifest (sha256-verified)."""
     env = os.environ.get("PITCHNOTES_BASICPITCH_MODEL")
@@ -499,6 +534,8 @@ def run_basicpitch_real(report: sc.CheckReport) -> None:
     report.ok("S2", f"basicpitch_runner compiled against vendor/basicpitch + "
                     f"vendored Eigen + the ORT C++ API "
                     f"({compiler()}-O2 c++20; no second ORT — D-39)")
+
+    run_trim_unit_tests(report)
 
     model = ensure_model()
     sha = hashlib.sha256(model.read_bytes()).hexdigest()
