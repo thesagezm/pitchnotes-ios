@@ -18,10 +18,13 @@
                    `NoteTrack` for each stem: `Engine/` Swift bridge → this C++ core →
                    `NoteEvent[]` → CONTRACTS C-2 NoteTrack. Backs the real
                    `basicpitch-spike` job (L-302).
-- Local changes:   **5 patches, all mechanical and all logged in `patches.log`** — see
+- Local changes:   **7 patches, all mechanical and all logged in `patches.log`** — see
                    that file for the exact before/after. In one line: **the MIDI writer
-                   is gone (no libremidi), the note-event function is exported, and the
-                   model is loaded from a FILE PATH instead of a baked-in blob.**
+                   is gone (no libremidi), the note-event function is exported (and its
+                   definition now matches the header's `basic_pitch::` symbol), the
+                   overlapping-pitch-bend drop upstream did in the MIDI tail is restored,
+                   the ORT include is the flat public header, and the model is loaded from
+                   a FILE PATH instead of a baked-in blob.**
 - Audit:           **D-39** (one ORT runtime; libremidi dropped; the exact intake scope;
                    Eigen reuse; whose job the compile proof is), **D-42** (the weights
                    are Tier B), **D-30** (the three-tier policy), **D-32.5** (Eigen

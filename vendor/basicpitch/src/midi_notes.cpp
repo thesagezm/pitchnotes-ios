@@ -249,10 +249,19 @@ drop_overlapping_pitch_bends(std::vector<basic_pitch::NoteEvent> &note_events)
 // Main function to convert frames and onsets to note events.
 // PITCHNOTES PATCH (D-39 §3): exported (was `static`) so the Swift bridge can call
 // it — the MIDI-writing entry point that used to be the public face is gone.
+// PITCHNOTES PATCH 6: the definition is now QUALIFIED with `basic_pitch::` so it
+// matches the declaration in basicpitch.hpp (inside `namespace basic_pitch`).
+// Upstream defined it at GLOBAL scope while the header declared the namespaced
+// symbol, so the two mangled names never matched — a LINK-time error that the
+// intake's `-fsyntax-only` smoke could not see (D-39 §7). Upstream's own
+// `basic_pitch::convert_to_midi` used exactly this qualified-definition style.
+// NOTE: the body needs no further qualification — it is a member of namespace
+// basic_pitch, so its unqualified lookup still reaches this file's statics and
+// namespace basic_pitch.
 std::vector<basic_pitch::NoteEvent>
-output_to_notes_polyphonic(const basic_pitch::InferenceResult &inference_result,
-                           const bool use_melodia_trick,
-                           const bool include_pitch_bends)
+basic_pitch::output_to_notes_polyphonic(const basic_pitch::InferenceResult &inference_result,
+                                         const bool use_melodia_trick,
+                                         const bool include_pitch_bends)
 {
 
     int n_times_onsets = inference_result.onsets.dimension(0);
@@ -332,6 +341,13 @@ output_to_notes_polyphonic(const basic_pitch::InferenceResult &inference_result,
     if (include_pitch_bends)
     {
         add_pitch_bends(inference_result.contours, note_events);
+        // PITCHNOTES PATCH 7: upstream applied the overlapping-pitch-bend drop
+        // in `basic_pitch::convert_to_midi` — the MIDI tail that PATCH 2 removed.
+        // Our exported note-event function IS the consumer's entry point now, so
+        // the drop is applied HERE to keep the observable behaviour identical to
+        // upstream's post-convert_to_midi event set (the Swift bridge consumes
+        // these events directly). No-op when include_pitch_bends is false.
+        drop_overlapping_pitch_bends(note_events);
     }
     return note_events;
 }
