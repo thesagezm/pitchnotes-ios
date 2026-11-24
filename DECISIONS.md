@@ -188,13 +188,26 @@ AGENTS §9); `sevagh/basicpitch.cpp` = **MIT**, HEAD
    every submodule: `vendor/onnxruntime` (we use SPM ORT), `vendor/libremidi` (ruling 3),
    `vendor/libnyquist` (CLI-only audio loading; our decoder is AVFoundation/EngineCore),
    `vendor/oboe-resampler` (Android-only, not a current target), `vendor/ort-builder`
-   (**reference only — MIT, HEAD 61201bf…, NO CODE COPIED**), `vendor/eigen` (ruling 5).
-5. **Eigen:** the core needs it (`Dense` + `unsupported/CXX11/Tensor`). Eigen is
-   MPL-2.0, header-only ⇒ shippable unmodified under D-32.5 **with attribution**, but
-   **I recommend the minimal-tensor-shim route** (Paul's lane), because the core needs
-   only a handful of ops (reshape / slice / shuffle) and Eigen's headers are a heavy,
-   permanent addition to the repo. **If Paul prefers Eigen, he queues an intake (X-313)
-   under D-32.5 — it is not vendored by this ruling.**
+   (**reference only — MIT, HEAD 61201bf…, NO CODE COPIED**), `vendor/eigen` (ruling 5 —
+   **we reuse the Eigen already vendored at `vendor/demucs.cpp/third_party/eigen`; no
+   second copy is taken**).
+5. **Eigen — REUSE THE COPY THAT IS ALREADY VENDORED. Do NOT vendor a second copy,
+   and X-313 is NOT needed.** The core needs it (`Dense` +
+   `unsupported/Eigen/CXX11/Tensor`). Eigen is MPL-2.0, header-only ⇒ shippable
+   unmodified under D-32.5 **with attribution**. **Eigen is ALREADY in this repo** at
+   `vendor/demucs.cpp/third_party/eigen` (upstream pin
+   `dd8c71e62852b2fe429edb6682ac91fd1c578a26`, MPL-2.0, vendored unmodified under
+   D-32.5), and that drop **already includes `unsupported/` — i.e. the exact
+   `unsupported/Eigen/CXX11/Tensor` header this core needs.** So basicpitch.cpp
+   compiles against `-Ivendor/demucs.cpp/third_party/eigen` — the **same headers,
+   the same pin** — with **no new intake, no second copy in the repo, and no second
+   attribution obligation**. The earlier text in this §5 (which recommended a
+   minimal-tensor shim and told Paul to queue an intake X-313) was **STALE and is
+   CORRECTED HERE**; it was written before the existing Eigen drop was checked
+   against this requirement. **The minimal-tensor-shim route is withdrawn** — it
+   would hand-reimplement an API the repo already ships, for no gain.
+   *(Corrected 2026-11-24 UTC, before this ruling reached `main`; the correction is
+   a factual fix to a same-session draft, not a re-litigation.)*
 6. **The model-load patch is the only behavioural change upstream:** the session is
    created from a **file path** (`Ort::Session(env, model_path, options)`) instead of
    the embedded `model_ort_start` blob, and `ort_inference()` gains a model-path

@@ -46,9 +46,15 @@ vendor/<name>/
 | Vendor | License | Consumer task | Notes |
 |---|---|---|---|
 | `demucs.cpp` (sevagh) | MIT | P-201 (M2) | htdemucs fp16 ggml weights; OpenMP→std::thread/GCD port logged in patches.log |
-| `basicpitch.cpp` (sevagh) | MIT | P-301 (M3) | with ort-builder minimal ORT; weights→.c/.h |
+| `basicpitch.cpp` (sevagh) | MIT | P-301 (M3) | **INTAKED 2026-11-24 @ `e0cf072d59fc87846e5be6ee7841bf726552ce9b` — see `basicpitch/README.md`.** Runs under the **EXISTING SPM ORT 1.24.2** (D-39 §1) — *not* ort-builder's trimmed ORT (rejected: duplicate ORT symbols / static-link hazard / version skew). The MIDI writer is dropped (no libremidi), the note-event function is exported, and the model is loaded from a FILE PATH (the weights never enter git). **The weights themselves are TIER B (D-42)** — never described as "clean". |
+| `ort-builder` (olilarkin) | MIT | P-301 (M3) | **REFERENCE ONLY — NO CODE COPIED (D-39 §2).** See `ort-builder/README.md`. The trimmed-ORT route needs a NEW ruling (symbol + no-`@rpath` proof) if L-302's IPA size check makes ORT the blocker. |
 | `TinySoundFont` | MIT | P-501 (M5) | soundfont file comes from HF repo, never git (D-6) |
 | `pitch-detection` (sevagh) | MIT | P-102 fallback (M1) | MPM/YIN ribbon if NanoPitch license fails (D-7) |
+
+**Eigen (MPL-2.0, header-only) is already vendored** at
+`demucs.cpp/third_party/eigen` (upstream pin `dd8c71e62852b2fe429edb6682ac91fd1c578a26`,
+D-32.5) — **reuse it, do not vendor a second copy** (that is what `basicpitch.cpp` does:
+same headers, same pin).
 
 ## Update procedure
 
