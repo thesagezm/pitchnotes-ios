@@ -169,6 +169,20 @@ targets:
           - "$(SRCROOT)/vendor/demucs.cpp/src"
           - "$(SRCROOT)/vendor/demucs.cpp/third_party/eigen"
         SWIFT_INCLUDE_PATHS: "$(SRCROOT)/Engine/Separation"
+        # M2 GATE STEP 5(c) (D-36 §7) — the compilation condition that OPENS
+        # Jess's real-engine binding, and nothing else. The binding is guarded
+        # by `#if canImport(ImportKit) && canImport(DemucsShim) &&
+        # SEPARATION_IMPORT_ENGINE`; the first two are TRUE now that the
+        # ImportKit package + the DemucsShim module map are wired, so this
+        # condition is the LAST gate on the real path — the app compiles the
+        # real separation import (DemucsEngine -> SongBundleImportEngine ->
+        # importSong) instead of the mock.
+        #
+        # NO source path is added here (D-36 §7): the D-35 facade
+        # (Engine/Separation/SeparationImportEngine.swift) does not exist and
+        # is not needed — the real engine is Paula's SPM package `ImportKit`
+        # and Jess's own app-side factory binds it.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SEPARATION_IMPORT_ENGINE"
 schemes:
   PitchNotesIOS:
     build:
