@@ -4,31 +4,48 @@ import EngineCore
 // CorrectionOverlay (J-302) — the USER's corrections to the engine's note
 // tracks, as an ADDITIVE and REVERSIBLE layer.
 //
-// WHY A LAYER AND NOT AN EDIT (AGENTS §7 + D-41 §4):
-//   · the engine's `notes/<PART>.json` is PAUL's output and is contract-
-//     validated (C-2.3 V7–V10). Jess NEVER rewrites it.
-//   · the overlay is the USER's opinion: "this note is T2, not T1", "this is
-//     not a note at all", "this is two notes", "this part is called 'Tenor'".
-//   · D-41 §4: the OVERLAY IS AUTHORITATIVE for grading — so every consumer
-//     reads the corrected tracks through `CorrectionResolver.resolve`, never
-//     the raw file.
-//   · REVERSIBLE: clearing the overlay restores the engine's output exactly
-//     (the raw tracks are never touched, so "undo" is lossless).
+// CONTRACTS v1.1 · C-11 (RATIFIED — L-301, D-44). THIS FILE FOLLOWS THE
+// CONTRACT; IT DOES NOT INVENT A SHAPE. The four rules that decide everything:
 //
-// THE SCHEMA IS NOT YET RATIFIED (L-301 is TODO). This file defines a stable,
-// versioned shape and the EXACT JSON is filed to Leto as an X-task for
-// ratification. `version` is the migration hook: a ratified shape lands
-// additively, and an UNKNOWN version is refused rather than mis-read.
+//   1. THE HEURISTIC TRACK IS NEVER MUTATED IN PLACE. The engine's
+//      `notes/<PART>.json` stays exactly as the engine wrote it — it is the
+//      reproducible truth about what the engine heard. We NEVER write to it.
+//
+//   2. THE OVERLAY IS A SEPARATE, ADDITIVE FILE, stored BESIDE the bundle's
+//      notes as `corrections/<PART>.json` — ONE FILE PER CORRECTED PART. A
+//      part with no corrections has NO file: absence means "no corrections",
+//      never "unknown".
+//
+//   3. THE OVERLAY WINS AT GRADING TIME (D-41 §4 / C-14 rule 1). Every
+//      consumer reads the corrected tracks through `CorrectionResolver.resolve`,
+//      never the raw file.
+//
+//   4. A CORRECTION DOES NOT ERASE THE ENGINE'S DOUBT. A corrected note keeps
+//      the engine's `confidence`, and the UI still shows it as USER-CORRECTED.
+//
+// THE EXACT JSON (C-11 verbatim):
+//
+//   { "contractVersion": "v1.1", "part": "T2", "engineVersion": "corrections-0.1.0",
+//     "operations": [
+//       { "op": "reassign", "fromPart": "T2", "noteIndex": 3, "midi": 62 },
+//       { "op": "delete",   "fromPart": "T2", "noteIndex": 7 },
+//       { "op": "split",    "fromPart": "T2", "noteIndex": 9,
+//         "splitAt_s": 2.5, "toParts": ["T1", "T2"] } ] }
+//
+// `noteIndex` is the index into the engine's ORIGINAL, IMMUTABLE `notes[]`
+// array for `fromPart` (0-based, the order the engine wrote) — deliberately an
+// index, so an overlay stays meaningful even as the consumer re-derives the
+// track.
 //
 // HONESTY (AGENTS §11):
-//   · a correction that no longer matches a note is SKIPPED and REPORTED —
+//   · an operation that no longer matches a note is SKIPPED and REPORTED —
 //     never silently applied to the wrong note;
-//   · a correction that forces two notes to overlap is REPAIRED to C-2.3 V8
+//   · an operation that forces two notes to overlap is REPAIRED to C-2.3 V8
 //     and the repair is reported;
 //   · the resolver reports which notes the USER changed, so the UI can mark
 //     them as the user's opinion rather than the engine's.
 
-// MARK: - Note identity
+// MARK: - Note identity (a UI-side marker, NOT a contract type)
 
 /// Millisecond rounding for note times (the identity's resolution).
 public enum NoteIdentityMath {
@@ -36,13 +53,13 @@ public enum NoteIdentityMath {
     public static func seconds(_ milliseconds: Int) -> Double { Double(milliseconds) / 1000.0 }
 }
 
-/// A note's identity: WHERE it is and WHAT pitch — NOT which part sings it.
+/// A note's identity: WHERE it is and WHAT pitch.
 ///
+/// This is a DISPLAY marker (the roll marks the notes the user touched), not a
+/// contract type: C-11 refers to notes by their index in the engine's original
+/// array, so nothing in the stored JSON depends on this.
 /// Millisecond resolution (not raw seconds) so the identity survives a JSON
 /// round-trip without floating-point drift and stays readable by a human.
-/// The PART is deliberately NOT part of the identity: a note that the user
-/// MOVED to another part keeps its identity, so the "you corrected this"
-/// marker follows the note into its new part.
 public struct NoteIdentity: Codable, Equatable, Hashable, Sendable {
     public var start_ms: Int
     public var end_ms: Int
@@ -64,7 +81,11 @@ public struct NoteIdentity: Codable, Equatable, Hashable, Sendable {
     public func matches(_ note: Note) -> Bool { self == NoteIdentity(note: note) }
 }
 
-/// A note's identity PLUS the part it was in when the correction was made.
+/// A note's identity PLUS the part it is in NOW (after any correction).
+///
+/// A note the user MOVED to another part keeps its identity and follows the
+/// note into its new part, so the "you corrected this" marker is always about
+/// the note, never about where it happens to sit.
 public struct NoteKey: Codable, Equatable, Hashable, Sendable {
     public var part: Part
     public var identity: NoteIdentity
@@ -79,205 +100,274 @@ public struct NoteKey: Codable, Equatable, Hashable, Sendable {
     }
 }
 
-// MARK: - The operations
+/// Where a live note came from: the engine's original track and the index it
+/// had there. This is how the UI turns a note it is displaying back into the
+/// C-11 `noteIndex` the contract needs.
+public struct NoteOrigin: Codable, Equatable, Hashable, Sendable {
+    public var part: Part
+    public var index: Int
 
-/// One user correction.
+    public init(part: Part, index: Int) {
+        self.part = part
+        self.index = index
+    }
+}
+
+// MARK: - The operations (C-11)
+
+/// The three operation kinds C-11 defines. The raw values are contractual.
+public enum CorrectionOperationKind: String, Codable, Equatable, Sendable {
+    case reassign
+    case delete
+    case split
+}
+
+/// One user correction — C-11's `operations[]` entry.
 ///
-/// The JSON shape is FLAT and hand-writable (the exact shape is proposed to
-/// Leto in the X-task):
-/// ```json
-/// { "op": "move",   "part": "T1", "start_ms": 12000, "end_ms": 12500, "midi": 60, "toPart": "T2" }
-/// { "op": "delete", "part": "T2", "start_ms": 30000, "end_ms": 30500, "midi": 62 }
-/// { "op": "split",  "part": "BASS", "start_ms": 40000, "end_ms": 41000, "midi": 43, "at_ms": 40500 }
-/// ```
-public enum CorrectionOp: Codable, Equatable, Sendable {
+/// The JSON is FLAT and hand-written (not synthesized) so it matches the
+/// contract's shape EXACTLY, including which keys are present per kind:
+/// a `reassign` carries `toPart` (+ OPTIONAL `midi`), a `delete` carries
+/// nothing else, a `split` carries `splitAt_s` + `toParts` (+ OPTIONAL
+/// `confidence` override, proposed in X-216 and pending Leto's ruling).
+public struct CorrectionOperation: Codable, Equatable, Sendable {
 
-    /// Move a note to another part ("this is T2, not T1").
-    case move(NoteKey, toPart: Part)
-    /// Delete a note ("this is not a note").
-    case delete(NoteKey)
-    /// Split a note in two at `at_ms` ("this is two notes").
-    case split(NoteKey, at_ms: Int)
+    /// Which operation this is.
+    public var kind: CorrectionOperationKind
+    /// The part whose ORIGINAL `notes[]` array holds the target note.
+    public var fromPart: Part
+    /// The index into that original array (0-based).
+    public var noteIndex: Int
+    /// `reassign`: the part the note moves to.
+    public var toPart: Part?
+    /// `reassign` (OPTIONAL): the corrected pitch.
+    public var midi: Int?
+    /// `split`: the time strictly inside the note where it is cut.
+    public var splitAt_s: Double?
+    /// `split`: the TWO parts the halves go to (first half → first part).
+    public var toParts: [Part]?
+    /// `split` (OPTIONAL): the confidence the halves carry.
+    public var confidence: Double?
 
-    /// The note the operation refers to.
-    public var key: NoteKey {
-        switch self {
-        case let .move(key, _): return key
-        case let .delete(key): return key
-        case let .split(key, _): return key
-        }
+    public init(kind: CorrectionOperationKind,
+                fromPart: Part,
+                noteIndex: Int,
+                toPart: Part? = nil,
+                midi: Int? = nil,
+                splitAt_s: Double? = nil,
+                toParts: [Part]? = nil,
+                confidence: Double? = nil) {
+        self.kind = kind
+        self.fromPart = fromPart
+        self.noteIndex = noteIndex
+        self.toPart = toPart
+        self.midi = midi
+        self.splitAt_s = splitAt_s
+        self.toParts = toParts
+        self.confidence = confidence
+    }
+
+    /// "This note belongs to another part" (C-11 `reassign`).
+    public static func reassign(fromPart: Part, noteIndex: Int,
+                                toPart: Part, midi: Int? = nil) -> CorrectionOperation {
+        CorrectionOperation(kind: .reassign, fromPart: fromPart, noteIndex: noteIndex,
+                            toPart: toPart, midi: midi)
+    }
+
+    /// "This is not a note" (C-11 `delete`).
+    public static func delete(fromPart: Part, noteIndex: Int) -> CorrectionOperation {
+        CorrectionOperation(kind: .delete, fromPart: fromPart, noteIndex: noteIndex)
+    }
+
+    /// "This is two notes" (C-11 `split`).
+    public static func split(fromPart: Part, noteIndex: Int, splitAt_s: Double,
+                             toParts: [Part], confidence: Double? = nil) -> CorrectionOperation {
+        CorrectionOperation(kind: .split, fromPart: fromPart, noteIndex: noteIndex,
+                            splitAt_s: splitAt_s, toParts: toParts, confidence: confidence)
     }
 
     /// A one-line, human-readable description (the corrections list).
     public var summary: String {
-        let part = key.part.displayName
-        let at = String(format: "%.1f s", NoteIdentityMath.seconds(key.identity.start_ms))
-        switch self {
-        case let .move(key, toPart):
-            return "Moved a \(part) note at \(at) to \(toPart.displayName)"
-        case let .delete(key):
-            return "Deleted a \(part) note at \(at)"
-        case let .split(key, at_ms):
-            return "Split a \(part) note at \(at) into two at \(String(format: "%.1f s", NoteIdentityMath.seconds(at_ms)))"
+        switch kind {
+        case .reassign:
+            guard let toPart else { return "Reassigned a \(fromPart.displayName) note" }
+            let pitch = midi.map { " to MIDI \($0)" } ?? ""
+            return "Moved a \(fromPart.displayName) note to \(toPart.displayName)\(pitch)"
+        case .delete:
+            return "Deleted a \(fromPart.displayName) note"
+        case .split:
+            let targets = (toParts ?? []).map(\.displayName).joined(separator: " and ")
+            return "Split a \(fromPart.displayName) note into \(targets.isEmpty ? "two notes" : targets)"
         }
     }
 
     // MARK: Codable (flat shape — written by hand, not synthesized)
 
     private enum CodingKeys: String, CodingKey {
-        case op, part, start_ms, end_ms, midi, toPart, at_ms
+        case op, fromPart, noteIndex, toPart, midi, splitAt_s, toParts, confidence
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        let key = self.key
-        switch self {
-        case let .move(_, toPart):
-            try container.encode("move", forKey: .op)
-            try encode(key, into: &container)
+        try container.encode(kind.rawValue, forKey: .op)
+        try container.encode(fromPart.rawValue, forKey: .fromPart)
+        try container.encode(noteIndex, forKey: .noteIndex)
+        switch kind {
+        case .reassign:
+            guard let toPart else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(codingPath: encoder.codingPath,
+                                          debugDescription: "A 'reassign' operation needs a 'toPart'."))
+            }
             try container.encode(toPart.rawValue, forKey: .toPart)
+            if let midi {
+                try container.encode(midi, forKey: .midi)
+            }
         case .delete:
-            try container.encode("delete", forKey: .op)
-            try encode(key, into: &container)
-        case let .split(_, at_ms):
-            try container.encode("split", forKey: .op)
-            try encode(key, into: &container)
-            try container.encode(at_ms, forKey: .at_ms)
+            break
+        case .split:
+            guard let splitAt_s else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(codingPath: encoder.codingPath,
+                                          debugDescription: "A 'split' operation needs a 'splitAt_s'."))
+            }
+            guard let toParts, toParts.count == 2 else {
+                throw EncodingError.invalidValue(
+                    self,
+                    EncodingError.Context(codingPath: encoder.codingPath,
+                                          debugDescription: "A 'split' operation needs exactly two 'toParts'."))
+            }
+            try container.encode(splitAt_s, forKey: .splitAt_s)
+            try container.encode(toParts.map(\.rawValue), forKey: .toParts)
+            if let confidence {
+                try container.encode(confidence, forKey: .confidence)
+            }
         }
-    }
-
-    private func encode(_ key: NoteKey, into container: inout KeyedEncodingContainer<CodingKeys>) throws {
-        try container.encode(key.part.rawValue, forKey: .part)
-        try container.encode(key.identity.start_ms, forKey: .start_ms)
-        try container.encode(key.identity.end_ms, forKey: .end_ms)
-        try container.encode(key.identity.midi, forKey: .midi)
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let kind = try container.decode(String.self, forKey: .op)
-        let part = try container.decode(Part.self, forKey: .part)
-        let identity = NoteIdentity(
-            start_ms: try container.decode(Int.self, forKey: .start_ms),
-            end_ms: try container.decode(Int.self, forKey: .end_ms),
-            midi: try container.decode(Int.self, forKey: .midi))
-        let key = NoteKey(part: part, identity: identity)
-        switch kind {
-        case "move":
-            self = .move(key, toPart: try container.decode(Part.self, forKey: .toPart))
-        case "delete":
-            self = .delete(key)
-        case "split":
-            self = .split(key, at_ms: try container.decode(Int.self, forKey: .at_ms))
-        default:
+        let kindString = try container.decode(String.self, forKey: .op)
+        guard let kind = CorrectionOperationKind(rawValue: kindString) else {
             throw DecodingError.dataCorruptedError(
                 forKey: .op, in: container,
-                debugDescription: "Unknown correction operation '\(kind)'.")
+                debugDescription: "Unknown correction operation '\(kindString)'.")
+        }
+        let fromPart = try container.decode(Part.self, forKey: .fromPart)
+        let noteIndex = try container.decode(Int.self, forKey: .noteIndex)
+        switch kind {
+        case .reassign:
+            self.init(kind: .reassign,
+                      fromPart: fromPart,
+                      noteIndex: noteIndex,
+                      toPart: try container.decode(Part.self, forKey: .toPart),
+                      midi: try container.decodeIfPresent(Int.self, forKey: .midi))
+        case .delete:
+            self.init(kind: .delete, fromPart: fromPart, noteIndex: noteIndex)
+        case .split:
+            let parts = try container.decode([Part].self, forKey: .toParts)
+            guard parts.count == 2 else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .toParts, in: container,
+                    debugDescription: "A 'split' operation needs exactly two 'toParts' (got \(parts.count)).")
+            }
+            self.init(kind: .split,
+                      fromPart: fromPart,
+                      noteIndex: noteIndex,
+                      splitAt_s: try container.decode(Double.self, forKey: .splitAt_s),
+                      toParts: parts,
+                      confidence: try container.decodeIfPresent(Double.self, forKey: .confidence))
         }
     }
 }
 
-// MARK: - The overlay
+// MARK: - The per-part overlay file (C-11)
 
-/// One song's user corrections. Additive over the engine's tracks; the raw
-/// tracks on disk are never touched.
-public struct CorrectionOverlay: Codable, Equatable, Sendable {
+/// `corrections/<PART>.json` — C-11's overlay file for ONE part.
+///
+/// The file describes the corrections that ORIGINATE in this part. A part with
+/// no corrections has NO file (absence = "no corrections").
+public struct PartCorrectionOverlay: Codable, Equatable, Sendable {
 
-    /// The schema version. Bumped only additively; an unknown version is
-    /// refused by `CorrectionStore` rather than mis-read.
-    public static let currentVersion = 1
+    /// C-11's contract version. A file with any other version is REFUSED
+    /// (never mis-read).
+    public static let contractVersion = "v1.1"
 
-    public var version: Int
-    /// The bundle this overlay belongs to (the manifest id).
-    public var bundleID: String
-    public var updatedAt: Date
+    /// The writer of the overlay (Jess's UI). C-11's own example value.
+    public static let writerEngineVersion = "corrections-0.1.0"
+
+    public var contractVersion: String
+    /// The C-1 rawValue of the part this overlay describes.
+    public var part: Part
+    /// OPTIONAL — the writer of the overlay. Absent ⇒ "unknown".
+    public var engineVersion: String?
+    /// The corrections, applied IN ORDER.
+    public var operations: [CorrectionOperation]
+
+    public init(part: Part,
+                engineVersion: String? = PartCorrectionOverlay.writerEngineVersion,
+                operations: [CorrectionOperation] = []) {
+        self.contractVersion = PartCorrectionOverlay.contractVersion
+        self.part = part
+        self.engineVersion = engineVersion
+        self.operations = operations
+    }
+
+    /// True when this overlay changes nothing.
+    public var isEmpty: Bool { operations.isEmpty }
+
+    /// The JSON keys, spelled out so the file's shape is pinned by the code.
+    private enum CodingKeys: String, CodingKey {
+        case contractVersion, part, engineVersion, operations
+    }
+}
+
+// MARK: - The per-song calibration overlay (X-216 proposal — PENDING Leto)
+
+// THE RENAME + THE RANGE OVERRIDE HAVE NO HOME IN C-11 (it covers note
+// operations only, one file per corrected part). X-216 proposes a sibling
+// file `corrections/song.json` inside the same bundle directory, with the
+// EXACT JSON below. LETO HAS THE FINAL SAY — if the ruling names a different
+// home, ONLY THIS TYPE AND `CorrectionStore`'s two path helpers change.
+//
+//   { "contractVersion": "v1.1", "engineVersion": "corrections-0.1.0",
+//     "partRenames": { "T1": "Tenor 1" },
+//     "rangeOverrides": {
+//       "T1": { "preset": "TENOR_1", "nudgeSemitones": 2 },
+//       "BASS": { "custom": { "minMidi": 40, "maxMidi": 60 } } } }
+//
+// THE ABSENCE RULE (the same binding rule as C-10): absent file ⇒ no
+// renames and no range overrides ⇒ the consumer behaves EXACTLY as it does
+// today. The C-6.1 contract table is NEVER mutated — an override extends it
+// additively.
+
+/// The per-song calibration: the user's part renames and range overrides.
+public struct SongCalibrationOverlay: Codable, Equatable, Sendable {
+
+    public static let contractVersion = "v1.1"
+    public static let writerEngineVersion = "corrections-0.1.0"
+
+    public var contractVersion: String
+    /// OPTIONAL — the writer of the overlay.
+    public var engineVersion: String?
     /// Per-song part display names — UI-only (the C-1 raw values stay the
     /// contract). Keyed by `Part.rawValue`.
     public var partRenames: [String: String]
-    /// Per-song range overrides (C-6.1 preset + optional nudge, or a custom
-    /// range). Keyed by `Part.rawValue`.
+    /// Per-song range overrides. Keyed by `Part.rawValue`.
     public var rangeOverrides: [String: PartRangeOverride]
-    /// The note corrections, applied IN ORDER.
-    public var ops: [CorrectionOp]
 
-    public init(bundleID: String,
-                version: Int = CorrectionOverlay.currentVersion,
-                updatedAt: Date = Date(),
+    public init(engineVersion: String? = SongCalibrationOverlay.writerEngineVersion,
                 partRenames: [String: String] = [:],
-                rangeOverrides: [String: PartRangeOverride] = [:],
-                ops: [CorrectionOp] = []) {
-        self.version = version
-        self.bundleID = bundleID
-        self.updatedAt = updatedAt
+                rangeOverrides: [String: PartRangeOverride] = [:]) {
+        self.contractVersion = SongCalibrationOverlay.contractVersion
+        self.engineVersion = engineVersion
         self.partRenames = partRenames
         self.rangeOverrides = rangeOverrides
-        self.ops = ops
     }
 
-    /// An empty overlay (no corrections).
-    public static func empty(bundleID: String) -> CorrectionOverlay {
-        CorrectionOverlay(bundleID: bundleID)
-    }
-
-    /// True when the overlay changes nothing.
-    public var isEmpty: Bool {
-        ops.isEmpty && partRenames.isEmpty && rangeOverrides.isEmpty
-    }
-
-    /// How many note corrections are applied.
-    public var correctionCount: Int { ops.count }
-
-    // MARK: Editing (every edit is append-only or an exact reversal)
-
-    /// Appends a note correction.
-    public mutating func append(_ op: CorrectionOp) {
-        ops.append(op)
-        updatedAt = Date()
-    }
-
-    /// Removes the LAST correction — an exact undo, because the operations
-    /// are applied in order.
-    public mutating func undoLast() {
-        guard !ops.isEmpty else { return }
-        ops.removeLast()
-        updatedAt = Date()
-    }
-
-    /// Drops every note correction (the part names and ranges stay).
-    public mutating func clearNoteOps() {
-        guard !ops.isEmpty else { return }
-        ops.removeAll()
-        updatedAt = Date()
-    }
-
-    /// Drops EVERYTHING — the overlay returns to "the engine's output, exactly".
-    public mutating func resetAll() {
-        ops.removeAll()
-        partRenames.removeAll()
-        rangeOverrides.removeAll()
-        updatedAt = Date()
-    }
-
-    /// Renames a part for this song (an empty name clears the rename).
-    public mutating func rename(part: Part, to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            partRenames.removeValue(forKey: part.rawValue)
-        } else {
-            partRenames[part.rawValue] = trimmed
-        }
-        updatedAt = Date()
-    }
-
-    /// Sets (or clears) a part's per-song range override.
-    public mutating func setRange(_ override: PartRangeOverride?, for part: Part) {
-        if let override {
-            rangeOverrides[part.rawValue] = override
-        } else {
-            rangeOverrides.removeValue(forKey: part.rawValue)
-        }
-        updatedAt = Date()
-    }
+    /// True when this overlay changes nothing.
+    public var isEmpty: Bool { partRenames.isEmpty && rangeOverrides.isEmpty }
 
     /// The display name for a part (the user's rename, else the contract name).
     public func displayName(for part: Part) -> String {
@@ -299,161 +389,51 @@ public struct CorrectionOverlay: Codable, Equatable, Sendable {
         }
         return map
     }
-}
 
-// MARK: - The resolver (corrected-first)
+    // The range overrides are keyed by the part's raw value, and each override
+    // needs to know ITS part (the preset it was made from). So the whole file
+    // is hand-decoded: the dictionary KEY supplies the part.
 
-/// The result of applying an overlay to the engine's tracks.
-public struct EffectiveTracks: Equatable, Sendable {
-    /// The corrected tracks — what every consumer (grading included) reads.
-    public let tracks: [Part: NoteTrack]
-    /// The notes the USER changed (moved, deleted or split) — the UI marks
-    /// them so a user's opinion never looks like the engine's output.
-    public let correctedIdentities: Set<NoteIdentity>
-    /// Where a moved note came from (its original part).
-    public let movedFrom: [NoteIdentity: Part]
-    /// Everything that was skipped or repaired (never silent).
-    public let warnings: [String]
-    /// How many corrections were applied.
-    public let appliedOpCount: Int
-    /// How many corrections could not be applied (the note was gone).
-    public let skippedOpCount: Int
-
-    public init(tracks: [Part: NoteTrack],
-                correctedIdentities: Set<NoteIdentity>,
-                movedFrom: [NoteIdentity: Part],
-                warnings: [String],
-                appliedOpCount: Int,
-                skippedOpCount: Int) {
-        self.tracks = tracks
-        self.correctedIdentities = correctedIdentities
-        self.movedFrom = movedFrom
-        self.warnings = warnings
-        self.appliedOpCount = appliedOpCount
-        self.skippedOpCount = skippedOpCount
+    private enum CodingKeys: String, CodingKey {
+        case contractVersion, engineVersion, partRenames, rangeOverrides
     }
 
-    /// True when the user changed something.
-    public var hasCorrections: Bool { !correctedIdentities.isEmpty }
-}
-
-/// Applies a `CorrectionOverlay` to the engine's tracks.
-///
-/// THIS IS THE CORRECTED-FIRST ENTRY POINT (D-41 §4). Grading, export and
-/// the piano roll all read `EffectiveTracks.tracks`, never the raw file.
-public enum CorrectionResolver {
-
-    /// Applies the overlay's operations, in order, to the raw tracks.
-    public static func resolve(raw: [Part: NoteTrack],
-                               overlay: CorrectionOverlay) -> EffectiveTracks {
-        var working: [Part: [Note]] = [:]
-        var contractVersions: [Part: String] = [:]
-        for (part, track) in raw {
-            working[part] = track.notes
-            contractVersions[part] = track.contractVersion
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        contractVersion = try container.decode(String.self, forKey: .contractVersion)
+        engineVersion = try container.decodeIfPresent(String.self, forKey: .engineVersion)
+        partRenames = try container.decodeIfPresent([String: String].self, forKey: .partRenames) ?? [:]
+        let stored = try container.decodeIfPresent([String: StoredPartRangeOverride].self,
+                                                   forKey: .rangeOverrides) ?? [:]
+        var overrides: [String: PartRangeOverride] = [:]
+        for (raw, value) in stored {
+            guard let part = Part(rawValue: raw) else { continue }
+            overrides[raw] = value.makeOverride(for: part)
         }
-
-        var corrected = Set<NoteIdentity>()
-        var movedFrom: [NoteIdentity: Part] = [:]
-        var warnings: [String] = []
-        var applied = 0
-        var skipped = 0
-
-        for op in overlay.ops {
-            switch op {
-            case let .move(key, toPart):
-                var notes = working[key.part] ?? []
-                guard let index = indexOf(key.identity, in: notes) else {
-                    skipped += 1
-                    warnings.append("A correction moved a \(key.part.displayName) note that is no longer there; it was skipped.")
-                    continue
-                }
-                let note = notes.remove(at: index)
-                working[key.part] = notes
-                working[toPart, default: []].append(note)
-                corrected.insert(key.identity)
-                movedFrom[key.identity] = key.part
-                applied += 1
-
-            case let .delete(key):
-                var notes = working[key.part] ?? []
-                guard let index = indexOf(key.identity, in: notes) else {
-                    skipped += 1
-                    warnings.append("A correction deleted a \(key.part.displayName) note that is no longer there; it was skipped.")
-                    continue
-                }
-                notes.remove(at: index)
-                working[key.part] = notes
-                corrected.insert(key.identity)
-                applied += 1
-
-            case let .split(key, at_ms):
-                var notes = working[key.part] ?? []
-                guard let index = indexOf(key.identity, in: notes) else {
-                    skipped += 1
-                    warnings.append("A correction split a \(key.part.displayName) note that is no longer there; it was skipped.")
-                    continue
-                }
-                let note = notes[index]
-                let at = NoteIdentityMath.seconds(at_ms)
-                guard at > note.start_s, at < note.end_s else {
-                    skipped += 1
-                    warnings.append("A correction tried to split a \(key.part.displayName) note outside the note itself; it was skipped.")
-                    continue
-                }
-                let first = Note(start_s: note.start_s, end_s: at, midi: note.midi,
-                                 cents_ref: note.cents_ref, confidence: note.confidence)
-                let second = Note(start_s: at, end_s: note.end_s, midi: note.midi,
-                                  cents_ref: note.cents_ref, confidence: note.confidence)
-                notes.remove(at: index)
-                notes.append(first)
-                notes.append(second)
-                working[key.part] = notes
-                corrected.insert(NoteIdentity(note: first))
-                corrected.insert(NoteIdentity(note: second))
-                applied += 1
-            }
-        }
-
-        // V8: sorted by start_s, non-overlapping within a part. A move can
-        // push a note on top of another one — the repair is reported.
-        var tracks: [Part: NoteTrack] = [:]
-        for (part, notes) in working {
-            let outcome = NoteTrackRepair.repair(notes)
-            if outcome.trimmedCount > 0 {
-                warnings.append("Trimmed \(outcome.trimmedCount) overlapping note(s) in \(part.displayName) so the track satisfies C-2.3 V8.")
-            }
-            if outcome.droppedCount > 0 {
-                warnings.append("Dropped \(outcome.droppedCount) note(s) in \(part.displayName) that start at the same instant as the previous note.")
-            }
-            tracks[part] = NoteTrack(
-                contractVersion: contractVersions[part] ?? NoteTrack.currentContractVersion,
-                part: part,
-                notes: outcome.notes)
-        }
-
-        return EffectiveTracks(tracks: tracks,
-                               correctedIdentities: corrected,
-                               movedFrom: movedFrom,
-                               warnings: warnings,
-                               appliedOpCount: applied,
-                               skippedOpCount: skipped)
+        rangeOverrides = overrides
     }
 
-    /// The corrected track for ONE part (the same resolver, narrowed).
-    public static func effectiveTrack(for part: Part,
-                                      raw: [Part: NoteTrack],
-                                      overlay: CorrectionOverlay) -> NoteTrack? {
-        resolve(raw: raw, overlay: overlay).tracks[part]
-    }
-
-    /// The index of the note with this identity, or nil.
-    private static func indexOf(_ identity: NoteIdentity, in notes: [Note]) -> Int? {
-        notes.firstIndex { identity.matches($0) }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(contractVersion, forKey: .contractVersion)
+        try container.encodeIfPresent(engineVersion, forKey: .engineVersion)
+        try container.encode(partRenames, forKey: .partRenames)
+        var stored: [String: StoredPartRangeOverride] = [:]
+        for (raw, override) in rangeOverrides {
+            stored[raw] = override.storedForm()
+        }
+        try container.encode(stored, forKey: .rangeOverrides)
     }
 }
 
 // MARK: - The V8 repair (shared with the UltraStar codec)
+
+/// A live note: the note itself plus where it came from (the engine's
+/// original part + index). The overlay's `noteIndex` addresses THIS origin.
+struct LiveNote: Equatable {
+    var note: Note
+    var origin: NoteOrigin
+}
 
 /// Sorts a part's notes and makes them non-overlapping (C-2.3 V8).
 ///
@@ -472,30 +452,279 @@ public enum NoteTrackRepair {
 
     /// Sorts by (start, end, pitch) and trims overlaps.
     public static func repair(_ notes: [Note]) -> Outcome {
-        var sorted = notes
+        // The origins are irrelevant here; the repair is the SAME code path,
+        // so "non-overlapping" means exactly one thing in the app.
+        let pieces = notes.map { LiveNote(note: $0, origin: NoteOrigin(part: .t1, index: 0)) }
+        let result = repairKeepingOrigins(pieces)
+        return Outcome(notes: result.notes.map(\.note),
+                       trimmedCount: result.trimmedCount,
+                       droppedCount: result.droppedCount)
+    }
+
+    /// The same repair, keeping each note's ORIGIN attached — the overlay
+    /// needs it (a trimmed note must still be addressable by the index the
+    /// contract used).
+    static func repairKeepingOrigins(
+        _ pieces: [LiveNote]
+    ) -> (notes: [LiveNote], trimmedCount: Int, droppedCount: Int) {
+        var sorted = pieces
         sorted.sort { lhs, rhs in
-            if lhs.start_s != rhs.start_s { return lhs.start_s < rhs.start_s }
-            if lhs.end_s != rhs.end_s { return lhs.end_s < rhs.end_s }
-            return lhs.midi < rhs.midi
+            if lhs.note.start_s != rhs.note.start_s { return lhs.note.start_s < rhs.note.start_s }
+            if lhs.note.end_s != rhs.note.end_s { return lhs.note.end_s < rhs.note.end_s }
+            return lhs.note.midi < rhs.note.midi
         }
 
-        var result: [Note] = []
+        var result: [LiveNote] = []
         var trimmed = 0
         var dropped = 0
-        for note in sorted {
-            if let last = result.last, note.start_s < last.end_s {
-                let cut = Note(start_s: last.start_s, end_s: note.start_s, midi: last.midi,
-                               cents_ref: last.cents_ref, confidence: last.confidence)
+        for piece in sorted {
+            if let last = result.last, piece.note.start_s < last.note.end_s {
+                let cut = Note(start_s: last.note.start_s, end_s: piece.note.start_s,
+                               midi: last.note.midi, cents_ref: last.note.cents_ref,
+                               confidence: last.note.confidence)
                 if cut.end_s > cut.start_s {
-                    result[result.count - 1] = cut
+                    result[result.count - 1] = LiveNote(note: cut, origin: last.origin)
                     trimmed += 1
                 } else {
                     dropped += 1
                     continue
                 }
             }
-            result.append(note)
+            result.append(piece)
         }
-        return Outcome(notes: result, trimmedCount: trimmed, droppedCount: dropped)
+        return (notes: result, trimmedCount: trimmed, droppedCount: dropped)
+    }
+}
+
+// MARK: - The resolver (corrected-first)
+
+/// The result of applying the overlays to the engine's tracks.
+public struct EffectiveTracks: Equatable, Sendable {
+    /// The corrected tracks — what every consumer (grading included) reads.
+    public let tracks: [Part: NoteTrack]
+    /// The notes the USER changed (reassigned or split) — the UI marks them
+    /// so a user's opinion never looks like the engine's output. A DELETED
+    /// note has nothing left to mark.
+    public let correctedNotes: Set<NoteKey>
+    /// Where each surviving note came from — the engine's original part and
+    /// index. This is how the UI turns a note it is SHOWING back into the
+    /// C-11 `noteIndex` the contract needs.
+    public let origins: [NoteKey: NoteOrigin]
+    /// Everything that was skipped or repaired (never silent).
+    public let warnings: [String]
+    /// How many corrections were applied.
+    public let appliedOpCount: Int
+    /// How many corrections could not be applied (the note was gone, or the
+    /// operation broke C-11's own rules).
+    public let skippedOpCount: Int
+
+    public init(tracks: [Part: NoteTrack],
+                correctedNotes: Set<NoteKey>,
+                origins: [NoteKey: NoteOrigin],
+                warnings: [String],
+                appliedOpCount: Int,
+                skippedOpCount: Int) {
+        self.tracks = tracks
+        self.correctedNotes = correctedNotes
+        self.origins = origins
+        self.warnings = warnings
+        self.appliedOpCount = appliedOpCount
+        self.skippedOpCount = skippedOpCount
+    }
+
+    /// The origin of a note the roll is displaying (nil when the note has no
+    /// engine origin — it cannot be corrected by index then).
+    public func origin(for key: NoteKey) -> NoteOrigin? { origins[key] }
+
+    /// True when the user changed something.
+    public var hasCorrections: Bool { !correctedNotes.isEmpty }
+}
+
+/// Applies the correction overlays to the engine's tracks.
+///
+/// THIS IS THE CORRECTED-FIRST ENTRY POINT (D-41 §4 / C-14 rule 1). Grading,
+/// export and the piano roll all read `EffectiveTracks.tracks`, never the raw
+/// file.
+///
+/// THE OPERATIONS ARE APPLIED IN ORDER (C-11). Each operation refers to a note
+/// by its index in the engine's ORIGINAL, IMMUTABLE `notes[]` array for
+/// `fromPart`, so an overlay stays meaningful even as the consumer re-derives
+/// the track. When one operation's target has already been changed by an
+/// earlier one, the LATER operation still refers to the same ORIGINAL note and
+/// acts on whatever that note has become (the rule the contract implies by
+/// indexing the immutable array — documented here because the contract does
+/// not spell it out):
+///
+///   · `reassign` — every piece of the original note moves to `toPart` (and
+///     takes the optional `midi` correction);
+///   · `delete` — every piece of the original note goes away;
+///   · `split` — the piece that CONTAINS `splitAt_s` is cut in two; the first
+///     half goes to `toParts[0]`, the second to `toParts[1]`. If no piece
+///     contains it (or more than one does), the operation is SKIPPED and
+///     REPORTED — never guessed at.
+public enum CorrectionResolver {
+
+    /// Applies every part's overlay, in order, to the raw tracks.
+    ///
+    /// - Parameters:
+    ///   - raw: the engine's tracks, exactly as the engine wrote them.
+    ///   - overlays: the per-part overlays (`corrections/<PART>.json`).
+    public static func resolve(raw: [Part: NoteTrack],
+                               overlays: [Part: PartCorrectionOverlay]) -> EffectiveTracks {
+        var live: [Part: [LiveNote]] = [:]
+        var contractVersions: [Part: String] = [:]
+        for (part, track) in raw {
+            live[part] = track.notes.enumerated().map { index, note in
+                LiveNote(note: note, origin: NoteOrigin(part: part, index: index))
+            }
+            contractVersions[part] = track.contractVersion
+        }
+
+        var touchedOrigins = Set<NoteOrigin>()
+        var warnings: [String] = []
+        var applied = 0
+        var skipped = 0
+
+        // The parts are visited in C-1 order so the result is DETERMINISTIC
+        // (C-11 fixes the order WITHIN a file; it says nothing about the order
+        // BETWEEN files, so we pick one and keep it).
+        for part in raw.keys.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+            guard let overlay = overlays[part] else { continue }
+            for op in overlay.operations {
+                switch apply(op, to: &live, raw: raw) {
+                case .applied(let origins):
+                    applied += 1
+                    touchedOrigins.formUnion(origins)
+                case .skipped(let reason):
+                    skipped += 1
+                    warnings.append(reason)
+                }
+            }
+        }
+
+        // V8: sorted by start_s, non-overlapping within a part. A reassign can
+        // push a note on top of another one — the repair is reported.
+        var tracks: [Part: NoteTrack] = [:]
+        var originsByKey: [NoteKey: NoteOrigin] = [:]
+        var correctedAfterRepair = Set<NoteKey>()
+        for part in live.keys.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+            let outcome = NoteTrackRepair.repairKeepingOrigins(live[part] ?? [])
+            if outcome.trimmedCount > 0 {
+                warnings.append("Trimmed \(outcome.trimmedCount) overlapping note(s) in \(part.displayName) so the track satisfies C-2.3 V8.")
+            }
+            if outcome.droppedCount > 0 {
+                warnings.append("Dropped \(outcome.droppedCount) note(s) in \(part.displayName) that start at the same instant as the previous note.")
+            }
+            tracks[part] = NoteTrack(
+                contractVersion: contractVersions[part] ?? NoteTrack.currentContractVersion,
+                part: part,
+                notes: outcome.notes.map(\.note))
+
+            // The identities are taken from the REPAIRED notes, so the marker
+            // the UI draws always matches the note the UI draws.
+            for piece in outcome.notes {
+                let key = NoteKey(part: part, note: piece.note)
+                originsByKey[key] = piece.origin
+                if touchedOrigins.contains(piece.origin) {
+                    correctedAfterRepair.insert(key)
+                }
+            }
+        }
+
+        return EffectiveTracks(tracks: tracks,
+                               correctedNotes: correctedAfterRepair,
+                               origins: originsByKey,
+                               warnings: warnings,
+                               appliedOpCount: applied,
+                               skippedOpCount: skipped)
+    }
+
+    /// The outcome of applying one operation.
+    private enum ApplyOutcome {
+        case applied(origins: Set<NoteOrigin>)
+        case skipped(reason: String)
+    }
+
+    /// Applies one operation to the live notes.
+    private static func apply(_ op: CorrectionOperation,
+                              to live: inout [Part: [LiveNote]],
+                              raw: [Part: NoteTrack]) -> ApplyOutcome {
+        // The index must be inside the engine's ORIGINAL array.
+        guard let original = raw[op.fromPart], original.notes.indices.contains(op.noteIndex) else {
+            return .skipped(reason: "A correction pointed at note #\(op.noteIndex) in \(op.fromPart.displayName), but the engine's track has no such note; it was skipped.")
+        }
+        let origin = NoteOrigin(part: op.fromPart, index: op.noteIndex)
+        let pieces = pieces(of: origin, in: live)
+        guard !pieces.isEmpty else {
+            return .skipped(reason: "A correction pointed at note #\(op.noteIndex) in \(op.fromPart.displayName), which is no longer in the corrected track; it was skipped.")
+        }
+
+        switch op.kind {
+        case .reassign:
+            guard let toPart = op.toPart else {
+                return .skipped(reason: "A correction moved a \(op.fromPart.displayName) note but did not say where to; it was skipped.")
+            }
+            var moved: [Note] = []
+            for piece in pieces {
+                var note = piece.note
+                if let midi = op.midi {
+                    note.midi = midi
+                }
+                moved.append(note)
+            }
+            remove(origin, from: &live)
+            for note in moved {
+                live[toPart, default: []].append(LiveNote(note: note, origin: origin))
+            }
+            return .applied(origins: [origin])
+
+        case .delete:
+            remove(origin, from: &live)
+            // A deleted note has nothing left to mark — but the correction
+            // still counts as applied.
+            return .applied(origins: [origin])
+
+        case .split:
+            guard let splitAt_s = op.splitAt_s else {
+                return .skipped(reason: "A correction split a \(op.fromPart.displayName) note but did not say where; it was skipped.")
+            }
+            guard let toParts = op.toParts, toParts.count == 2 else {
+                return .skipped(reason: "A correction split a \(op.fromPart.displayName) note but did not name the two parts; it was skipped.")
+            }
+            let inside = pieces.filter { $0.note.start_s < splitAt_s && splitAt_s < $0.note.end_s }
+            guard inside.count == 1 else {
+                return .skipped(reason: "A correction tried to split a \(op.fromPart.displayName) note at \(String(format: "%.3f", splitAt_s)) s, which is not strictly inside the note; it was skipped.")
+            }
+            let target = inside[0]
+            let first = Note(start_s: target.note.start_s, end_s: splitAt_s,
+                             midi: target.note.midi, cents_ref: target.note.cents_ref,
+                             confidence: op.confidence ?? target.note.confidence)
+            let second = Note(start_s: splitAt_s, end_s: target.note.end_s,
+                              midi: target.note.midi, cents_ref: target.note.cents_ref,
+                              confidence: op.confidence ?? target.note.confidence)
+            remove(origin, from: &live)
+            live[toParts[0], default: []].append(LiveNote(note: first, origin: origin))
+            live[toParts[1], default: []].append(LiveNote(note: second, origin: origin))
+            return .applied(origins: [origin])
+        }
+    }
+
+    /// Every live note that descends from the given original note.
+    private static func pieces(of origin: NoteOrigin,
+                               in live: [Part: [LiveNote]]) -> [LiveNote] {
+        var result: [LiveNote] = []
+        for part in live.keys.sorted(by: { $0.sortOrder < $1.sortOrder }) {
+            for piece in live[part] ?? [] where piece.origin == origin {
+                result.append(piece)
+            }
+        }
+        return result
+    }
+
+    /// Removes every live note that descends from the given original note.
+    private static func remove(_ origin: NoteOrigin, from live: inout [Part: [LiveNote]]) {
+        for part in live.keys {
+            live[part]?.removeAll { $0.origin == origin }
+        }
     }
 }

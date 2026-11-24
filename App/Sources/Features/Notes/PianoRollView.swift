@@ -70,7 +70,11 @@ struct PianoRollView: View {
     var currentTime: Double? = nil
     /// J-302: the notes the USER corrected — they are marked on the roll so
     /// a user's opinion never looks like the engine's output.
-    var correctedIdentities: Set<NoteIdentity> = []
+    var correctedNotes: Set<NoteKey> = []
+    /// J-302: where each displayed note came from (the engine's original
+    /// part + index). C-11 addresses notes by that index, so the roll needs
+    /// it to turn a tapped note into a contract-shaped operation.
+    var noteOrigins: [NoteKey: NoteOrigin] = [:]
     /// J-302: the effective per-song ranges (C-6.1 preset + the song's
     /// override). A note outside its part's band is MARKED, never hidden
     /// (D-12: a range is a filter, not a gate).
@@ -78,7 +82,7 @@ struct PianoRollView: View {
     /// J-302: called when the user corrects a note (move / split / delete).
     /// The roll itself never changes the tracks — the owner does, through
     /// the correction overlay.
-    var onCorrection: ((CorrectionOp) -> Void)? = nil
+    var onCorrection: ((CorrectionOperation) -> Void)? = nil
     /// The USER's per-song part names (J-302). Empty = the C-1 names.
     var partNames: [Part: String] = [:]
 
@@ -95,9 +99,10 @@ struct PianoRollView: View {
          onSeek: ((Double) -> Void)? = nil,
          onLoopRegion: ((Double, Double) -> Void)? = nil,
          currentTime: Double? = nil,
-         correctedIdentities: Set<NoteIdentity> = [],
+         correctedNotes: Set<NoteKey> = [],
+         noteOrigins: [NoteKey: NoteOrigin] = [:],
          ranges: [Part: EffectivePartRange] = [:],
-         onCorrection: ((CorrectionOp) -> Void)? = nil,
+         onCorrection: ((CorrectionOperation) -> Void)? = nil,
          partNames: [Part: String] = [:]) {
         self.tracks = tracks
         self.duration_s = duration_s
@@ -106,7 +111,8 @@ struct PianoRollView: View {
         self.onSeek = onSeek
         self.onLoopRegion = onLoopRegion
         self.currentTime = currentTime
-        self.correctedIdentities = correctedIdentities
+        self.correctedNotes = correctedNotes
+        self.noteOrigins = noteOrigins
         self.ranges = ranges
         self.onCorrection = onCorrection
         self.partNames = partNames
@@ -146,7 +152,7 @@ struct PianoRollView: View {
         }
         .sheet(item: $selectedNote) { note in
             NoteDetailSheet(note: note, model: model,
-                            isCorrected: correctedIdentities.contains(NoteIdentity(note: note.note)),
+                            isCorrected: correctedNotes.contains(NoteKey(part: note.part, note: note.note)),
                             onMove: moveHandler(for: note),
                             onSplit: splitHandler(for: note),
                             onDelete: deleteHandler(for: note))
@@ -154,23 +160,46 @@ struct PianoRollView: View {
     }
 
     // MARK: - Correction handlers (J-302)
+    //
+    // C-11 addresses a note by its index in the ENGINE'S ORIGINAL, IMMUTABLE
+    // `notes[]` array for `fromPart`. The roll is showing the CORRECTED
+    // track, so every operation needs the note's origin — the resolver hands
+    // it over in `noteOrigins`. A note with no origin cannot be corrected by
+    // index, and the roll says so rather than guessing.
 
     /// Move the note to another part (nil when the roll is read-only).
     private func moveHandler(for note: PianoRollNote) -> ((Part) -> Void)? {
         guard let onCorrection else { return nil }
         return { target in
+            let key = NoteKey(part: note.part, note: note.note)
+            guard let origin = noteOrigins[key] else {
+                selectedNote = nil
+                return
+            }
             selectedNote = nil
-            onCorrection(.move(NoteKey(part: note.part, note: note.note), toPart: target))
+            onCorrection(.reassign(fromPart: origin.part,
+                                    noteIndex: origin.index,
+                                    toPart: target))
         }
     }
 
-    /// Split the note in two at its midpoint.
-    private func splitHandler(for note: PianoRollNote) -> (() -> Void)? {
+    /// Split the note in two at its midpoint. The second part is the user's
+    /// choice (C-11's `toParts` names TWO parts; the first half goes to the
+    /// first one).
+    private func splitHandler(for note: PianoRollNote) -> ((Part) -> Void)? {
         guard let onCorrection else { return nil }
-        return {
+        return { secondPart in
+            let key = NoteKey(part: note.part, note: note.note)
+            guard let origin = noteOrigins[key] else {
+                selectedNote = nil
+                return
+            }
             selectedNote = nil
-            let middle = NoteIdentityMath.ms((note.note.start_s + note.note.end_s) / 2)
-            onCorrection(.split(NoteKey(part: note.part, note: note.note), at_ms: middle))
+            let middle = (note.note.start_s + note.note.end_s) / 2
+            onCorrection(.split(fromPart: origin.part,
+                                noteIndex: origin.index,
+                                splitAt_s: middle,
+                                toParts: [note.part, secondPart]))
         }
     }
 
@@ -178,8 +207,13 @@ struct PianoRollView: View {
     private func deleteHandler(for note: PianoRollNote) -> (() -> Void)? {
         guard let onCorrection else { return nil }
         return {
+            let key = NoteKey(part: note.part, note: note.note)
+            guard let origin = noteOrigins[key] else {
+                selectedNote = nil
+                return
+            }
             selectedNote = nil
-            onCorrection(.delete(NoteKey(part: note.part, note: note.note)))
+            onCorrection(.delete(fromPart: origin.part, noteIndex: origin.index))
         }
     }
 
@@ -371,7 +405,7 @@ struct PianoRollView: View {
             }
             // J-302: a note the USER corrected is marked, so a user's opinion
             // never looks like the engine's output (honesty, AGENTS §11).
-            if correctedIdentities.contains(NoteIdentity(note: note.note)) {
+            if correctedNotes.contains(NoteKey(part: note.part, note: note.note)) {
                 let markCenter = CGPoint(x: cgRect.maxX - 4, y: cgRect.minY + 4)
                 let mark = Path(ellipseIn: CGRect(x: markCenter.x - 2.5, y: markCenter.y - 2.5,
                                                  width: 5, height: 5))
@@ -572,8 +606,10 @@ struct NoteDetailSheet: View {
     var isCorrected: Bool = false
     /// J-302: move the note to another part.
     var onMove: ((Part) -> Void)? = nil
-    /// J-302: split the note in two at its midpoint.
-    var onSplit: (() -> Void)? = nil
+    /// J-302: split the note in two at its midpoint. The argument is the
+    /// SECOND part (C-11's `toParts` names two parts; the first half goes to
+    /// the note's own part). Passing the note's own part splits it in place.
+    var onSplit: ((Part) -> Void)? = nil
     /// J-302: delete the note.
     var onDelete: (() -> Void)? = nil
 
@@ -628,11 +664,28 @@ struct NoteDetailSheet: View {
                             }
                         }
                         if let onSplit {
-                            Button {
-                                onSplit()
+                            Menu {
+                                Button {
+                                    onSplit(note.part)
+                                } label: {
+                                    Label("Both halves in \(model.partName(for: note.part))",
+                                          systemImage: "scissors")
+                                }
+                                if !moveTargets.isEmpty {
+                                    Divider()
+                                    ForEach(moveTargets, id: \.self) { target in
+                                        Button {
+                                            onSplit(target)
+                                        } label: {
+                                            Label("First half in \(model.partName(for: note.part)), second in \(target.displayName)",
+                                                  systemImage: "scissors")
+                                        }
+                                    }
+                                }
                             } label: {
                                 Label("Split in two", systemImage: "scissors")
                             }
+                            .accessibilityHint("Cuts the note in half. The first half stays in this part; choose where the second half goes.")
                         }
                         if let onDelete {
                             Button(role: .destructive) {

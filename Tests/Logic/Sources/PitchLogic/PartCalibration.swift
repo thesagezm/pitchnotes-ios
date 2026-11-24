@@ -21,6 +21,15 @@ import EngineCore
 // `PartRangePresets.calibratedBand` for the preset modes), it does not
 // change the contract.
 //
+// WHERE IT IS STORED: the range override is NOT a note operation, so C-11 has
+// no home for it. X-216 proposes `corrections/song.json` next to the
+// per-part overlay files, with the exact JSON below — LETO HAS THE FINAL SAY.
+// The STORED shape lives here (`StoredPartRangeOverride`) so the code and the
+// proposal cannot drift apart:
+//
+//   "T1":   { "preset": "TENOR_1", "nudgeSemitones": 2 }
+//   "BASS": { "custom": { "minMidi": 40, "maxMidi": 60 } }
+//
 // HONESTY (C-6.1 + D-12): a range is a FILTERING band, never a hard gate. A
 // note outside the range is MARKED, not hidden and not rejected — the singer
 // may genuinely sing outside the preset.
@@ -28,16 +37,22 @@ import EngineCore
 // MARK: - The override
 
 /// One part's per-song range override.
-public struct PartRangeOverride: Codable, Equatable, Sendable {
+///
+/// The override carries its PART so it can name the C-6.1 preset it was made
+/// from (the stored JSON says WHICH preset, while the contract table stays
+/// the truth about the bounds).
+public struct PartRangeOverride: Equatable, Sendable {
 
     /// Which mode the override uses.
-    public enum Mode: String, Codable, Equatable, Sendable {
+    public enum Mode: String, Equatable, Sendable {
         /// The C-6.1 contract preset (optionally nudged).
         case preset
         /// The user's own MIDI bounds for this song.
         case custom
     }
 
+    /// The part this override is for.
+    public var part: Part
     public var mode: Mode
     /// The custom lower bound (MIDI). Meaningful in `.custom` mode; in
     /// `.preset` mode it holds the preset's bound for reference.
@@ -46,6 +61,8 @@ public struct PartRangeOverride: Codable, Equatable, Sendable {
     public var midiHigh: Int
     /// The C-6.1 semitone nudge, −2…+2. Only in `.preset` mode.
     public var nudgeSemitones: Int
+    /// The C-6.1 preset name (e.g. "TENOR_1") when the preset mode is used.
+    public var presetName: String?
 
     /// V9's MIDI range, verbatim (the note validator's bounds).
     public static let midiRange: ClosedRange<Int> = 24...96
@@ -55,7 +72,9 @@ public struct PartRangeOverride: Codable, Equatable, Sendable {
     ///   · the bounds are clamped into V9's 24…96 and kept ordered;
     ///   · the nudge is clamped to C-6.1's ±2;
     ///   · a custom range ignores the nudge (the bounds ARE the range).
-    public init(mode: Mode, midiLow: Int, midiHigh: Int, nudgeSemitones: Int = 0) {
+    public init(part: Part, mode: Mode, midiLow: Int, midiHigh: Int,
+                nudgeSemitones: Int = 0, presetName: String? = nil) {
+        self.part = part
         self.mode = mode
         let low = min(max(midiLow, PartRangeOverride.midiRange.lowerBound),
                       PartRangeOverride.midiRange.upperBound - 1)
@@ -65,6 +84,7 @@ public struct PartRangeOverride: Codable, Equatable, Sendable {
         self.nudgeSemitones = mode == .custom
             ? 0
             : EngineCore.PartRangePresets.clampNudge(nudgeSemitones)
+        self.presetName = mode == .custom ? nil : presetName
     }
 
     /// The C-6.1 preset for a part, with an optional nudge. The bounds are
@@ -72,16 +92,102 @@ public struct PartRangeOverride: Codable, Equatable, Sendable {
     /// the override was made from (the table itself stays the truth).
     public static func preset(for part: Part, nudgeSemitones: Int = 0) -> PartRangeOverride {
         let nudge = EngineCore.PartRangePresets.clampNudge(nudgeSemitones)
-        let preset = EngineCore.PartRangePresets.preset(for: part)
-        return PartRangeOverride(mode: .preset,
-                                 midiLow: preset?.midiLow ?? PartRangeOverride.midiRange.lowerBound,
-                                 midiHigh: preset?.midiHigh ?? PartRangeOverride.midiRange.upperBound,
-                                 nudgeSemitones: nudge)
+        let contractPreset = EngineCore.PartRangePresets.preset(for: part)
+        return PartRangeOverride(part: part,
+                                 mode: .preset,
+                                 midiLow: contractPreset?.midiLow ?? PartRangeOverride.midiRange.lowerBound,
+                                 midiHigh: contractPreset?.midiHigh ?? PartRangeOverride.midiRange.upperBound,
+                                 nudgeSemitones: nudge,
+                                 presetName: contractPreset?.presetName)
     }
 
     /// A custom range for one song.
-    public static func custom(midiLow: Int, midiHigh: Int) -> PartRangeOverride {
-        PartRangeOverride(mode: .custom, midiLow: midiLow, midiHigh: midiHigh, nudgeSemitones: 0)
+    public static func custom(for part: Part, midiLow: Int, midiHigh: Int) -> PartRangeOverride {
+        PartRangeOverride(part: part, mode: .custom,
+                          midiLow: midiLow, midiHigh: midiHigh, nudgeSemitones: 0)
+    }
+}
+
+// MARK: - The stored (JSON) form — X-216's shape
+
+/// The stored form of ONE range override (X-216's exact JSON).
+///
+/// It lives at file scope (not inside `SongCalibrationOverlay`) so the
+/// calibration file's hand-written decoder and this type cannot drift.
+struct StoredPartRangeOverride: Codable {
+
+    var preset: String?
+    var nudgeSemitones: Int?
+    var custom: CustomBounds?
+
+    /// The custom MIDI bounds.
+    struct CustomBounds: Codable {
+        var minMidi: Int
+        var maxMidi: Int
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case preset, nudgeSemitones, custom
+    }
+
+    /// The override this stored form describes (for the given part).
+    func makeOverride(for part: Part) -> PartRangeOverride {
+        if let custom {
+            return PartRangeOverride.custom(for: part,
+                                            midiLow: custom.minMidi,
+                                            midiHigh: custom.maxMidi)
+        }
+        let contractPreset = EngineCore.PartRangePresets.preset(for: part)
+        return PartRangeOverride(part: part,
+                                 mode: .preset,
+                                 midiLow: contractPreset?.midiLow ?? PartRangeOverride.midiRange.lowerBound,
+                                 midiHigh: contractPreset?.midiHigh ?? PartRangeOverride.midiRange.upperBound,
+                                 nudgeSemitones: nudgeSemitones ?? 0,
+                                 presetName: preset ?? contractPreset?.presetName)
+    }
+
+    init(preset: String? = nil, nudgeSemitones: Int? = nil, custom: CustomBounds? = nil) {
+        self.preset = preset
+        self.nudgeSemitones = nudgeSemitones
+        self.custom = custom
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let custom {
+            try container.encode(custom, forKey: .custom)
+        } else {
+            try container.encode(preset ?? "", forKey: .preset)
+            try container.encode(nudgeSemitones ?? 0, forKey: .nudgeSemitones)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let custom = try container.decodeIfPresent(CustomBounds.self, forKey: .custom)
+        let preset = try container.decodeIfPresent(String.self, forKey: .preset)
+        guard custom != nil || (preset != nil && !preset!.isEmpty) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .preset, in: container,
+                debugDescription: "A range override needs a 'preset' or a 'custom'.")
+        }
+        self.preset = preset
+        self.nudgeSemitones = try container.decodeIfPresent(Int.self, forKey: .nudgeSemitones)
+        self.custom = custom
+    }
+}
+
+extension PartRangeOverride {
+    /// The stored form of this override (X-216's exact JSON).
+    func storedForm() -> StoredPartRangeOverride {
+        switch mode {
+        case .custom:
+            return StoredPartRangeOverride(custom: StoredPartRangeOverride.CustomBounds(
+                minMidi: midiLow, maxMidi: midiHigh))
+        case .preset:
+            return StoredPartRangeOverride(preset: presetName ?? "",
+                                           nudgeSemitones: nudgeSemitones)
+        }
     }
 }
 
@@ -173,12 +279,16 @@ public enum PartCalibration {
                                   nudgeSemitones: nudge)
     }
 
-    /// The effective ranges for a set of parts, with an overlay's overrides.
-    public static func effectiveRanges(overlay: CorrectionOverlay,
+    /// The effective ranges for a set of parts, with the song's overrides.
+    ///
+    /// A nil calibration (no `corrections/song.json`) ⇒ the C-6.1 presets,
+    /// exactly as before (the absence rule).
+    public static func effectiveRanges(calibration: SongCalibrationOverlay?,
                                        parts: [Part]) -> [Part: EffectivePartRange] {
         var result: [Part: EffectivePartRange] = [:]
         for part in parts {
-            if let range = effectiveRange(for: part, rangeOverride: overlay.rangeOverride(for: part)) {
+            if let range = effectiveRange(for: part,
+                                          rangeOverride: calibration?.rangeOverride(for: part)) {
                 result[part] = range
             }
         }
