@@ -66,6 +66,19 @@
     "role": "htdemucs 4-source separation weights for the vendored demucs.cpp inference library (P-201/M2; vocals = target_3, instrumental = drums+bass+other residual, D-9 two-stem). PROVENANCE (D-32.6 FALLBACK path): Retrobear/demucs.cpp HF dataset ggml-model-htdemucs-4s-f16.bin (linked from the demucs.cpp README at the pinned upstream commit 4edae497; upstream's own pre-converted distribution), downloaded 2026-11-22 by paul with resume-verified byte count 83994361; sha256 above is the TRUST ANCHOR (D-19.4) and MUST NOT change across URL swaps. TIER B per D-30: MIT (c) Meta; htdemucs trained on MUSDB18 (CC BY-NC-SA) + an undocumented 800-song extra set \u2014 human sign-off required before any commercial/App Store distribution; never represented as clean. PRIMARY provenance chain (Meta .th @e976d93e via pinned convert-pth-to-ggml.py) remains available; Meta host download stalled on the dev box (dl.fbaipublicfiles.com) \u2014 operational fallback per D-32.6. Attribution lands in NOTICE + J-204 licenses screen.",
     "format": "ggml fp16 (htdemucs 4-source); consumed by vendor/demucs.cpp load_demucs_model (magic+layout verified by the library at load); 44.1 kHz stereo float in/out per D-8; ~81 MB fp16 dequantizing to fp32 Eigen tensors in memory"
    }
+  },
+  {
+   "name": "basic-pitch",
+   "version": "1.0.0+icassp2022-fa5997a",
+   "url": "https://huggingface.co/thesagezm/pitchnotes-models/resolve/main/basic-pitch/nmp.onnx",
+   "sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+   "size": 230444,
+   "license": "Apache-2.0 (Tier B per D-30/D-42: upstream training-mix licenses UNVERIFIED)",
+   "runtime": "onnx-cpu",
+   "io": {
+    "role": "basic-pitch note-transcription weights for the vendored basicpitch.cpp inference library (P-301/M3). PROVENANCE: spotify/basic-pitch @ fa5997af0a8210982619003269994a1be25eddf3, ICASSP-2022 `basic_pitch/saved_models/icassp_2022/nmp.onnx`; BYTE-IDENTICAL to sevagh/basicpitch.cpp @ e0cf072d59fc87846e5be6ee7841bf726552ce9b `ort-model/model.onnx` (both sha256 2c3c1d14...); re-hosted on thesagezm/pitchnotes-models (public) 2026-11-24 by paul, upload verified by an independent download+hash (byte-identical, D-19.4). The sha256 above is the TRUST ANCHOR and MUST NOT change across URL swaps. TIER B per D-30/D-42: the CODE is Apache-2.0, but the upstream training-mix datasets (MAESTRO / MedleyDB / iKala / Slakh) license strings are UNVERIFIED — human sign-off required before any commercial/App Store distribution; never represented as clean. Weights NEVER enter git.",
+    "format": "ONNX (opset 15); raw audio in at 22.05 kHz mono, shape [batch, 43844, 1] float32 (the CQT is folded INSIDE the graph — no CQT front-end on our side); outputs notes [batch,172,88], onsets [batch,172,88], contours [batch,172,264]; consumed by vendor/basicpitch.cpp under the EXISTING SPM ORT 1.24.2 runtime (D-39: ONE ORT, no second runtime, no trimmed ort-builder)"
+   }
   }
  ]
 }
