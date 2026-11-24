@@ -44,3 +44,4 @@ Models/downloads/
 Tests/Spikes/.ribbon-build/
 Tests/Spikes/.demucs-build/
 Tests/Spikes/.bench-build/
+Tests/Spikes/.basicpitch-build/
