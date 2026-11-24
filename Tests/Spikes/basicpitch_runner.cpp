@@ -51,6 +51,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <string>
 #include <sys/resource.h>
 #include <unistd.h>
@@ -240,6 +241,10 @@ int main(int argc, char **argv) {
     std::printf("NOTE_EVENTS\t%zu\n", events.size());
     {
         std::ofstream f(outdir + "/events.tsv");
+        // 17 significant digits => the TSV round-trips a double EXACTLY, so
+        // the bridge's output (the C ABI the app calls) can be compared with
+        // this dump bit-for-bit rather than within a formatting tolerance.
+        f << std::setprecision(17);
         if (!f) die("cannot write events.tsv");
         for (const auto &e : events) {
             f << e.start_idx << '\t' << e.end_idx << '\t' << e.pitch << '\t'
@@ -275,6 +280,7 @@ int main(int argc, char **argv) {
     std::printf("TIMED_EVENTS\t%zu\n", timed.size());
     {
         std::ofstream f(outdir + "/timed.tsv");
+        f << std::setprecision(17);
         if (!f) die("cannot write timed.tsv");
         for (const auto &t : timed) {
             f << t.startSeconds << '\t' << t.endSeconds << '\t' << t.midi << '\t'

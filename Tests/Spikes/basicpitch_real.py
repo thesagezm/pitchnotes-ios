@@ -29,7 +29,11 @@ Driver contract (mirrors demucs_real.py / ribbon_real.py):
       S7  DETERMINISM: two runs produce byte-identical dumps;
       S8  RESOURCES: peak RSS under the per-OS spike bound; RTF logged
           (the device target is measured on A14 at P-603 — the CI number is
-          a RUNNER number, never a device claim).
+          a RUNNER number, never a device claim);
+      S9  the release-trim + frame-mapping UNIT checks (the standalone C++
+          leg — the trim cuts the RELEASE dip, never the attack ramp);
+      S10 the C ABI BRIDGE (what the app's Swift side calls) reproduces the
+          engine output exactly — the spike measures what the app ships.
 
 ONNX Runtime resolution (env-overridable, in order):
   1. PITCHNOTES_ORT_ROOT   — a directory holding the ORT C++ headers and the
@@ -393,6 +397,53 @@ def run_trim_unit_tests(report: sc.CheckReport) -> None:
                     f"attack ramp; it never extends a note)")
 
 
+def _bridge_env(lib_dir: Path | None) -> dict[str, str]:
+    """The environment for a bridge subprocess (the local-wheel fallback links
+    a SHARED library, so the loader must find it at run time; the shipped
+    macOS configuration links the pod's STATIC framework — no loader path)."""
+    env = dict(os.environ)
+    if lib_dir is not None:
+        var = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+        env[var] = f"{lib_dir}{os.pathsep}{env.get(var, '')}"
+    return env
+
+
+def build_bridge_test(include_dir: Path, link_flags: list[str]) -> Path:
+    """The C ABI bridge (Engine/Transcription/BasicPitchBridge.{h,cpp}) — the
+    surface the APP's Swift side calls.
+
+    The spike compiles and drives the BRIDGE, not just the runner: if the two
+    ever disagreed, the spike would be measuring something the app does not
+    ship. (The bridge is Apple-only in the app target — the SPM ORT pod — so
+    it is deliberately NOT in Engine/Package.swift; see the X-### request.)
+    """
+    v = vendor_dir()
+    assert v is not None
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    binary = BUILD_DIR / "basicpitch_bridge_test"
+    cmd = [compiler(), "-O2", "-std=c++20",
+           "-I", str(v / "src"),
+           "-I", str(eigen_dir()),
+           "-I", str(include_dir),
+           "-I", str(_include_shim_dir()),
+           "-I", str(REPO_ROOT / "Engine" / "Transcription"),
+           str(REPO_ROOT / "Engine" / "Transcription" / "BasicPitchBridge.cpp"),
+           str(REPO_ROOT / "Tests" / "Spikes" / "basicpitch_bridge_test.cpp")]
+    for s in VENDOR_SOURCES:
+        cmd.append(str(v / "src" / s))
+    forwarder = _vendor_decode_forwarder()
+    if forwarder is not None:
+        cmd.append(str(forwarder))
+    cmd += link_flags
+    cmd += ["-o", str(binary)]
+    print(f"  compiling basicpitch_bridge_test ({compiler()}-O2 c++20) — the C ABI "
+          f"the app's Swift side calls …")
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"basicpitch_bridge_test compile failed:\n{r.stderr[-3000:]}")
+    return binary
+
+
 def ensure_model() -> Path:
     """The pinned weights, fetched through the manifest (sha256-verified)."""
     env = os.environ.get("PITCHNOTES_BASICPITCH_MODEL")
@@ -536,6 +587,7 @@ def run_basicpitch_real(report: sc.CheckReport) -> None:
                     f"({compiler()}-O2 c++20; no second ORT — D-39)")
 
     run_trim_unit_tests(report)
+    bridge = build_bridge_test(include_dir, link_flags)
 
     model = ensure_model()
     sha = hashlib.sha256(model.read_bytes()).hexdigest()
@@ -644,6 +696,41 @@ def run_basicpitch_real(report: sc.CheckReport) -> None:
                             f"(logged, not gated): "
                             + ", ".join(f"midi {s['midi']} @ {s['start_s']:.2f}s "
                                         f"(amp {s['amplitude']:.2f})" for s in spurious[:6]))
+
+        # S10: the C ABI BRIDGE (what the app's Swift side calls) must produce
+        # the SAME notes as the runner's ENGINE OUTPUT. If the bridge and the
+        # runner ever disagreed, the spike would be measuring something the
+        # app does not ship.
+        brun = subprocess.run([str(bridge), str(model), str(wav)],
+                              capture_output=True, text=True,
+                              env=_bridge_env(lib_dir))
+        if brun.returncode != 0:
+            report.bad("S10", f"basicpitch/{name}: the C ABI bridge FAILED "
+                              f"(rc={brun.returncode}): {brun.stderr[-500:]}")
+        else:
+            bridge_notes = []
+            for line in brun.stdout.splitlines():
+                if line.startswith("NOTE\t"):
+                    p = line.split("\t")
+                    bridge_notes.append((float(p[1]), float(p[2]), int(p[3]),
+                                         float(p[4])))
+            runner_notes = [(t[0], t[1], int(t[2]), t[3]) for t in timed]
+            if len(bridge_notes) != len(runner_notes):
+                report.bad("S10", f"basicpitch/{name}: the bridge produced "
+                                  f"{len(bridge_notes)} notes, the engine output has "
+                                  f"{len(runner_notes)}")
+            else:
+                worst = 0.0
+                for a, b in zip(bridge_notes, runner_notes):
+                    worst = max(worst, abs(a[0] - b[0]), abs(a[1] - b[1]),
+                                abs(a[2] - b[2]), abs(a[3] - b[3]))
+                if worst > 1e-6:
+                    report.bad("S10", f"basicpitch/{name}: the bridge and the engine "
+                                      f"output differ (worst {worst:.3e})")
+                else:
+                    report.ok("S10", f"basicpitch/{name}: the C ABI bridge reproduces "
+                                     f"the engine output exactly ({len(bridge_notes)} "
+                                     f"notes, worst diff {worst:.1e})")
 
         # S7: determinism — two runs, byte-identical dumps.
         same = all((run1["outdir"] / f).read_bytes() == (run2["outdir"] / f).read_bytes()
