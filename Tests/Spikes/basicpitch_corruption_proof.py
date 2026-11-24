@@ -64,7 +64,7 @@ MAP_CORRUPTED = """    const long long sample = frame * kFrameHop;"""
 def _compile(source: Path, binary: Path, include_dirs: list[Path]) -> None:
     v = br.vendor_dir()
     assert v is not None
-    include_dir, link_flags, _ = br.resolve_ort()
+    include_dir, link_candidates, _ = br.resolve_ort()
     cmd = [br.compiler(), "-O2", "-std=c++20",
            "-I", str(v / "src"),
            "-I", str(br.eigen_dir()),
@@ -77,11 +77,9 @@ def _compile(source: Path, binary: Path, include_dirs: list[Path]) -> None:
     forwarder = br._vendor_decode_forwarder()
     if forwarder is not None:
         cmd.append(str(forwarder))
-    cmd += link_flags
-    cmd += ["-o", str(binary)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"compile failed:\n{r.stderr[-3000:]}")
+    # The same ordered link strategies as the real spike (the SHIPPED form
+    # first) — the proof must link exactly like the thing it proves.
+    br._compile_and_link(cmd, link_candidates, binary, f"corrupted runner ({source.name})")
 
 
 def _corrupted_runner(tag: str) -> Path:

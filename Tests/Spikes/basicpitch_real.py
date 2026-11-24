@@ -42,6 +42,12 @@ ONNX Runtime resolution (env-overridable, in order):
   3. The pod archive from the SPM mirror's release asset (the EXACT bytes the
      app links — tag 1.24.2-binaries, SHA256 pinned in the mirror's
      Package.swift), downloaded and verified here. Stdlib only.
+     The pod is extracted WITH ITS SYMLINKS INTACT (X-220): Python's
+     `zipfile.extractall` flattens a symlink into a regular file holding the
+     link TARGET AS TEXT, which leaves the framework's "binary" a 28-byte text
+     file and makes ld fail with `unknown file type`. The macOS framework
+     carries FOUR symlinks (onnxruntime, Resources, Headers and
+     Versions/Current), so the extraction is verified after it runs.
 
 The vendored `ort_inference.cpp` includes <onnxruntime/core/session/
 onnxruntime_cxx_api.h> (the ORT SOURCE-TREE path) while the SPM package ships
@@ -56,7 +62,9 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -150,6 +158,83 @@ def _download_ort_pod(cache: Path) -> Path:
     return archive
 
 
+def _extract_zip_preserving_symlinks(archive: Path, dest: Path) -> None:
+    """Extract the pod archive WITHOUT losing its symlinks (X-220).
+
+    Python's `zipfile.extractall` does NOT restore symlinks: a symlink entry
+    becomes a REGULAR FILE whose content is the link TARGET as text. The ORT
+    pod's macOS framework carries FOUR symlinks —
+
+        onnxruntime            -> Versions/Current/onnxruntime
+        Resources              -> Versions/Current/Resources
+        Headers                -> Versions/Current/Headers
+        Versions/Current       -> A
+
+    — so after an `extractall` the framework's "binary" is a 28-byte text file
+    and ld correctly says `unknown file type`. The zip entries carry the
+    `S_IFLNK` mode bits, so the targets are recoverable from the entry itself
+    (`z.read(info)` IS the target path).
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive) as z:
+        for info in z.infolist():
+            rel = info.filename
+            if rel.endswith("/"):
+                continue
+            parts = Path(rel).parts
+            if rel.startswith("/") or ".." in parts:
+                raise RuntimeError(f"refusing to extract unsafe zip entry {rel!r}")
+            out = dest.joinpath(*parts)
+            mode = info.external_attr >> 16
+            if stat.S_ISLNK(mode):
+                out.parent.mkdir(parents=True, exist_ok=True)
+                if out.is_symlink() or out.exists():
+                    out.unlink()
+                out.symlink_to(z.read(info).decode("utf-8"))
+            else:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(z.read(info))
+                perm = mode & 0o777
+                if perm:
+                    os.chmod(out, perm)
+
+
+def _verify_pod_layout(root: Path) -> None:
+    """Verify the extracted pod — the symlinks must be REAL, not flattened.
+
+    Fails LOUDLY (never silently links something else): the framework binary
+    is ~90 MB of static archive; a flattened symlink is 28 bytes of text.
+    """
+    header = root / "Headers" / "onnxruntime_cxx_api.h"
+    if not header.is_file() or header.stat().st_size < 1024:
+        raise RuntimeError(
+            f"the ORT pod's headers are missing or truncated at {header} — the "
+            "pod was not extracted correctly")
+    xcf = root / "onnxruntime.xcframework"
+    if not xcf.is_dir():
+        return
+    for slice_dir in sorted(xcf.iterdir()):
+        if not slice_dir.name.startswith("macos"):
+            continue
+        fw = slice_dir / "onnxruntime.framework" / "onnxruntime"
+        if not (fw.exists() or fw.is_symlink()):
+            continue
+        real = fw.resolve()
+        if not real.is_file():
+            raise RuntimeError(
+                f"the ORT framework binary {fw} is a broken link (resolves to "
+                f"{real}, which is not a file) — the pod's symlinks were not restored")
+        size = real.stat().st_size
+        print(f"  [basicpitch] ORT framework binary: {fw} "
+              f"({'symlink' if fw.is_symlink() else 'regular file'} -> {real.name}, "
+              f"{size/1e6:.1f} MB)")
+        if size < 1_000_000:
+            raise RuntimeError(
+                f"the ORT framework binary {fw} is only {size} bytes — the pod's "
+                "symlinks were NOT restored (a flattened symlink holds the link "
+                "target as TEXT). Extract the pod with symlink preservation.")
+
+
 def _runtime_lib_dir(lib: Path) -> Path:
     """The directory the dynamic loader must search for `lib`.
 
@@ -170,8 +255,13 @@ def _runtime_lib_dir(lib: Path) -> Path:
     return alias_dir
 
 
-def resolve_ort() -> tuple[Path, list[str], Path | None]:
-    """Return (include_dir, link_flags, runtime_lib_dir) for the ORT C++ API.
+def resolve_ort() -> tuple[Path, list[tuple[str, list[str]]], Path | None]:
+    """Return (include_dir, link_candidates, runtime_lib_dir) for the ORT C++ API.
+
+    `link_candidates` is an ordered list of (name, flags) — the candidate link
+    strategies, best (the SHIPPED form) first. They are tried in order and the
+    one that links is reported, so the CI log always says WHICH configuration
+    produced the binary (no silent fallback).
 
     Prefers the SPM mirror's pod (the SHIPPED configuration). Falls back to a
     locally installed onnxruntime wheel's shared library (a LOCAL PROOF ONLY —
@@ -183,29 +273,36 @@ def resolve_ort() -> tuple[Path, list[str], Path | None]:
 
     if include_env and lib_env:
         lib = Path(lib_env)
-        return Path(include_env), _link_flags(lib), _runtime_lib_dir(lib)
+        return Path(include_env), [("explicit ORT library", _link_flags(lib))], _runtime_lib_dir(lib)
 
     root = _ort_root_from_env()
     if root is None:
         cache = Path(os.environ.get("PITCHNOTES_ORT_CACHE",
                                     Path.home() / ".cache" / "pitchnotes" / "ort"))
+        archive = None
         try:
             archive = _download_ort_pod(cache)
-            extracted = cache / "extracted"
-            if not (extracted / "Headers" / "onnxruntime_cxx_api.h").is_file():
-                extracted.mkdir(parents=True, exist_ok=True)
-                with zipfile.ZipFile(archive) as z:
-                    z.extractall(extracted)
-            root = extracted
-        except Exception as e:  # noqa: BLE001 — fall through to the wheel
+        except Exception as e:  # noqa: BLE001 — the wheel is the fallback
             print(f"  [basicpitch] ORT pod unavailable ({e}) → trying the local wheel")
-            root = None
+        if archive is not None:
+            extracted = cache / "extracted"
+            # Re-extract whenever the layout is not intact: a PREVIOUS run's
+            # `extractall` left flattened symlinks behind, and the pod never
+            # changes (the archive is SHA-pinned).
+            if not _pod_is_intact(extracted):
+                if extracted.exists():
+                    shutil.rmtree(extracted)
+                _extract_zip_preserving_symlinks(archive, extracted)
+            # A broken extraction must FAIL LOUDLY — never fall through to the
+            # wheel here (that would hide the pod as the shipped configuration).
+            _verify_pod_layout(extracted)
+            root = extracted
 
     if root is not None:
         include = root / "Headers"
         if not (include / "onnxruntime_cxx_api.h").is_file():
             raise RuntimeError(f"ORT headers missing under {include}")
-        return include, _link_flags_from_root(root), None
+        return include, _link_flag_candidates(root), None
 
     # Local-wheel fallback (Linux dev loop): the pip wheel ships the shared
     # library but NOT the C++ header, so the headers still come from the pod
@@ -221,7 +318,22 @@ def resolve_ort() -> tuple[Path, list[str], Path | None]:
     if headers is None:
         raise RuntimeError("ONNX Runtime C++ headers not found — set PITCHNOTES_ORT_INCLUDE "
                            "(the pip wheel ships only the library)")
-    return Path(headers), _link_flags(lib), _runtime_lib_dir(lib)
+    return Path(headers), [("explicit ORT library", _link_flags(lib))], _runtime_lib_dir(lib)
+
+
+def _pod_is_intact(root: Path) -> bool:
+    """True when the extracted pod already has its symlinks intact."""
+    xcf = root / "onnxruntime.xcframework"
+    if not xcf.is_dir():
+        return False
+    for slice_dir in sorted(xcf.iterdir()):
+        if not slice_dir.name.startswith("macos"):
+            continue
+        fw = slice_dir / "onnxruntime.framework" / "onnxruntime"
+        if fw.exists() or fw.is_symlink():
+            real = fw.resolve()
+            return real.is_file() and real.stat().st_size > 1_000_000
+    return False
 
 
 def _link_flags(lib: Path) -> list[str]:
@@ -230,20 +342,100 @@ def _link_flags(lib: Path) -> list[str]:
     return [f"-L{lib.parent}", f"-l:{lib.name}"]
 
 
-def _link_flags_from_root(root: Path) -> list[str]:
-    """Link the macOS slice of the pod's xcframework (the SHIPPED config)."""
+# The Mach-O FAT container header (big-endian) and the CPU types we care about.
+_FAT_MAGIC = 0xCAFEBABE
+_HOST_CPU = {"arm64": 0x0100000C, "aarch64": 0x0100000C, "x86_64": 0x01000007}
+
+
+def _fat_arches(path: Path) -> list[tuple[int, int, int, int]]:
+    """Parse a Mach-O FAT header: [(cputype, cpusubtype, offset, size)]."""
+    with path.open("rb") as f:
+        head = f.read(8)
+        if len(head) < 8:
+            return []
+        magic, n = struct.unpack(">II", head)
+        if magic != _FAT_MAGIC:
+            return []
+        table = f.read(20 * n)
+        out = []
+        for i in range(n):
+            cput, sub, off, size, _align = struct.unpack(">IIIII", table[20 * i:20 * i + 20])
+            out.append((cput, sub, off, size))
+        return out
+
+
+def _slice_fat_archive(path: Path) -> Path | None:
+    """Write the HOST-ARCH slice of a fat archive into BUILD_DIR; return it.
+
+    The pod's framework binary is a Mach-O FAT container whose slices are
+    STATIC AR ARCHIVES (`!<arch>`). Xcode/SwiftPM hands that fat file to ld64
+    through the framework search path; if ld64 will not consume the fat form
+    directly, the faithful equivalent is the host-arch slice — the SAME bytes
+    the runner would have picked anyway — handed to ld as a plain archive.
+    """
+    arches = _fat_arches(path)
+    if not arches:
+        return None
+    want = _HOST_CPU.get(platform.machine())
+    if want is None:
+        return None
+    match = next((a for a in arches if a[0] == want), None)
+    if match is None:
+        return None
+    _cput, _sub, off, size = match
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    out = BUILD_DIR / f"onnxruntime-{platform.machine()}.a"
+    with path.open("rb") as f:
+        f.seek(off)
+        data = f.read(size)
+    if not data.startswith(b"!<arch>\n"):
+        raise RuntimeError(f"the host slice of the fat ORT archive {path} is not an ar archive")
+    out.write_bytes(data)
+    return out
+
+
+def _link_flag_candidates(root: Path) -> list[tuple[str, list[str]]]:
+    """The candidate link flag sets for the pod, best (shipped form) first."""
+    candidates: list[tuple[str, list[str]]] = []
     xcf = root / "onnxruntime.xcframework"
     if xcf.is_dir():
         for slice_dir in sorted(xcf.iterdir()):
             if not slice_dir.name.startswith("macos"):
                 continue
-            fw = slice_dir / "onnxruntime.framework"
-            if fw.is_dir():
-                return ["-F", str(slice_dir), "-framework", "onnxruntime"]
-    # A plain dylib/framework elsewhere in the tree.
-    for cand in root.rglob("libonnxruntime*"):
-        return _link_flags(cand)
-    raise RuntimeError(f"no ONNX Runtime binary found under {root}")
+            fw_dir = slice_dir / "onnxruntime.framework"
+            if not fw_dir.is_dir():
+                continue
+            candidates.append(
+                ("xcframework framework (the SHIPPED form: -F <slice> -framework onnxruntime)",
+                 ["-F", str(slice_dir), "-framework", "onnxruntime"]))
+            candidates.append(
+                ("xcframework framework + -Wl,-all_load",
+                 ["-F", str(slice_dir), "-framework", "onnxruntime", "-Wl,-all_load"]))
+            fw = fw_dir / "onnxruntime"
+            if fw.exists() or fw.is_symlink():
+                thin = None
+                try:
+                    thin = _slice_fat_archive(fw)
+                except Exception as e:  # noqa: BLE001 — a fallback, not a gate
+                    print(f"  [basicpitch] fat-slice fallback unavailable ({e})")
+                if thin is not None:
+                    candidates.append(
+                        (f"host-arch slice of the same static archive, force_load "
+                         f"({thin.name})",
+                         [f"-Wl,-force_load,{thin}"]))
+                    candidates.append(
+                        (f"host-arch slice of the same static archive, plain input "
+                         f"({thin.name})",
+                         [str(thin)]))
+            break
+    if not candidates:
+        # A plain dylib/framework elsewhere in the tree.
+        for cand in sorted(root.rglob("libonnxruntime*")):
+            candidates.append(("plain ONNX Runtime library", _link_flags(cand)))
+            break
+    if not candidates:
+        raise RuntimeError(f"no ONNX Runtime binary found under {root}")
+    return candidates
 
 
 # --------------------------------------------------------------------------
@@ -335,7 +527,30 @@ def _vendor_decode_forwarder() -> Path | None:
     return fwd
 
 
-def build_runner(include_dir: Path, link_flags: list[str]) -> Path:
+def _compile_and_link(base_cmd: list[str], link_candidates: list[tuple[str, list[str]]],
+                      binary: Path, label: str) -> str:
+    """Compile + link, trying each link strategy in order.
+
+    Returns the NAME of the strategy that linked (it is printed and reported,
+    so the CI log always says which configuration produced the binary). If
+    every strategy fails, the whole story is raised — the spike never falls
+    back to a mock or to a different ORT.
+    """
+    failures: list[tuple[str, str]] = []
+    for name, flags in link_candidates:
+        cmd = base_cmd + list(flags) + ["-o", str(binary)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0:
+            print(f"  linked {label} with: {name}")
+            print(f"    link flags: {' '.join(flags)}")
+            return name
+        failures.append((name, r.stderr[-1500:]))
+    raise RuntimeError(
+        f"{label} compile/link failed for EVERY link strategy:\n" +
+        "\n".join(f"--- {n}:\n{e}" for n, e in failures))
+
+
+def build_runner(include_dir: Path, link_candidates: list[tuple[str, list[str]]]) -> Path:
     v = vendor_dir()
     assert v is not None
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
@@ -352,13 +567,9 @@ def build_runner(include_dir: Path, link_flags: list[str]) -> Path:
     forwarder = _vendor_decode_forwarder()
     if forwarder is not None:
         cmd.append(str(forwarder))
-    cmd += link_flags
-    cmd += ["-o", str(binary)]
     print(f"  compiling basicpitch_runner ({compiler()}-O2 c++20) against "
           f"vendor/basicpitch + vendored Eigen + ORT …")
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"basicpitch_runner compile failed:\n{r.stderr[-3000:]}")
+    _compile_and_link(cmd, link_candidates, binary, "basicpitch_runner")
     return binary
 
 
@@ -408,7 +619,7 @@ def _bridge_env(lib_dir: Path | None) -> dict[str, str]:
     return env
 
 
-def build_bridge_test(include_dir: Path, link_flags: list[str]) -> Path:
+def build_bridge_test(include_dir: Path, link_candidates: list[tuple[str, list[str]]]) -> Path:
     """The C ABI bridge (Engine/Transcription/BasicPitchBridge.{h,cpp}) — the
     surface the APP's Swift side calls.
 
@@ -434,13 +645,9 @@ def build_bridge_test(include_dir: Path, link_flags: list[str]) -> Path:
     forwarder = _vendor_decode_forwarder()
     if forwarder is not None:
         cmd.append(str(forwarder))
-    cmd += link_flags
-    cmd += ["-o", str(binary)]
     print(f"  compiling basicpitch_bridge_test ({compiler()}-O2 c++20) — the C ABI "
           f"the app's Swift side calls …")
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        raise RuntimeError(f"basicpitch_bridge_test compile failed:\n{r.stderr[-3000:]}")
+    _compile_and_link(cmd, link_candidates, binary, "basicpitch_bridge_test")
     return binary
 
 
@@ -580,14 +787,14 @@ def _match_truth(truth: list[dict], detected: list[dict]) -> tuple[list, list, l
 
 
 def run_basicpitch_real(report: sc.CheckReport) -> None:
-    include_dir, link_flags, lib_dir = resolve_ort()
-    binary = build_runner(include_dir, link_flags)
+    include_dir, link_candidates, lib_dir = resolve_ort()
+    binary = build_runner(include_dir, link_candidates)
     report.ok("S2", f"basicpitch_runner compiled against vendor/basicpitch + "
                     f"vendored Eigen + the ORT C++ API "
                     f"({compiler()}-O2 c++20; no second ORT — D-39)")
 
     run_trim_unit_tests(report)
-    bridge = build_bridge_test(include_dir, link_flags)
+    bridge = build_bridge_test(include_dir, link_candidates)
 
     model = ensure_model()
     sha = hashlib.sha256(model.read_bytes()).hexdigest()
