@@ -17,6 +17,7 @@ struct BundleInspectorView: View {
     var body: some View {
         List {
             mixerEntry
+            noteTracksEntry
             manifestSection
             provenanceSection
             tuningSection
@@ -28,6 +29,48 @@ struct BundleInspectorView: View {
         .background(Color.pnBackground)
         .navigationTitle("Bundle Inspector")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Piano roll entry (J-301)
+
+    /// The per-part piano roll. The REAL entry renders the bundle's own note
+    /// tracks (the same `[Part: NoteTrack]` the mock renders — the mock→real
+    /// swap is zero-UI-change). Until the engine writes note tracks (P-305),
+    /// the real entry says so honestly instead of showing an empty screen,
+    /// and the MOCK demo entry is offered separately and clearly labelled.
+    @ViewBuilder
+    private var noteTracksEntry: some View {
+        Section {
+            if song.hasNoteTracks {
+                NavigationLink {
+                    PianoRollView(tracks: song.noteTracks,
+                                  duration_s: song.manifest.duration_s,
+                                  isMock: false)
+                } label: {
+                    Label("Piano roll", systemImage: "music.note.list")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityHint("Per-part note tracks with confidence shading and unison badges")
+            } else {
+                Label("No note tracks in this bundle yet — they arrive with the engine's note tracker.",
+                      systemImage: "clock.badge.questionmark")
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.pnTextSecondary)
+            }
+
+            NavigationLink {
+                PianoRollView(tracks: MockNoteTracks.demoTracks(),
+                              duration_s: MockNoteTracks.demoDuration_s,
+                              isMock: true)
+            } label: {
+                Label("Piano roll (demo mock tracks)", systemImage: "wand.and.stars")
+            }
+            .accessibilityHint("Synthetic notes that show how the piano roll works")
+        } header: {
+            Text("Note tracks (M3)")
+        } footer: {
+            Text("Assignments are heuristic until you correct them — confidence shading and unison badges show where the engine is unsure.")
+        }
     }
 
     // MARK: - Mixer entry (J-203)
