@@ -291,8 +291,12 @@ mir_eval/museval metrics: F1@50c, RPA/RCA, SDR/NSDR, note onset F1).
 ## 9. License & sourcing rules (Leto audits every merge)
 
 - **Ship-safe (MIT/Apache/BSD, + MPL-2.0 for unmodified header-only use per D-32.5):**
-SwiftF0, demucs.cpp, basicpitch.cpp, windowed-roformer,
-MSST, python-audio-separator (prep only), spotify/basic-pitch, CREPE, silero-vad,
+SwiftF0, demucs.cpp, **basicpitch.cpp (CODE ONLY — its ICASSP-2022 `nmp.onnx` WEIGHTS ARE
+TIER C per D-46: MAESTRO + MedleyDB-pitch are CC BY-NC-SA 4.0 and were training data ⇒
+the weights are STUDY-ONLY for COMMERCIAL distribution and may not be shipped in a
+commercial/App Store build; the code itself stays ship-safe)**, windowed-reformer,
+MSST, python-audio-separator (prep only), spotify/basic-pitch (CODE ONLY — same D-46
+weights caveat), CREPE, silero-vad,
 signalsmith-stretch, TinySoundFont, tonaljs, VexFlow, OSMD, mir_eval, museval, libfmp,
 partitura, pyroomacoustics, pedalboard, ONNX Runtime, Eigen (MPL-2.0, vendored
 unmodified at demucs.cpp's submodule pin — D-32.5), **dettato transcriber + evidence
@@ -323,14 +327,27 @@ each verification in DECISIONS.md. Unknown license = not shipped.
   or is undocumented — provenance + risk recorded in DECISIONS, **HUMAN SIGN-OFF before
   any commercial/App Store distribution**, never represented as "clean" (honest licenses
   screen). Current Tier B: htdemucs weights (MIT © Meta; trained on MUSDB18 CC BY-NC-SA
-  + undocumented 800-song extra set — verified @e976d93e, D-30), **basic-pitch weights
-  (`nmp.onnx`, Apache-2.0 code; upstream training-mix licenses UNVERIFIED — D-42)**,
-  **dettato transcriber + evidence weights (Apache-2.0; training audio in-house and
+  + undocumented 800-song extra set — verified @e976d93e, D-30), **dettatto transcriber +
+  evidence weights (Apache-2.0; training audio in-house and
   unreleased + ~20 UNNAMED source soundfonts ⇒ provenance NOT verifiable — D-45)**,
-  dettato-grouper/drums
+  dettatto-grouper/drums
   (Apache-2.0; MUSDB18/IRMAS — functionally skipped in v1 anyway, D-21.3), community
   RoFormer checkpoints only after X-310 verification. **Tier C REFUSE:** no explicit
-  license, explicitly NC-licensed weights, or weights WE train on NC data.
+  license, explicitly NC-licensed weights, or weights WE train on NC data. **TIER C NOW
+  INCLUDES THE BASIC-PITCH ICASSP-2022 WEIGHTS (`nmp.onnx`) — D-46 (2026-11-25):** the
+  training-mix licenses are now VERIFIED, not unverified — **MAESTRO and MedleyDB-pitch
+  are CC BY-NC-SA 4.0 and were TRAINING data** (train 1154 and train 103), and **iKala's
+  own EULA is academic-use-only / no-profit / no-public-display** and covered exactly the
+  **252 excerpts** that were trained on; Slakh2100 and GuitarSet are CC BY 4.0 (the only
+  permissive two). ⇒ **the `nmp.onnx` weights are STUDY-ONLY for COMMERCIAL
+  distribution and `basicpitch.cpp` may not be shipped with them in a commercial/App
+  Store build. The CODE stays ship-safe (MIT / Apache-2.0). This SUPERSEDES D-42's
+  Tier B classification (D-42 is not edited; append-only).** It does **NOT** block the
+  M3 code path, `m3`, or **sideloading** — and **NO human sign-off can promote it**,
+  because the constraint is the training DATA's license, not our risk appetite. The
+  in-app licenses screen must state the NC provenance and **NEVER say "clean"**. The
+  commercial-safe path is unchanged: **X-301 synthetic SATB** + CC-BY corpora + PD hymn
+  scores, or a differently-trained transcription model (D-46 §6).
 - **Training data:** GTSinger (CC BY-NC-SA) and M4Singer (CC BY-NC) are BANNED for
 commercial weight training (D-30 Tier C — we never CREATE NC-trained weights; D-7's
 NanoPitch-on-GTSinger fallback stays banned). **The grouper ARCHITECTURE/decode may be
@@ -378,7 +395,11 @@ only; if it isn't in the repo, it didn't happen.
 - No copyleft code in shipped targets; no NC-licensed training data for weights WE train
   (D-30 Tier C). Upstream permissive-license weights whose upstream training data has NC
   terms ship ONLY under D-30 Tier B (provenance + risk recorded; human sign-off before
-  any commercial/App Store distribution).
+  any commercial/App Store distribution). **A weight set whose training data is NC is
+  TIER C, NOT Tier B, and no sign-off promotes it — the basic-pitch `nmp.onnx` is the
+  standing example (D-46): MAESTRO + MedleyDB-pitch are CC BY-NC-SA 4.0 and were
+  training data ⇒ STUDY-ONLY for commercial distribution; it may not be shipped in a
+  commercial/App Store build, only in a study / sideloaded one.**
 - No "waiting for CI" as a blocked state; no silent scope changes (PLAN.md changes go through Leto).
 - No re-litigating DECISIONS.md rulings within the same milestone.
 - Do not promise perfect 5-way separation: design for bleed (focus mixes, confidence,

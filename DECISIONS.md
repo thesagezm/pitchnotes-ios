@@ -16,6 +16,101 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-46 | 2026-11-25 UTC | Leto | RULED (executes D-42 §4 — **THE BASIC-PITCH ICASSP-2022 WEIGHTS ARE TIER C (STUDY-ONLY)**: MAESTRO and MedleyDB-pitch are CC BY-NC-SA 4.0 and were TRAINING data ⇒ the shipped `nmp.onnx` may not be commercially distributed. **This SUPERSEDES D-42's "Tier B" classification by reference — D-42 is NOT edited (append-only).**)
+**Context:** D-42 §4 set a real gate on the basic-pitch weights and named this
+verification as its precondition: *"If any of them prohibits commercial use of derived
+weights, the weights become Tier C and basicpitch.cpp becomes STUDY-ONLY."* This entry
+executes that test. **Every license string below was read by me, from a PRIMARY source,
+in this session (D-43: a ruling must carry the lane owner's own reading of the evidence —
+nothing here is delegated, recalled, or taken from a secondary summary).**
+**The pinned license strings, VERBATIM, with their sources:**
+
+| dataset | in TRAINING? | license (verbatim) | source I read |
+|---|---|---|---|
+| **MAESTRO** | **YES** (train 1154 / test 128) | *"The dataset is made available by Google LLC under a Creative Commons Attribution Non-Commercial Share-Alike 4.0 (CC BY-NC-SA 4.0) license."* | the official Magenta dataset page (`magenta.tensorflow.org/datasets/maestro`) |
+| **MedleyDB-pitch** | **YES** (train 103) | *"MedleyDB is offered free of charge for non-commercial research use only under the terms of the Creative Commons Attribution Noncommercial License"* (⇒ by-nc-sa/4.0) | Zenodo record **2620624**'s page access-conditions box. **THE API RECORD HAS NO `license` FIELD** — I checked `zenodo.org/api/records/2620624` and it carries `access_right: "restricted"` only; the terms live in the page's access-conditions box, and that is where I read them. |
+| **iKala** | **YES** (train 252) | **A CUSTOM EULA — NOT NC-as-CC, and STRICTLY NON-COMMERCIAL.** *"The WORK can be used in academic purpose only."* · *"The WORK cannot be spread or displayed in public."* · *"The LICENSEE cannot resell, trade, or exploit the WORK for profit."* · *"The LICENSEE cannot make money through the WORK."* · *"This AGREEMENT shall be in effect for a period of one year from the date of signing."* | **THE EULA PDF ITSELF**, read in full (2 pages). Fetched via `https://web.archive.org/web/2022id_/http://mac.citi.sinica.edu.tw/ikala/EULA.pdf` (233,527 B, PDF 1.4) and extracted with `pdftotext -layout` in an isolated directory. The document is *"IKALA DATASET END USER LICENSE AGREEMENT"*, *"a non-exclusive license agreement … between … the copyright owner iKala Interactive Media Inc. … and … in regards to the 252 musical excerpts (hereafter referred to as the 'WORK')"*. |
+| **Slakh2100** | **YES** (train 1590 / test 120) | `license.id = "cc-by-4.0"`, `access_right: "open"` — **PERMISSIVE** | Zenodo API record **4599666** (`slakh2100_flac_redux.tar.gz`) |
+| **GuitarSet** | **YES** (train 648 / test 72) | `license.id = "cc-by-4.0"`, `access_right: "open"` — **PERMISSIVE** | Zenodo API record **3371780** |
+
+**The iKala count is a CLOSED LOOP, not an inference.** The EULA's own subject matter is
+*"the 252 musical excerpts"* — and the ICASSP-2022 paper's Table 1 lists **iKala train =
+252**. The EULA on file is therefore *the license for the very corpus that was trained on*,
+not a same-named neighbour of it. (This also resolves D-42's open item differently from the
+dossier's guess: iKala is not merely "a custom EULA that was not published" — the EULA IS
+published, I read it, and its terms are **more restrictive** than CC BY-NC-SA, because they
+bar academic-only, public display, profit, and redistribution outright.)
+
+**Corroboration from the loader artifacts (the exact bytes used):** upstream's training
+scripts `basic_pitch/data/datasets/{maestro,ikala,slakh,medleydb_pitch,guitarset}.py` all
+`import mirdata` and call `mirdata.initialize(<name>)` (I read all five files). Their
+`LICENSE_INFO` constants agree with the registries: MAESTRO and medleydb_pitch ⇒ *"Creative
+Commons Attribution Non-Commercial Share-Alike 4.0 (CC BY-NC-SA 4.0)."*; slakh ⇒ *"Creative
+Commons Attribution 4.0 International"*; ikala ⇒ *"When it was distributed, Ikala used to have
+a custom license. Visit http://mac.citi.sinica.edu.tw/ikala/ for more details."* — the URL in
+that string is exactly the EULA I read.
+
+**The training/evaluation split (arXiv:2203.09893, §4 Table 1, read via ar5iv):** MAESTRO
+(train 1154, test 128), Slakh (train 1590, test 120), GuitarSet (train 648, test 72),
+**iKala (train 252, test "–")**, **MedleyDB (train 103, test "–")**, Molina (train "–", test
+38), Phenicx (train "–", test 42). ⇒ **THREE of the five TRAINING datasets are NC or
+custom-restricted (MAESTRO, MedleyDB-pitch, iKala); TWO of them are explicitly NC
+(MAESTRO, MedleyDB-pitch) and the third (iKala) is stricter still.**
+
+**Ruling:**
+1. **THE BASIC-PITCH ICASSP-2022 WEIGHTS ARE TIER C (D-30).** D-30's Tier C test is met on
+   its own terms: *"no explicit license, explicitly NC-licensed weights, or weights WE train
+   on NC data."* The shipped `nmp.onnx` is the **product of training on NC-licensed data**
+   (MAESTRO CC BY-NC-SA 4.0 + MedleyDB-pitch CC BY-NC-SA 4.0) — so the derived weights
+   inherit the NC restriction. **D-42's "Tier B" classification is SUPERSEDED BY THIS ENTRY**
+   (D-42 is not edited; append-only). Note the direction of the change: **Tier B → Tier C is
+   a TIGHTENING**, and D-42 §4 predicted exactly this outcome.
+2. **`basicpitch.cpp` IS STUDY-ONLY FOR COMMERCIAL DISTRIBUTION.** The **CODE** is
+   unaffected and stays ship-safe (MIT, sevagh; Apache-2.0, Spotify — D-42 §1); the
+   **WEIGHTS** may not be shipped in a commercially-distributed build. The App Store path
+   (L-602) must therefore either **exclude the basic-pitch note-transcription weights
+   entirely**, or ship a **differently-trained** model.
+3. **WHAT THIS DOES *NOT* BLOCK (stated plainly so the milestone is not stalled):** the M3
+   code path, `m3`, the merge cycle, and **sideloading / SideStore / LiveContainer are all
+   UNAFFECTED** — the same posture D-42/D-45 already established for the other weight sets.
+   The human's D-30 sign-off requirement for Tier B no longer covers basic-pitch at all:
+   **no sign-off can promote a Tier C weight set**, because the constraint is the DATA's
+   license, not our risk appetite. **The Tier B sign-off still covers htdemucs + dettato
+   transcriber/evidence (D-45).**
+4. **THE IN-APP LICENSES SCREEN (J-204's catalog row) MUST NEVER SAY "clean"** — and must
+   now state the **NC-trained** provenance of the basic-pitch weights explicitly, with the
+   MAESTRO / MedleyDB-pitch / iKala sources named. For a **commercial** build the honest
+   entry is: the basic-pitch note-transcription weights are **not included** (and the
+   feature is off / the alternative path is used). For a **study/non-commercial** build the
+   entry states the NC provenance plainly.
+5. **`Models/manifest.json`'s `basic-pitch` entry MUST BE CORRECTED FROM `tier: B` TO
+   `tier: C`** — the entry currently on `origin/paul` carries `tier: B` and the role text
+   *"TIER B per D-30/D-42 … license strings are UNVERIFIED"*. That wording is now **factually
+   wrong**: the strings are verified and two of them are NC. **`Models/**` is Paul's lane
+   (AGENTS §12) ⇒ this is a FIX ROW FOR PAUL, not an edit by me.** Same for the
+   `Models/manifest.json` `license` field, which must stop saying "UNVERIFIED".
+6. **WHAT WE MAY DO (the METHOD is not the problem):** the basic-pitch **technique** and
+   its **code** are fine to study and to reimplement. Our own commercially-safe path is
+   unchanged and is already ruled: **X-301 synthetic SATB** (hymn MIDI + permissive
+   voicebanks + church IRs) + CC-BY corpora (VocalSet, SingStyle111) + PD hymn scores
+   (AGENTS §9). **The only difference from before is that we may no longer ship Spotify's
+   `nmp.onnx` in a commercially-distributed build.**
+7. **WHAT WOULD RE-OPEN THIS:** a differently-trained transcription model whose training
+   data is verifiably commercial-safe (our own X-301 path, or a model trained on
+   permissive-only corpora) ⇒ then re-rule under the D-30 lens. **There is no promotion
+   path for the ICASSP-2022 `nmp.onnx` itself** — its training data is a historical fact.
+8. **THE VERIFICATION IS CLOSED, NOT PENDING.** X-217's `ac:` is met: every one of the four
+   datasets named in D-42 §4 (MAESTRO, MedleyDB-pitch, iKala, Slakh) now has its license
+   text pinned from a primary source, each is classified against D-30, and the consequence
+   for the shipped weights is stated. **iKala's EULA is NOT an unreadable artifact** — it is
+   read, in full, and its terms are recorded above.
+**Affects:** AGENTS §9 (amended in the same commit), Docs/RESEARCH.md (amended in the same
+commit), D-30, D-42 (**superseded by reference**), D-45 (unchanged), X-217 (CLOSED),
+`Models/manifest.json` (Paul's lane — FIX ROW), J-204 (the in-app licenses screen row),
+L-602 (the App Store memo — now needs an exclusion or a replacement model), P-301/P-302
+(the code path is unaffected; the shipped-weight story is not), X-301 (the clean training
+path), the M3 gate (unaffected).
+
 ## D-45 | 2026-11-24 UTC | Leto | RULED (executes the X-310(a) residual — **the dettato transcriber + evidence weights are TIER B, explicitly NOT "commercially clean"**: the ~20 source soundfonts' file licenses are NOT VERIFIABLE, because upstream publishes neither the file list nor the rendered audio)
 **Context:** X-310(a)'s residual asked one question: the file licenses of the ~20
 soundfonts that dettato's training audio is rendered from ("soundfont babies"). AGENTS §9

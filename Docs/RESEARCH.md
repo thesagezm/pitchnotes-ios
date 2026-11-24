@@ -34,7 +34,7 @@ Your instinct is correct: **parts 1 and 2 are the hard part, and nobody has full
 | **Live mic pitch + note segmentation** | **SwiftF0** (primary) | MIT | 14,386 params, ONNX, 16 ms frames, confidence + loudness, **`segment_notes()` + `export_to_midi()` built in**, `fmin/fmax` range filter (perfect for voice‑part priors), streaming push/flush. [repo](https://github.com/lars76/swift-f0), [paper](https://arxiv.org/abs/2508.18440), [ONNX weights](https://huggingface.co/aaatmy/swift-f0-onnx) |
 | **Zero‑lookahead live pitch + singing VAD** | **NanoPitch** (Smule Labs) | check LICENSE | ~333K params, **pure C inference engine** (`nanopitch.c`: mel+GRU+Viterbi), causal (no lookahead), RTF 0.1–0.3 even in WASM → trivially real‑time native on A14. [repo](https://github.com/smulelabs/NanoPitch) |
 | **Offline reference pitch (highest accuracy)** | **RMVPE** (ONNX) | verify weights | F1 0.768, statistically tied with SwiftF0, robust in polyphony. [RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI), [paper](https://doi.org/10.21437/Interspeech.2023-528) |
-| **Polyphonic note transcription (per stem)** | **basicpitch.cpp** (Spotify Basic Pitch, C++20 + ORT) | MIT | Higher‑level notes→MIDI, **ort‑builder minimal ORT build** (trim ops, compile weights to .c/.h → tiny binary). [repo](https://github.com/sevagh/basicpitch.cpp), [upstream](https://github.com/spotify/basic-pitch) (Apache‑2.0, CoreML/TFLite/ONNX) |
+| **Polyphonic note transcription (per stem)** | **basicpitch.cpp** (Spotify Basic Pitch, C++20 + ORT) | MIT (code) / **Tier C weights (D-46)** | Higher‑level notes→MIDI, **ort‑builder minimal ORT build** (trim ops, compile weights to .c/.h → tiny binary). [repo](https://github.com/sevagh/basicpitch.cpp), [upstream](https://github.com/spotify/basic-pitch) (Apache‑2.0, CoreML/TFLite/ONNX). ⚠️ **The ICASSP‑2022 `nmp.onnx` WEIGHTS ARE TIER C — STUDY‑ONLY for COMMERCIAL distribution (D-46, 2026‑11‑25): trained on MAESTRO + MedleyDB‑pitch, both CC BY‑NC‑SA 4.0, and on iKala (252 excerpts) under a custom academic‑only/no‑profit/no‑public‑display EULA. The CODE stays ship‑safe; the WEIGHTS may not ship in a commercial/App Store build. Commercial‑safe path = our own X‑301 synthetic SATB model.** |
 | **Vocals vs instrumental (on‑device)** | **demucs.cpp** (htdemucs fp16, 81 MB) | MIT | C++17 + Eigen + ggml‑format weights, no Python, quality ≈ PyTorch, low‑memory design. [repo](https://github.com/sevagh/demucs.cpp) |
 | **Efficient SOTA vocal separation** | **windowed‑roformer** (Smule) | MIT | MB‑R class, **11.17 dB SDR (92% of full), 44.5× fewer attention FLOPs**, designed for edge CPUs. [repo](https://github.com/smulelabs/windowed-roformer), [paper](https://arxiv.org/abs/2510.25745) |
 | **Per‑singer separation (research baseline to fine‑tune)** | **SepACap** + **jaCappella MRDLA/XUMX** | research/verify | SepACap: 7 stems incl. finger_snap+VP, 24 kHz, SOTA JaCappella. [repo](https://github.com/ETH-DISCO/SepACap), [HF](https://huggingface.co/Tino3141/sepacap). MRDLA pretrained 6‑part. [HF](https://huggingface.co/jaCappella/MRDLA_jaCappella_VES_48k), [code](https://github.com/TomohikoNakamura/asteroid_jaCappella) |
@@ -132,7 +132,7 @@ SwiftF0 ≈ RMVPE (statistically tied). **This corrects the earlier report: CREP
 - **Cuesta et al. — "Voice Assignment in Vocal Quartets Using Deep Learning Models Based on Pitch Salience" (TISMIR 2022):** [paper](https://transactions.ismir.net/articles/121). Assigns salience peaks to S/A/T/B.
 - **Schramm, McLeod, Steedman, Benetos — "Multi‑pitch Detection and Voice Assignment for A Cappella Recordings of Multiple Singers" (ISMIR 2017):** [paper](https://archives.ismir.net/ismir2017/paper/000026.pdf) — *exactly* your barbershop‑style problem.
 - **PawCT (Oct 2026, first end‑to‑end part‑aware choral AMT):** [arXiv 2610.09861](https://arxiv.org/abs/2610.09861) — joint onset/offset/frame + part‑presence + **range prior + ordered‑continuity** (bass always lowest, no voice crossing). F1 0.225 part‑aware / 0.382 part‑agnostic. Code+demos linked. **This is your north‑star architecture for requirement 2.**
-- **Basic Pitch (Spotify, Apache‑2.0):** polyphonic note transcription per stem; [repo](https://github.com/spotify/basic-pitch) (CoreML/TFLite/ONNX, [iOS issue #61](https://github.com/spotify/basic-pitch/issues/61)), **[basicpitch.cpp](https://github.com/sevagh/basicpitch.cpp)** (MIT, C++20+ORT+Eigen+libremidi, ort‑builder minimal build). Run it on each separated stem → note events → filter by part range + confidence + min duration.
+- **Basic Pitch (Spotify, Apache‑2.0):** polyphonic note transcription per stem; [repo](https://github.com/spotify/basic-pitch) (CoreML/TFLite/ONNX, [iOS issue #61](https://github.com/spotify/basic-pitch/issues/61)), **[basicpitch.cpp](https://github.com/sevagh/basicpitch.cpp)** (MIT, C++20+ORT+Eigen+libremidi, ort‑builder minimal build). Run it on each separated stem → note events → filter by part range + confidence + min duration. ⚠️ **WEIGHTS TIER C (D-46, 2026‑11‑25) — verified, not unverified:** the ICASSP‑2022 `nmp.onnx` was trained on **MAESTRO (1154, CC BY‑NC‑SA 4.0) + MedleyDB‑pitch (103, CC BY‑NC‑SA 4.0) + iKala (252, custom academic‑only/no‑profit/no‑public‑display EULA)** + Slakh2100 (1590, CC BY 4.0) + GuitarSet (648, CC BY 4.0) ⇒ **the weights may not be commercially distributed** (study‑only for commercial builds; the CODE is unaffected). The M3 code path and sideloading are **unaffected**; the commercial‑safe path is **X-301 synthetic SATB** (see §Addendum A.4 below for the pinned license strings).
 - **The assignment algorithm your agent should implement (tractable, no ML required):** per frame, take multi‑f0 peaks (Cuesta/basic‑pitch) → **Viterbi/HMM over pitch candidates with costs = (a) voice‑range prior, (b) melodic smoothness, (c) cross‑part ordering (bass<baritone<baritenor<T2<T1), (d) harmonic plausibility**. SDA arrangements rarely cross voices and bass is always lowest — these are *strong* constraints that make assignment far more reliable than generic pop. When a hymn score exists, **DTW‑align the score to the audio** ([libfmp](https://github.com/meinardmueller/libfmp), [partitura](https://github.com/CPJKU/partitura)) and snap note tracks to the score — this is the score‑informed path (Gover, Ewert/Müller) and it is your accuracy escape hatch.
 
 ### 4d. Scoring, visualization, and the UltraStar shortcut (higher‑level libs you asked for)
@@ -370,10 +370,58 @@ lowtechguys.com model CDN — convert from upstream weights ourselves (D-26).**
 ## A.3 · THE CRITICAL INSIGHT (adopted as D-22 — tuning reference)
 
 Neither repo states it; it follows from dettato's retune step. **Our grader assumes
-A440 equal temperament. If an SDA recording sits +35 cents sharp (old tape, varispeed,
+A440 equal temperament. If an SDA recording sits +35 cents sharp (old tape, varspeed,
 group tuning by ear), a user singing CORRECTLY relative to the recording is marked
 ~35 cents flat on EVERY note — a systematic, invisible failure.** We must estimate the
 recording's tuning reference at IMPORT, store it (`tuning_cents`, C-2.1), and consume it
 in transcription (engine-side retune when |tuning| ≥ 10c, dettato-style) and in grading
 (offset the reference — audio stays byte-true). UI indicator required. Default behavior
 ruled in D-22.
+
+## A.4 · BASIC-PITCH WEIGHTS PROVENANCE — VERIFIED, AND IT IS **TIER C** (D-46, 2026‑11‑25)
+
+**This section supersedes the earlier "Tier B / licenses UNVERIFIED" note for the
+basic‑pitch ICASSP‑2022 weights.** Every string below was read from a **primary source**
+(the registry / the license document itself), not from a summary.
+
+**The training mix** (arXiv:2203.09893, §4 Table 1 — MAESTRO train 1154 / test 128;
+Slakh train 1590 / test 120; GuitarSet train 648 / test 72; **iKala train 252**;
+**MedleyDB train 103**; Molina test 38 and Phenicx test 42 are **evaluation only**).
+Upstream's training scripts (`basic_pitch/data/datasets/{maestro,ikala,slakh,medleydb_pitch,guitarset}.py`)
+all load through **mirdata**, so mirdata's `LICENSE_INFO` strings describe the exact
+artifacts used.
+
+| dataset | in training? | license (verbatim) | source |
+|---|---|---|---|
+| **MAESTRO** | **YES** (1154) | *"The dataset is made available by Google LLC under a Creative Commons Attribution Non-Commercial Share-Alike 4.0 (CC BY-NC-SA 4.0) license."* | the official Magenta dataset page |
+| **MedleyDB-pitch** | **YES** (103) | *"MedleyDB is offered free of charge for non-commercial research use only under the terms of the Creative Commons Attribution Noncommercial License"* (⇒ by-nc-sa/4.0) | Zenodo record **2620624**'s page access-conditions box. **The API record has NO `license` field** (`access_right: "restricted"`) — the terms live in the page box |
+| **iKala** | **YES** (252) | **Custom EULA, STRICTER THAN NC:** *"The WORK can be used in academic purpose only."* · *"The WORK cannot be spread or displayed in public."* · *"The LICENSEE cannot resell, trade, or exploit the WORK for profit."* · *"The LICENSEE cannot make money through the WORK."* · one‑year term from signing | **the EULA PDF itself** (2 pp., read in full) — *"in regards to the 252 musical excerpts (hereafter referred to as the 'WORK')"*, iKala Interactive Media Inc. |
+| **Slakh2100** | **YES** (1590) | `license.id = "cc-by-4.0"`, `access_right: "open"` — **permissive** | Zenodo API record **4599666** |
+| **GuitarSet** | **YES** (648) | `license.id = "cc-by-4.0"`, `access_right: "open"` — **permissive** | Zenodo API record **3371780** |
+
+**The iKala count closes the loop.** The EULA's subject is *"the 252 musical excerpts"* and
+the paper's Table 1 lists **iKala train = 252** — so this is the license for the corpus
+that was actually trained on, not a same-named neighbour. (The earlier note that iKala's
+terms were merely *"not published"* is **wrong**: the EULA IS published, and its terms are
+**tighter** than CC BY-NC-SA.)
+
+**⇒ VERDICT: TIER C (D-30).** Three of the five training datasets are NC‑encumbered, two
+of them explicitly CC BY‑NC‑SA 4.0 and the third under a custom academic‑only/no‑profit
+EULA. The derived `nmp.onnx` inherits the NC restriction.
+
+**What this means, stated plainly:**
+- **The `nmp.onnx` WEIGHTS may NOT ship in a COMMERCIAL / App Store build** — they are
+  **study‑only** there. **No human sign‑off can promote them**: the constraint is the
+  training data's license, not our risk appetite. (The Tier B sign‑off still covers
+  **htdemucs** and **dettatto transcriber/evidence** — D-45.)
+- **The basic‑pitch CODE is unaffected** (MIT / Apache‑2.0) and stays ship‑safe.
+- **The M3 code path, `m3`, and SIDELOADING are all UNAFFECTED.** Only commercial
+  distribution is.
+- **The in‑app licenses screen (J-204) must never say "clean"** — it must state the NC
+  provenance and name MAESTRO / MedleyDB‑pitch / iKala.
+- **The commercial‑safe path is unchanged:** **X-301 synthetic SATB** (hymn MIDI +
+  permissive voicebanks + church IRs) + CC‑BY corpora (VocalSet, SingStyle111) + PD hymn
+  scores, or a differently‑trained transcription model. **The METHOD is not the problem —
+  only Spotify's specific weights are.**
+- **`Models/manifest.json` must move `basic-pitch` from `tier: B` to `tier: C`** and must
+  stop describing the license strings as UNVERIFIED (Paul's lane — AGENTS §12).
