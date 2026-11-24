@@ -170,7 +170,7 @@ public struct PianoRollNote: Identifiable, Equatable, Sendable {
 
     /// Scientific note name + cents ("D4 +12¢") — PitchMath owns the spelling.
     public var pitchLabel: String {
-        PitchMath.noteName(forMidi: note.midi) + centsLabel(note.cents_ref)
+        PitchMath.noteName(forMidi: note.midi) + Self.centsLabel(note.cents_ref)
     }
 
     static func centsLabel(_ cents: Int) -> String {
