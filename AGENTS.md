@@ -296,8 +296,12 @@ MSST, python-audio-separator (prep only), spotify/basic-pitch, CREPE, silero-vad
 signalsmith-stretch, TinySoundFont, tonaljs, VexFlow, OSMD, mir_eval, museval, libfmp,
 partitura, pyroomacoustics, pedalboard, ONNX Runtime, Eigen (MPL-2.0, vendored
 unmodified at demucs.cpp's submodule pin — D-32.5), **dettato transcriber + evidence
-weights (Apache-2.0, clean training data — D-21/D-26; any dettato-derived port/weights
-MUST carry the upstream NOTICE attribution in our NOTICE file + in-app licenses screen)**.
+weights (Apache-2.0 CODE + WEIGHTS, but the WEIGHTS ARE TIER B — D-45: the training
+audio is in-house and unreleased and the ~20 source soundfonts are UNNAMED upstream, so
+the training-data provenance is NOT verifiable ⇒ ship with recorded risk + human sign-off
+before commercial/App Store distribution, NEVER described as clean; any dettato-derived
+port/weights MUST carry the upstream NOTICE attribution in our NOTICE file + in-app
+licenses screen)**.
 - **STUDY-ONLY, never link/ship (copyleft):** Nightingale, Performous, USDX, Vocaluxe,
 UltraStar Play, aubio (GPL), essentia (AGPL), TarsosDSP (GPL), PESTO (LGPL), Verovio
 (LGPL), FluidSynth (LGPL), Rubber Band (GPL), GNU Solfege (GPL), **FuzzyIdeas/Muskey
@@ -307,9 +311,10 @@ CDN; D-26.1)**. Reimplement ideas; do not copy code. Static linking makes LGPL
 especially dangerous for our IPA.
 - **Verify-before-use:** RMVPE/FCPE weights, jaCappella models, UVR/MDX community
 checkpoints, SepACap, NanoPitch LICENSE file, **BS-Roformer-SW checkpoint, MVSep
-53-stem checkpoint (both PENDING → X-310; gate P-605), dettato-evidence (card verified
-clean 2026-11-21 — soundfont-babies file licenses residual)**. Leto records each
-verification in DECISIONS.md. Unknown license = not shipped.
+53-stem checkpoint (both RULED TIER C 2026-11-22 — X-310; gate P-605), dettato-evidence
+(card Apache-2.0, but RULED **TIER B** on 2026-11-24 — D-45: the soundfont-babies file
+licenses are NOT VERIFIABLE because upstream publishes no soundfont list)**. Leto records
+each verification in DECISIONS.md. Unknown license = not shipped.
 - **Weights provenance — THREE-TIER POLICY (D-30, 2026-11-22):** every model/weights
   decision is classified Tier A/B/C in DECISIONS before it ships.
   **Tier A SHIP:** explicit permissive license on code AND weights + clean/CC/permissive
@@ -318,7 +323,11 @@ verification in DECISIONS.md. Unknown license = not shipped.
   or is undocumented — provenance + risk recorded in DECISIONS, **HUMAN SIGN-OFF before
   any commercial/App Store distribution**, never represented as "clean" (honest licenses
   screen). Current Tier B: htdemucs weights (MIT © Meta; trained on MUSDB18 CC BY-NC-SA
-  + undocumented 800-song extra set — verified @e976d93e, D-30), dettato-grouper/drums
+  + undocumented 800-song extra set — verified @e976d93e, D-30), **basic-pitch weights
+  (`nmp.onnx`, Apache-2.0 code; upstream training-mix licenses UNVERIFIED — D-42)**,
+  **dettato transcriber + evidence weights (Apache-2.0; training audio in-house and
+  unreleased + ~20 UNNAMED source soundfonts ⇒ provenance NOT verifiable — D-45)**,
+  dettato-grouper/drums
   (Apache-2.0; MUSDB18/IRMAS — functionally skipped in v1 anyway, D-21.3), community
   RoFormer checkpoints only after X-310 verification. **Tier C REFUSE:** no explicit
   license, explicitly NC-licensed weights, or weights WE train on NC data.

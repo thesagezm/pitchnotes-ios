@@ -16,6 +16,74 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-45 | 2026-11-24 UTC | Leto | RULED (executes the X-310(a) residual — **the dettato transcriber + evidence weights are TIER B, explicitly NOT "commercially clean"**: the ~20 source soundfonts' file licenses are NOT VERIFIABLE, because upstream publishes neither the file list nor the rendered audio)
+**Context:** X-310(a)'s residual asked one question: the file licenses of the ~20
+soundfonts that dettato's training audio is rendered from ("soundfont babies"). AGENTS §9
+and Docs/RESEARCH.md asserted the transcriber/evidence weights had "clean training
+data" / were "COMMERCIALLY CLEAN". **This entry corrects that assertion** — it was
+never verified, and one primary source (the published technique's own README) shows the
+sample lineage runs through a *sampling* license, not a plain permissive software
+license. I verified this myself from primary sources; I did not re-read the dossier.
+**Verified today, from primary sources:**
+1. **dettato's repo README, the transcriber model card and the evidence model card all
+   say the same thing:** the code AND the weights are Apache-2.0 ("The code and the
+   weights are under Apache-2.0, so commercial use is fine"); the training audio was
+   "made in-house" and **"I will not be releasing it"**; and **"The rest of the
+   instruments morph together around 20 soundfonts"** — **the ~20 soundfonts are NEVER
+   NAMED** in any of the three sources. The upstream **NOTICE** attributes only
+   "software and model weights developed by KobiMusic" — **no third-party sample
+   attribution at all.**
+   ⇒ **THE RESIDUAL IS NOT "PENDING" — IT IS NOT VERIFIABLE FROM PUBLISHED SOURCES.**
+   No further upstream searching can produce a list, because none is published. We can
+   only verify what IS published, and what is published is a CLAIM, not a list.
+2. **The published technique's reference implementation (`kobimusic/babymaker`) names
+   its sample lineage:** the demo's six instruments are **Sonatina Symphonic Orchestra**
+   samples by Mattias Westlund, **"CC Sampling Plus 1.0"** (its README's own
+   attribution line); the repo's sf2 test fonts are **FluidR3_GM** and **TimGM6mb**, and
+   its headline demo morphs the **FluidR3** and **A320U** pianos. *(I did NOT verify
+   FluidR3 / TimGM6mb / A320U's own license terms in this session, so I assert NOTHING
+   about them — the point is that the ecosystem the technique draws from is exactly where
+   the residual risk lives, and our own pipeline must therefore verify each font it
+   uses, one by one.)*
+3. The "CC solo instruments from the URMP dataset" and "CC vocals" portions are
+   upstream-described as CC; the grouper/drums models' NC datasets stay NC and are never
+   shipped (already ruled).
+**Ruling:**
+1. **The dettato transcriber + evidence weights are TIER B (D-30) — SHIP WITH RECORDED
+   RISK, explicitly NOT Tier A, and NEVER described by US as "clean" or "commercially
+   clean".** We may repeat upstream's own claim (Apache-2.0 code+weights; upstream says
+   commercial use is fine), but **our verification stops at the published record**, and
+   the published record does not let us clear the ~20 soundfonts.
+2. **AGENTS §9 IS AMENDED** (same commit): the ship-safe list said "dettato transcriber +
+   evidence weights (Apache-2.0, **clean training data** …)". That phrase was **not
+   verified** and is now corrected to the Tier B statement. **The NOTICE-attribution
+   obligation is UNCHANGED and still binding**: any dettato-derived port or weights MUST
+   carry the upstream NOTICE attribution in our NOTICE file + the in-app licenses screen.
+3. **THE HUMAN'S D-30 TIER B SIGN-OFF NOW COVERS THREE WEIGHT SETS: htdemucs,
+   basic-pitch, AND dettato transcriber/evidence.** Required before commercial/App Store
+   distribution; sideloading needs nothing; it blocks neither `m2`, `m3`, nor the merge
+   cycle. It surfaces again at L-602.
+4. **WHAT WE MAY DO WITH THE TECHNIQUE (the METHOD is not the problem):** the
+   soundfont-babies TECHNIQUE is a published method with Apache-2.0 code; we may
+   implement and use it, and we may use the dettato code/weights for INTERNAL
+   benchmarking and evaluation (P-306, X-301). **The DATA is the problem:** our own
+   synthetic pipeline (X-301) must use **only soundfonts whose file license we verify
+   one by one** — the SSO route (CC Sampling Plus 1.0) is usable for RENDERING local
+   training audio, and **we never redistribute the fonts or the rendered samples in the
+   app**; every additional font must clear the same bar before it enters our pipeline.
+5. **X-310 IS CLOSED** — all six items are now ruled: (a) RULED HERE as Tier B (the
+   residual is resolved as *not verifiable*, which is a VERDICT, not a pending item);
+   (b) NC grouper; (c) BS-Roformer-SW = Tier C; (d) MVSep-53 = Tier C; (e) drums NC;
+   plus the htdemucs/basic-pitch tiers already in D-30/D-42. **X-311 (Paul) IS
+   UNBLOCKED** — its precondition ("no integration before X-310 soundfont verdicts") is
+   now met: the verdict is "use the method; verify every font yourself".
+6. **WHAT WOULD RE-OPEN THIS:** upstream publishing the soundfont list (or the training
+   material) with licenses ⇒ then re-rule under the D-30 lens. Until then there is no
+   promotion path and no claim of cleanliness.
+**Affects:** AGENTS §9 (amended in the same commit), Docs/RESEARCH.md (amended in the
+same commit), D-21, D-30, X-310 (closed), X-311 (unblocked), X-301, P-307, P-309, P-605,
+L-602 (the Tier B sign-off ask), the in-app licenses screen, NOTICE.
+
 ## D-44 | 2026-11-24 UTC | Leto | RULED (L-301 — **CONTRACTS v1.1 RATIFIED**: the M3 additive delta — NoteTrack metadata, correction overlay, optional salience, score-note list + alignment metadata, grading input order. v1.0.3 semantics UNCHANGED)
 **Context:** PLAN M3 names v1.1 as the M3 contract target and L-301 as the freeze.
 D-41 (thresholds + grading order), D-40 (the score-note list + the score's
