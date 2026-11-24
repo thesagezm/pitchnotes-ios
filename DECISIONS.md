@@ -16,6 +16,68 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-44 | 2026-11-24 UTC | Leto | RULED (L-301 — **CONTRACTS v1.1 RATIFIED**: the M3 additive delta — NoteTrack metadata, correction overlay, optional salience, score-note list + alignment metadata, grading input order. v1.0.3 semantics UNCHANGED)
+**Context:** PLAN M3 names v1.1 as the M3 contract target and L-301 as the freeze.
+D-41 (thresholds + grading order), D-40 (the score-note list + the score's
+OPTIONAL status) and D-42/D-39 (engine + weights) gave the CONTENT; this entry
+records the FREEZE. **Two things were checked before writing:** (a) **Paul's
+P-301 has already landed a schema** (`origin/paul` @ `87bf602`: `TranscribedNote`
++ `NoteTrackBuilder`) — so the contract had to RATIFY his shape, not fight it;
+and (b) **Jess's J-301 mock** (`MockNoteTracks` / `PianoRollModel`) already
+encodes the D-41 bands, the 4.0 s phrases, the presence rule and the unison
+rule — so the contract had to name the same things she already builds against.
+**Ruling:**
+1. **v1.1 IS RATIFIED** — NEW **C-10** (NoteTrack v1.1 metadata), **C-11**
+   (correction overlay), **C-12** (optional salience), **C-13** (score-note list
+   + alignment metadata), **C-14** (grading input order), and NEW **V-rules
+   V16/V17/V18**. The **v1.0.3 manifest semantics are UNCHANGED**: every
+   v1.0.3 field and validator (V1–V15) stays valid, and the manifest schema is
+   untouched.
+2. **THE ABSENCE RULE IS BINDING AND IS THE POINT.** *Every new field is
+   OPTIONAL, and a consumer MUST behave exactly as it did before v1.1 when the
+   field is absent.* Absent metadata is never a validation error, never a reason
+   to reject a bundle, never a reason to fail an import. **A consumer written
+   before v1.1 MUST work unchanged on a file that carries v1.1 fields.**
+3. **C-2.3's `confidence` IS NOT REDEFINED.** v1.1 **ADDS** `assignmentBand`
+   (D-41's three exact strings) BESIDE it. The note's `confidence` keeps its
+   v0.0 meaning; the band is a derived/adjacent label. **This is deliberate** —
+   redefining a frozen field's meaning would be a BREAKING change (AGENTS §7),
+   and Paul already maps the engine amplitude onto `confidence` (P-301's
+   `NoteTrackBuilder.confidence(for:)`).
+4. **Paul's P-301 shape is the ratified base.** His `NoteTrackBuilder` produces
+   a C-2.3-shaped `NoteTrack` with `confidence` per note; C-10 adds the
+   metadata he owns as P-305 (per-note `unison`, per-phrase `partPresence`, the
+   band, the per-track `engineVersion`). **His builder stays valid as-is** — the
+   v1.1 fields are additive on top of what he already emits.
+5. **THE CORRECTION OVERLAY IS A SEPARATE FILE AND THE HEURISTIC TRACK IS NEVER
+   MUTATED IN PLACE** (C-11, D-41 §4). `notes/<PART>.json` stays exactly what
+   the engine wrote — it is the reproducible truth about what the engine heard.
+   The user's corrections live in `corrections/<PART>.json` as ordered
+   `reassign`/`delete`/`split` operations against the engine's immutable note
+   indices, and they WIN at grading time.
+6. **SALIENCE IS OPTIONAL AND IS NEVER A SILENT FILTER** (C-12). Absent ⇒ the
+   consumer behaves exactly as today. Present ⇒ it may inform display and
+   analysis, but it MUST NOT change which notes are graded (D-41's bands govern
+   that) and MUST NOT hide a note on its own.
+7. **THE SCORE IS OPTIONAL END-TO-END** (C-13, D-40 §3). Every score artifact
+   is optional; missing/malformed ⇒ heuristic-only, the import still succeeds,
+   and the UI states why. **The parser NEVER aligns by itself** (D-40 §5) — only
+   alignment produces the C-13.2 metadata.
+8. **THE GRADING INPUT ORDER IS FIXED** (C-14, D-41 §4): correction overlay →
+   else score-informed (alignment confidence ≥ **0.70** AND it improved note
+   agreement) → else the heuristic track. In the last case the UI MUST say the
+   assignment is heuristic and report the CONFIRMED/PROVISIONAL/UNASSIGNED
+   split. UNASSIGNED notes are excluded from grading by default (force-assign
+   in J-302, then they grade); unison grades per-part; absent parts are
+   DIMMED, never hidden.
+9. **ACKS.** Paul + Jess are asked to ack C-10…C-14 in their next LOG line.
+   **If a lane does not answer, this is RATIFIED by the arbiter** (the L-006
+   precedent) and the ack is recorded as OUTSTANDING — **the milestone does not
+   stall for it.**
+**Affects:** CONTRACTS.md v1.1 (C-10…C-14, V16–V18), P-301, P-303, P-304, P-305,
+P-306, J-301, J-302, J-304, J-401 (M4 grading), BENCHMARKS v2 (P-306's
+reliability table), L-301, L-304.
+
 ## D-43 | 2026-11-24 UTC | Leto | RULED (the HUMAN's order: **NO SUBAGENTS** — every agent works its own lane in its own chat, directly; the rule is now written into AGENTS.md §1 + §11 so all three lanes see it)
 **Context:** mid-session, on the Leto branch, the human owner (thesagezm) said
 verbatim: *"no subagents.... put this so everyone know in agents md"*. Leto had
