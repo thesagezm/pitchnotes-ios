@@ -45,11 +45,15 @@ struct BundleInspectorView: View {
                 NavigationLink {
                     // J-302: the corrected-first screen — the roll plus the
                     // user's corrections and the per-song part calibration.
-                    NoteTracksScreen(bundleID: song.id,
-                                     songTitle: song.manifest.title,
+                    // C-11: the overlay lives INSIDE the bundle directory
+                    // (`corrections/<PART>.json`), so the directory has to
+                    // reach the screen. Nil ⇒ nothing is saved, and the
+                    // screen says so plainly.
+                    NoteTracksScreen(songTitle: song.manifest.title,
                                      rawTracks: song.noteTracks,
                                      duration_s: song.manifest.duration_s,
-                                     isMock: false)
+                                     isMock: false,
+                                     bundleDirectory: song.bundleDirectory)
                 } label: {
                     Label("Piano roll", systemImage: "music.note.list")
                         .fontWeight(.semibold)
@@ -63,11 +67,14 @@ struct BundleInspectorView: View {
             }
 
             NavigationLink {
-                NoteTracksScreen(bundleID: nil,
-                                 songTitle: "Demo",
+                // The demo tracks have no bundle — C-11's overlay has no
+                // home, so corrections to them are not saved (and the screen
+                // says so).
+                NoteTracksScreen(songTitle: "Demo",
                                  rawTracks: MockNoteTracks.demoTracks(),
                                  duration_s: MockNoteTracks.demoDuration_s,
-                                 isMock: true)
+                                 isMock: true,
+                                 bundleDirectory: nil)
             } label: {
                 Label("Piano roll (demo mock tracks)", systemImage: "wand.and.stars")
             }

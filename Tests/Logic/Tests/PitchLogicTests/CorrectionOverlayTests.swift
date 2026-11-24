@@ -2,8 +2,16 @@ import XCTest
 import EngineCore
 @testable import PitchLogic
 
-// J-302 — the correction overlay: every operation, the merge semantics, the
-// corrected-first resolver, the calibration, and the exact JSON shape.
+// J-302 — the correction overlay, rewritten for CONTRACTS v1.1 · C-11
+// (RATIFIED — L-301, D-44).
+//
+// WHAT C-11 CHANGED AND WHY THE TESTS CHANGED WITH IT:
+//   · the overlay is ONE FILE PER PART (`corrections/<PART>.json`), not one
+//     file per song;
+//   · a note is addressed by its INDEX in the engine's ORIGINAL, IMMUTABLE
+//     `notes[]` array (`noteIndex`), not by an identity key;
+//   · the operations are `reassign` / `delete` / `split` (not `move`), and a
+//     split names TWO parts (`toParts`).
 //
 // THE INVARIANT EVERY TEST HERE GUARDS (D-41 §4 + AGENTS §7):
 //   the engine's raw tracks are NEVER touched; the overlay is additive; and
@@ -21,112 +29,351 @@ final class CorrectionOverlayTests: XCTestCase {
         NoteTrack(part: part, notes: notes)
     }
 
-    /// Two parts, one note each, plus a T2 note that overlaps the T1 one
-    /// (the overlap-repair case).
+    /// Four T1 notes (so "note #3" is a real index) + one T2 note that
+    /// overlaps the first T1 note (the overlap-repair case).
     private func rawTracks() -> [Part: NoteTrack] {
         [
-            .t1: track(.t1, [note(0.0, 1.0, 60), note(2.0, 3.0, 62)]),
+            .t1: track(.t1, [note(0.0, 1.0, 60),
+                             note(1.0, 2.0, 62),
+                             note(2.0, 3.0, 64),
+                             note(3.0, 4.0, 65)]),
             .t2: track(.t2, [note(0.5, 1.5, 60)]),
         ]
     }
 
-    // MARK: - The operations
+    /// One long note to split, with nothing else in the way (a split into T2
+    /// would otherwise overlap T2's own note).
+    private func splittableTracks() -> [Part: NoteTrack] {
+        [.t1: track(.t1, [note(0.0, 1.0, 60, confidence: 0.9)])]
+    }
 
-    func testMoveMovesANoteToAnotherPart() {
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        let key = NoteKey(part: .t1, note: note(0.0, 1.0, 60))
-        overlay.append(.move(key, toPart: .bass))
+    // MARK: - The exact C-11 JSON
 
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
+    func testTheOverlayJSONIsExactlyTheC11Shape() throws {
+        let overlay = PartCorrectionOverlay(
+            part: .t2,
+            engineVersion: PartCorrectionOverlay.writerEngineVersion,
+            operations: [
+                .reassign(fromPart: .t2, noteIndex: 3, toPart: .t1, midi: 62),
+                .delete(fromPart: .t2, noteIndex: 7),
+                .split(fromPart: .t2, noteIndex: 9, splitAt_s: 2.5, toParts: [.t1, .t2]),
+            ])
 
-        XCTAssertEqual(result.tracks[.t1]?.notes.count, 1)
-        XCTAssertEqual(result.tracks[.bass]?.notes.count, 1)
-        XCTAssertEqual(result.tracks[.bass]?.notes.first?.midi, 60)
-        XCTAssertEqual(result.tracks[.bass]?.notes.first?.start_s, 0.0, accuracy: 1e-9)
+        let data = try JSONEncoder().encode(overlay)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        // The FILE's keys — exactly C-11's four, nothing more.
+        XCTAssertEqual(Set(json.keys), ["contractVersion", "part", "engineVersion", "operations"])
+        XCTAssertEqual(json["contractVersion"] as? String, "v1.1")
+        XCTAssertEqual(json["part"] as? String, "T2")
+        XCTAssertEqual(json["engineVersion"] as? String, "corrections-0.1.0")
+
+        let ops = try XCTUnwrap(json["operations"] as? [[String: Any]])
+        XCTAssertEqual(ops.count, 3)
+
+        // A reassign carries `toPart` + the OPTIONAL `midi` — and nothing else.
+        XCTAssertEqual(Set(ops[0].keys), ["op", "fromPart", "noteIndex", "toPart", "midi"])
+        XCTAssertEqual(ops[0]["op"] as? String, "reassign")
+        XCTAssertEqual(ops[0]["fromPart"] as? String, "T2")
+        XCTAssertEqual(ops[0]["noteIndex"] as? Int, 3)
+        XCTAssertEqual(ops[0]["toPart"] as? String, "T1")
+        XCTAssertEqual(ops[0]["midi"] as? Int, 62)
+
+        // A delete carries NOTHING else.
+        XCTAssertEqual(Set(ops[1].keys), ["op", "fromPart", "noteIndex"])
+        XCTAssertEqual(ops[1]["op"] as? String, "delete")
+        XCTAssertEqual(ops[1]["fromPart"] as? String, "T2")
+        XCTAssertEqual(ops[1]["noteIndex"] as? Int, 7)
+
+        // A split carries `splitAt_s` + `toParts` — and nothing else.
+        XCTAssertEqual(Set(ops[2].keys), ["op", "fromPart", "noteIndex", "splitAt_s", "toParts"])
+        XCTAssertEqual(ops[2]["op"] as? String, "split")
+        XCTAssertEqual(ops[2]["splitAt_s"] as? Double, 2.5)
+        let toParts = try XCTUnwrap(ops[2]["toParts"] as? [String])
+        XCTAssertEqual(toParts, ["T1", "T2"])
+    }
+
+    func testAReassignWithoutAMidiOmitsTheMidiKey() throws {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 0, toPart: .t2),
+        ])
+        let data = try JSONEncoder().encode(overlay)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let ops = try XCTUnwrap(json["operations"] as? [[String: Any]])
+        XCTAssertEqual(Set(ops[0].keys), ["op", "fromPart", "noteIndex", "toPart"])
+    }
+
+    func testTheOverlayJSONRoundTrips() throws {
+        let overlay = PartCorrectionOverlay(part: .t2, operations: [
+            .reassign(fromPart: .t2, noteIndex: 3, toPart: .t1, midi: 62),
+            .delete(fromPart: .t2, noteIndex: 7),
+            .split(fromPart: .t2, noteIndex: 9, splitAt_s: 2.5, toParts: [.t1, .t2],
+                   confidence: 0.42),
+        ])
+
+        let data = try JSONEncoder().encode(overlay)
+        let decoded = try JSONDecoder().decode(PartCorrectionOverlay.self, from: data)
+
+        XCTAssertEqual(decoded, overlay)
+        XCTAssertEqual(decoded.contractVersion, "v1.1")
+        XCTAssertEqual(decoded.part, .t2)
+        XCTAssertEqual(decoded.operations.count, 3)
+    }
+
+    func testAnUnknownOperationIsRefusedRatherThanMisread() {
+        // Every OTHER field is valid, so the decode can only fail on the
+        // unknown operation — the overlay is never half-read.
+        let json = """
+        {"contractVersion":"v1.1","part":"T2","engineVersion":"corrections-0.1.0",
+         "operations":[{"op":"teleport","fromPart":"T2","noteIndex":3,"toPart":"T1"}]}
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(PartCorrectionOverlay.self,
+                                                      from: Data(json.utf8)))
+    }
+
+    func testASplitWithOtherThanTwoPartsIsRefused() {
+        let json = """
+        {"contractVersion":"v1.1","part":"T2","engineVersion":"corrections-0.1.0",
+         "operations":[{"op":"split","fromPart":"T2","noteIndex":9,"splitAt_s":2.5,
+                        "toParts":["T1"]}]}
+        """
+        XCTAssertThrowsError(try JSONDecoder().decode(PartCorrectionOverlay.self,
+                                                      from: Data(json.utf8)))
+    }
+
+    func testASplitWithOtherThanTwoPartsCannotEvenBeEncoded() {
+        let overlay = PartCorrectionOverlay(part: .t2, operations: [
+            .split(fromPart: .t2, noteIndex: 9, splitAt_s: 2.5, toParts: [.t1]),
+        ])
+        XCTAssertThrowsError(try JSONEncoder().encode(overlay))
+    }
+
+    // MARK: - Resolution, by ORIGINAL index
+
+    func testAReassignMovesTheNoteByItsOriginalIndex() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 3, toPart: .t2),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
+
+        XCTAssertEqual(result.tracks[.t1]?.notes.count, 3, "the note left T1")
+        guard let moved = result.tracks[.t2]?.notes.first(where: { $0.start_s == 3.0 }) else {
+            return XCTFail("the note should have moved to T2")
+        }
+        XCTAssertEqual(moved.midi, 65)
+        XCTAssertEqual(moved.end_s, 4.0)
         XCTAssertEqual(result.appliedOpCount, 1)
         XCTAssertEqual(result.skippedOpCount, 0)
         XCTAssertTrue(result.warnings.isEmpty)
-        // The moved note keeps its identity, so the "you corrected this"
-        // marker follows it into the new part.
-        XCTAssertTrue(result.correctedIdentities.contains(NoteIdentity(note: note(0.0, 1.0, 60))))
-        XCTAssertEqual(result.movedFrom[NoteIdentity(note: note(0.0, 1.0, 60))], .t1)
     }
 
-    func testDeleteRemovesTheNote() {
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.delete(NoteKey(part: .t1, note: note(2.0, 3.0, 62))))
+    func testACorrectedNoteKeepsTheEngineConfidence() {
+        // C-11 rule 4: a correction does NOT erase the engine's doubt.
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 3, toPart: .t2, midi: 70),
+        ])
 
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
 
-        XCTAssertEqual(result.tracks[.t1]?.notes.count, 1)
-        XCTAssertEqual(result.tracks[.t1]?.notes.first?.midi, 60)
+        let moved = result.tracks[.t2]?.notes.first { $0.start_s == 3.0 }
+        XCTAssertEqual(moved?.midi, 70, "the pitch correction is applied")
+        XCTAssertEqual(moved?.confidence ?? 0, 0.9, accuracy: 1e-9,
+                       "but the engine's confidence is NOT erased")
+    }
+
+    func testTheCorrectedNoteIsMarked() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 3, toPart: .t2),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
+
+        guard let moved = result.tracks[.t2]?.notes.first(where: { $0.start_s == 3.0 }) else {
+            return XCTFail("the note should have moved to T2")
+        }
+        let key = NoteKey(part: .t2, note: moved)
+        XCTAssertEqual(result.correctedNotes.count, 1)
+        XCTAssertTrue(result.correctedNotes.contains(key), "the UI can mark the user's note")
+        // The origin map is how the UI turns the note it SHOWS back into the
+        // contract's `noteIndex`.
+        XCTAssertEqual(result.origin(for: key), NoteOrigin(part: .t1, index: 3))
+    }
+
+    func testADeleteRemovesTheNoteFromTheCorrectedTrackOnly() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .delete(fromPart: .t1, noteIndex: 1),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
+
+        XCTAssertEqual(result.tracks[.t1]?.notes.count, 3)
+        XCTAssertNil(result.tracks[.t1]?.notes.first { $0.start_s == 1.0 })
+        XCTAssertEqual(result.tracks[.t2]?.notes.count, 1, "the other part is untouched")
         XCTAssertEqual(result.appliedOpCount, 1)
     }
 
-    func testSplitMakesTwoNotesAtTheSplitPoint() {
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.split(NoteKey(part: .t1, note: note(0.0, 1.0, 60)), at_ms: 500))
+    func testASplitCutsTheNoteAndPutsTheHalvesInTheNamedParts() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .split(fromPart: .t1, noteIndex: 0, splitAt_s: 0.5, toParts: [.t1, .t2]),
+        ])
 
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
+        let result = CorrectionResolver.resolve(raw: splittableTracks(), overlays: [.t1: overlay])
 
-        let notes = result.tracks[.t1]?.notes ?? []
-        XCTAssertEqual(notes.count, 3)   // two halves + the untouched second note
-        let halves = notes.filter { $0.midi == 60 }
-        XCTAssertEqual(halves.count, 2)
-        XCTAssertEqual(halves[0].start_s, 0.0, accuracy: 1e-9)
-        XCTAssertEqual(halves[0].end_s, 0.5, accuracy: 1e-9)
-        XCTAssertEqual(halves[1].start_s, 0.5, accuracy: 1e-9)
-        XCTAssertEqual(halves[1].end_s, 1.0, accuracy: 1e-9)
-        // Both halves carry the original pitch detail.
-        XCTAssertEqual(halves[0].cents_ref, 0)
-        XCTAssertEqual(halves[1].confidence, 0.9, accuracy: 1e-9)
+        let first = result.tracks[.t1]?.notes.first
+        XCTAssertEqual(first?.start_s ?? 0, 0.0, accuracy: 1e-9)
+        XCTAssertEqual(first?.end_s ?? 0, 0.5, accuracy: 1e-9)
+
+        let second = result.tracks[.t2]?.notes.first
+        XCTAssertEqual(second?.start_s ?? 0, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(second?.end_s ?? 0, 1.0, accuracy: 1e-9)
+
+        // Both halves keep the ORIGINAL confidence (C-11).
+        XCTAssertEqual(first?.confidence ?? 0, 0.9, accuracy: 1e-9)
+        XCTAssertEqual(second?.confidence ?? 0, 0.9, accuracy: 1e-9)
         XCTAssertEqual(result.appliedOpCount, 1)
-    }
-
-    // MARK: - Merge semantics (the order of the operations matters)
-
-    func testOperationsApplyInOrderSoAMoveThenDeleteWorks() {
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        let key = NoteKey(part: .t1, note: note(0.0, 1.0, 60))
-        overlay.append(.move(key, toPart: .bass))
-        // The same note, now in BASS: the delete must find it there.
-        overlay.append(.delete(NoteKey(part: .bass, note: note(0.0, 1.0, 60))))
-
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
-
-        XCTAssertEqual(result.tracks[.bass]?.notes.count, 0)
-        XCTAssertEqual(result.appliedOpCount, 2)
         XCTAssertEqual(result.skippedOpCount, 0)
     }
 
-    func testACorrectionWhoseNoteIsGoneIsSkippedAndReported() {
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.delete(NoteKey(part: .t1, note: note(9.0, 9.5, 70))))
+    func testASplitCanOverrideTheConfidence() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .split(fromPart: .t1, noteIndex: 0, splitAt_s: 0.5, toParts: [.t1, .t2],
+                   confidence: 0.42),
+        ])
 
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
+        let result = CorrectionResolver.resolve(raw: splittableTracks(), overlays: [.t1: overlay])
+
+        XCTAssertEqual(result.tracks[.t1]?.notes.first?.confidence ?? 0, 0.42, accuracy: 1e-9)
+        XCTAssertEqual(result.tracks[.t2]?.notes.first?.confidence ?? 0, 0.42, accuracy: 1e-9)
+    }
+
+    func testASplitNotStrictlyInsideTheNoteIsSkippedAndReported() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .split(fromPart: .t1, noteIndex: 0, splitAt_s: 5.0, toParts: [.t1, .t2]),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: splittableTracks(), overlays: [.t1: overlay])
 
         XCTAssertEqual(result.appliedOpCount, 0)
         XCTAssertEqual(result.skippedOpCount, 1)
         XCTAssertFalse(result.warnings.isEmpty, "a skipped correction must be reported, never silent")
+        XCTAssertEqual(result.tracks[.t1]?.notes.count, 1, "the note is untouched")
     }
 
-    func testASplitOutsideTheNoteIsSkippedAndReported() {
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.split(NoteKey(part: .t1, note: note(0.0, 1.0, 60)), at_ms: 5_000))
+    func testASplitExactlyOnTheNoteBoundaryIsSkippedAndReported() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .split(fromPart: .t1, noteIndex: 0, splitAt_s: 0.0, toParts: [.t1, .t2]),
+        ])
 
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
+        let result = CorrectionResolver.resolve(raw: splittableTracks(), overlays: [.t1: overlay])
+
+        XCTAssertEqual(result.skippedOpCount, 1)
+        XCTAssertFalse(result.warnings.isEmpty)
+    }
+
+    func testANoteIndexOutsideTheOriginalArrayIsSkippedAndReported() {
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .delete(fromPart: .t1, noteIndex: 99),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
 
         XCTAssertEqual(result.appliedOpCount, 0)
         XCTAssertEqual(result.skippedOpCount, 1)
         XCTAssertFalse(result.warnings.isEmpty)
     }
 
-    func testAMoveThatOverlapsAnExistingNoteIsRepairedAndReported() {
-        // Moving T1's 0.0–1.0 note on top of T2's 0.5–1.5 note overlaps.
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.move(NoteKey(part: .t1, note: note(0.0, 1.0, 60)), toPart: .t2))
+    // MARK: - The order of the operations
 
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
+    func testAReassignThenADeleteOfTheSameOriginalNoteRemovesIt() {
+        // Both operations live in the SOURCE part's file (C-11: `fromPart` is
+        // the part whose ORIGINAL array holds the note) and they apply in
+        // order, even though the delete names the part the note moved to.
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 3, toPart: .t2),
+            .delete(fromPart: .t1, noteIndex: 3),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
+
+        XCTAssertNil(result.tracks[.t2]?.notes.first { $0.start_s == 3.0 },
+                     "the note is gone from the part it moved to")
+        XCTAssertEqual(result.tracks[.t1]?.notes.count, 3)
+        XCTAssertEqual(result.appliedOpCount, 2)
+        XCTAssertEqual(result.skippedOpCount, 0)
+    }
+
+    func testTheReverseOrderDeletesFirstAndTheReassignIsReported() {
+        // The delete comes first, so there is nothing left for the reassign to
+        // move: it is SKIPPED and REPORTED, never guessed at, and the note is
+        // NOT in the new part.
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .delete(fromPart: .t1, noteIndex: 3),
+            .reassign(fromPart: .t1, noteIndex: 3, toPart: .t2),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
+
+        XCTAssertNil(result.tracks[.t2]?.notes.first { $0.start_s == 3.0 })
+        XCTAssertEqual(result.tracks[.t1]?.notes.count, 3)
+        XCTAssertEqual(result.appliedOpCount, 1)
+        XCTAssertEqual(result.skippedOpCount, 1)
+        XCTAssertFalse(result.warnings.isEmpty)
+    }
+
+    // MARK: - The corrected-first contract
+
+    func testTheRawTracksAreNeverMutated() {
+        let raw = rawTracks()
+        let before = raw
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 0, toPart: .bass),
+            .delete(fromPart: .t1, noteIndex: 1),
+        ])
+
+        _ = CorrectionResolver.resolve(raw: raw, overlays: [.t1: overlay])
+
+        XCTAssertEqual(raw, before, "the resolver must not touch the engine's tracks")
+    }
+
+    func testNoOverlayReturnsTheRawTracksUnchanged() {
+        let raw = rawTracks()
+        let result = CorrectionResolver.resolve(raw: raw, overlays: [:])
+
+        XCTAssertEqual(result.tracks[.t1], raw[.t1])
+        XCTAssertEqual(result.tracks[.t2], raw[.t2])
+        XCTAssertFalse(result.hasCorrections)
+        XCTAssertEqual(result.appliedOpCount, 0)
+        XCTAssertEqual(result.skippedOpCount, 0)
+        XCTAssertTrue(result.warnings.isEmpty)
+    }
+
+    func testClearingTheOverlayRestoresTheEngineOutputExactly() {
+        let raw = rawTracks()
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 0, toPart: .bass),
+            .delete(fromPart: .t1, noteIndex: 1),
+        ])
+
+        let corrected = CorrectionResolver.resolve(raw: raw, overlays: [.t1: overlay])
+        XCTAssertNotEqual(corrected.tracks[.t1], raw[.t1])
+
+        let restored = CorrectionResolver.resolve(raw: raw, overlays: [:])
+
+        XCTAssertEqual(restored.tracks[.t1], raw[.t1])
+        XCTAssertEqual(restored.tracks[.t2], raw[.t2])
+        XCTAssertTrue(restored.tracks[.bass] == nil, "the moved note is back where the engine put it")
+    }
+
+    // MARK: - The shared V8 repair
+
+    func testAReassignThatOverlapsAnExistingNoteIsTrimmedAndReported() {
+        // Moving T1's 0.0–1.0 note on top of T2's 0.5–1.5 note overlaps.
+        let overlay = PartCorrectionOverlay(part: .t1, operations: [
+            .reassign(fromPart: .t1, noteIndex: 0, toPart: .t2),
+        ])
+
+        let result = CorrectionResolver.resolve(raw: rawTracks(), overlays: [.t1: overlay])
 
         // V8: the track stays sorted and non-overlapping.
         let notes = result.tracks[.t2]?.notes ?? []
@@ -137,120 +384,25 @@ final class CorrectionOverlayTests: XCTestCase {
         XCTAssertFalse(result.warnings.isEmpty, "the repair must be reported")
     }
 
-    // MARK: - The corrected-first contract
-
-    func testTheRawTracksAreNeverMutated() {
-        let raw = rawTracks()
-        let before = raw
-        let overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.move(NoteKey(part: .t1, note: note(0.0, 1.0, 60)), toPart: .bass))
-        overlay.append(.delete(NoteKey(part: .t1, note: note(2.0, 3.0, 62))))
-
-        _ = CorrectionResolver.resolve(raw: raw, overlay: overlay)
-
-        XCTAssertEqual(raw, before, "the resolver must not touch the engine's tracks")
+    func testTheRepairSortsAndTrimsOverlaps() {
+        let outcome = NoteTrackRepair.repair([
+            note(1.0, 2.0, 60),
+            note(0.0, 1.5, 62),
+        ])
+        XCTAssertEqual(outcome.notes.count, 2)
+        XCTAssertEqual(outcome.notes[0].start_s, 0.0, accuracy: 1e-9)
+        XCTAssertEqual(outcome.notes[0].end_s, 1.0, accuracy: 1e-9)
+        XCTAssertEqual(outcome.trimmedCount, 1)
+        XCTAssertEqual(outcome.droppedCount, 0)
     }
 
-    func testAnEmptyOverlayReturnsTheRawTracksUnchanged() {
-        let raw = rawTracks()
-        let result = CorrectionResolver.resolve(raw: raw, overlay: .empty(bundleID: "song"))
-
-        XCTAssertEqual(result.tracks[.t1], raw[.t1])
-        XCTAssertEqual(result.tracks[.t2], raw[.t2])
-        XCTAssertFalse(result.hasCorrections)
-        XCTAssertEqual(result.appliedOpCount, 0)
-    }
-
-    func testClearingTheOverlayRestoresTheEngineOutputExactly() {
-        let raw = rawTracks()
-        var overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.move(NoteKey(part: .t1, note: note(0.0, 1.0, 60)), toPart: .bass))
-        overlay.append(.delete(NoteKey(part: .t1, note: note(2.0, 3.0, 62))))
-
-        let corrected = CorrectionResolver.resolve(raw: raw, overlay: overlay)
-        XCTAssertNotEqual(corrected.tracks[.t1], raw[.t1])
-
-        overlay.resetAll()
-        let restored = CorrectionResolver.resolve(raw: raw, overlay: overlay)
-
-        XCTAssertEqual(restored.tracks[.t1], raw[.t1])
-        XCTAssertEqual(restored.tracks[.t2], raw[.t2])
-        XCTAssertTrue(restored.tracks[.bass] == nil, "the moved note is back where the engine put it")
-    }
-
-    func testUndoLastRemovesExactlyTheLastCorrection() {
-        var overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.move(NoteKey(part: .t1, note: note(0.0, 1.0, 60)), toPart: .bass))
-        overlay.append(.delete(NoteKey(part: .t1, note: note(2.0, 3.0, 62))))
-
-        overlay.undoLast()
-
-        XCTAssertEqual(overlay.ops.count, 1)
-        let result = CorrectionResolver.resolve(raw: rawTracks(), overlay: overlay)
-        XCTAssertEqual(result.tracks[.t1]?.notes.count, 1)   // the delete is undone
-        XCTAssertEqual(result.tracks[.bass]?.notes.count, 1)   // the move still stands
-    }
-
-    // MARK: - The overlay's own editing
-
-    func testRenamingAPartIsPerSongAndClearedByAnEmptyName() {
-        var overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.rename(part: .t1, to: "Tenor One")
-
-        XCTAssertEqual(overlay.displayName(for: .t1), "Tenor One")
-        XCTAssertEqual(overlay.displayName(for: .t2), Part(.t2).displayName)
-
-        overlay.rename(part: .t1, to: "   ")
-        XCTAssertEqual(overlay.displayName(for: .t1), Part(.t1).displayName)
-    }
-
-    func testTheOverlayCarriesItsBundleID() {
-        let overlay = CorrectionOverlay.empty(bundleID: "01JABC")
-        XCTAssertEqual(overlay.bundleID, "01JABC")
-        XCTAssertTrue(overlay.isEmpty)
-        XCTAssertEqual(overlay.correctionCount, 0)
-    }
-
-    // MARK: - The JSON shape (the exact schema proposed to Leto)
-
-    func testTheCorrectionJSONShapeIsExactlyTheProposedOne() throws {
-        let key = NoteKey(part: .t1, note: note(12.0, 12.5, 60))
-        var overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.move(key, toPart: .t2))
-        overlay.append(.delete(NoteKey(part: .t2, note: note(30.0, 30.5, 62))))
-        overlay.append(.split(NoteKey(part: .bass, note: note(40.0, 41.0, 43)), at_ms: 40_500))
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(overlay)
-        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-
-        // The flat, hand-writable operation shape.
-        XCTAssertTrue(json.contains("{\"end_ms\":12500,\"midi\":60,\"op\":\"move\",\"part\":\"T1\",\"start_ms\":12000,\"toPart\":\"T2\"}"), json)
-        XCTAssertTrue(json.contains("{\"end_ms\":30500,\"midi\":62,\"op\":\"delete\",\"part\":\"T2\",\"start_ms\":30000}"), json)
-        XCTAssertTrue(json.contains("{\"at_ms\":40500,\"end_ms\":41000,\"midi\":43,\"op\":\"split\",\"part\":\"BASS\",\"start_ms\":40000}"), json)
-    }
-
-    func testTheCorrectionJSONRoundTrips() throws {
-        var overlay = CorrectionOverlay.empty(bundleID: "song")
-        overlay.append(.move(NoteKey(part: .t1, note: note(12.0, 12.5, 60)), toPart: .t2))
-        overlay.append(.split(NoteKey(part: .bass, note: note(40.0, 41.0, 43)), at_ms: 40_500))
-
-        let data = try JSONEncoder().encode(overlay)
-        let decoded = try JSONDecoder().decode(CorrectionOverlay.self, from: data)
-
-        XCTAssertEqual(decoded.ops, overlay.ops)
-        XCTAssertEqual(decoded.bundleID, "song")
-    }
-
-    func testAnUnknownOperationIsRefusedRatherThanMisread() {
-        // Every OTHER field is valid, so the decode can only fail on the
-        // unknown operation — the overlay is never half-read.
-        let json = """
-        {"version":1,"bundleID":"song","updatedAt":0,"partRenames":{},"rangeOverrides":{},
-         "ops":[{"op":"teleport","part":"T1","start_ms":0,"end_ms":100,"midi":60}]}
-        """
-        XCTAssertThrowsError(try JSONDecoder().decode(CorrectionOverlay.self, from: Data(json.utf8)))
+    func testTheRepairDropsANoteThatStartsAtTheSameInstant() {
+        let outcome = NoteTrackRepair.repair([
+            note(0.0, 1.0, 60),
+            note(0.0, 1.0, 62),
+        ])
+        XCTAssertEqual(outcome.notes.count, 1)
+        XCTAssertEqual(outcome.droppedCount, 1)
     }
 
     // MARK: - Calibration (C-6.1 presets + a per-song custom range)
@@ -280,7 +432,7 @@ final class CorrectionOverlayTests: XCTestCase {
 
     func testACustomRangeReplacesThePresetForThisSong() {
         let range = PartCalibration.effectiveRange(
-            for: .bass, rangeOverride: .custom(midiLow: 43, midiHigh: 60))
+            for: .bass, rangeOverride: .custom(for: .bass, midiLow: 43, midiHigh: 60))
         XCTAssertEqual(range?.midiLow, 43)
         XCTAssertEqual(range?.midiHigh, 60)
         XCTAssertEqual(range?.isCustom, true)
@@ -291,13 +443,13 @@ final class CorrectionOverlayTests: XCTestCase {
     }
 
     func testACustomRangeIsClampedIntoTheContractMidiRange() {
-        let override = PartRangeOverride.custom(midiLow: 5, midiHigh: 200)
+        let override = PartRangeOverride.custom(for: .bass, midiLow: 5, midiHigh: 200)
         XCTAssertEqual(override.midiLow, 24)
         XCTAssertEqual(override.midiHigh, 96)
     }
 
     func testACustomRangeKeepsItsBoundsOrdered() {
-        let override = PartRangeOverride.custom(midiLow: 60, midiHigh: 40)
+        let override = PartRangeOverride.custom(for: .bass, midiLow: 60, midiHigh: 40)
         XCTAssertLessThan(override.midiLow, override.midiHigh)
     }
 
@@ -310,8 +462,7 @@ final class CorrectionOverlayTests: XCTestCase {
         let tracks: [Part: NoteTrack] = [
             .bass: track(.bass, [note(0.0, 1.0, 40), note(1.0, 2.0, 72)]),
         ]
-        let ranges = PartCalibration.effectiveRanges(
-            overlay: .empty(bundleID: "song"), parts: [.bass])
+        let ranges = PartCalibration.effectiveRanges(calibration: nil, parts: [.bass])
 
         let outside = PartCalibration.notesOutsideRange(in: tracks, ranges: ranges)
 
@@ -320,26 +471,85 @@ final class CorrectionOverlayTests: XCTestCase {
         XCTAssertEqual(tracks[.bass]?.notes.count, 2)
     }
 
-    // MARK: - The shared V8 repair
-
-    func testTheRepairSortsAndTrimsOverlaps() {
-        let outcome = NoteTrackRepair.repair([
-            note(1.0, 2.0, 60),
-            note(0.0, 1.5, 62),
-        ])
-        XCTAssertEqual(outcome.notes.count, 2)
-        XCTAssertEqual(outcome.notes[0].start_s, 0.0, accuracy: 1e-9)
-        XCTAssertEqual(outcome.notes[0].end_s, 1.0, accuracy: 1e-9)
-        XCTAssertEqual(outcome.trimmedCount, 1)
-        XCTAssertEqual(outcome.droppedCount, 0)
+    func testNoCalibrationMeansTheContractPresets() {
+        // The absence rule: no `corrections/song.json` ⇒ exactly as before.
+        let ranges = PartCalibration.effectiveRanges(calibration: nil, parts: [.t1, .bass])
+        XCTAssertEqual(ranges[.t1]?.midiLow, 55)
+        XCTAssertEqual(ranges[.t1]?.midiHigh, 76)
+        XCTAssertEqual(ranges[.bass]?.midiLow, 40)
     }
 
-    func testTheRepairDropsANoteThatStartsAtTheSameInstant() {
-        let outcome = NoteTrackRepair.repair([
-            note(0.0, 1.0, 60),
-            note(0.0, 1.0, 62),
-        ])
-        XCTAssertEqual(outcome.notes.count, 1)
-        XCTAssertEqual(outcome.droppedCount, 1)
+    // MARK: - The calibration overlay (X-216 proposal — Leto rules)
+
+    func testTheCalibrationCarriesTheRenamesAndTheRanges() {
+        var calibration = SongCalibrationOverlay()
+        calibration.partRenames[Part.t1.rawValue] = "Tenor One"
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1, nudgeSemitones: 2)
+        calibration.rangeOverrides[Part.bass.rawValue] = .custom(for: .bass, midiLow: 40,
+                                                                 midiHigh: 60)
+
+        XCTAssertEqual(calibration.displayName(for: .t1), "Tenor One")
+        XCTAssertEqual(calibration.displayName(for: .t2), Part.t2.displayName)
+        XCTAssertEqual(calibration.partNameMap()[.t1], "Tenor One")
+        XCTAssertEqual(calibration.rangeOverride(for: .t1)?.nudgeSemitones, 2)
+        XCTAssertEqual(calibration.rangeOverride(for: .bass)?.mode, .custom)
+    }
+
+    func testAnEmptyRenameFallsBackToTheContractName() {
+        var calibration = SongCalibrationOverlay()
+        calibration.partRenames[Part.t1.rawValue] = "   "
+        XCTAssertEqual(calibration.displayName(for: .t1), Part.t1.displayName)
+    }
+
+    func testTheStoredCalibrationJSONIsExactlyX216sShape() throws {
+        var calibration = SongCalibrationOverlay()
+        calibration.partRenames[Part.t1.rawValue] = "Tenor One"
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1, nudgeSemitones: 2)
+        calibration.rangeOverrides[Part.bass.rawValue] = .custom(for: .bass, midiLow: 40,
+                                                                 midiHigh: 60)
+
+        let data = try JSONEncoder().encode(calibration)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(Set(json.keys), ["contractVersion", "engineVersion", "partRenames",
+                                        "rangeOverrides"])
+        XCTAssertEqual(json["contractVersion"] as? String, "v1.1")
+
+        let renames = try XCTUnwrap(json["partRenames"] as? [String: String])
+        XCTAssertEqual(renames, ["T1": "Tenor One"])
+
+        let overrides = try XCTUnwrap(json["rangeOverrides"] as? [String: [String: Any]])
+        XCTAssertEqual(Set(overrides.keys), ["T1", "BASS"])
+
+        // A preset override: {"preset": "...", "nudgeSemitones": N}.
+        let t1 = try XCTUnwrap(overrides["T1"])
+        XCTAssertEqual(Set(t1.keys), ["preset", "nudgeSemitones"])
+        XCTAssertEqual(t1["nudgeSemitones"] as? Int, 2)
+        XCTAssertEqual(t1["preset"] as? String, PartRangePresets.preset(for: .t1)?.presetName)
+
+        // A custom override: {"custom": {"minMidi": N, "maxMidi": N}}.
+        let bass = try XCTUnwrap(overrides["BASS"])
+        XCTAssertEqual(Set(bass.keys), ["custom"])
+        let custom = try XCTUnwrap(bass["custom"] as? [String: Any])
+        XCTAssertEqual(Set(custom.keys), ["minMidi", "maxMidi"])
+        XCTAssertEqual(custom["minMidi"] as? Int, 40)
+        XCTAssertEqual(custom["maxMidi"] as? Int, 60)
+    }
+
+    func testTheStoredCalibrationJSONRoundTrips() throws {
+        var calibration = SongCalibrationOverlay()
+        calibration.partRenames[Part.t1.rawValue] = "Tenor One"
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1, nudgeSemitones: 2)
+        calibration.rangeOverrides[Part.bass.rawValue] = .custom(for: .bass, midiLow: 40,
+                                                                 midiHigh: 60)
+
+        let data = try JSONEncoder().encode(calibration)
+        let decoded = try JSONDecoder().decode(SongCalibrationOverlay.self, from: data)
+
+        XCTAssertEqual(decoded, calibration)
+        XCTAssertEqual(decoded.displayName(for: .t1), "Tenor One")
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.nudgeSemitones, 2)
+        XCTAssertEqual(decoded.rangeOverride(for: .bass)?.midiLow, 40)
+        XCTAssertEqual(decoded.rangeOverride(for: .bass)?.midiHigh, 60)
     }
 }

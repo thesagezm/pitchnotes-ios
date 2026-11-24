@@ -5,10 +5,31 @@ import EngineCore
 // NoteTracksScreen (J-302) — the per-part note tracks WITH the user's
 // corrections.
 //
-// THIS IS THE CORRECTED-FIRST SCREEN (D-41 §4): the roll it hosts renders the
-// EFFECTIVE tracks (the engine's tracks + the user's overlay), never the raw
-// file. The engine's `notes/<PART>.json` is never rewritten — the overlay is
-// a separate, reversible layer (PitchLogic's CorrectionOverlay).
+// THIS IS THE CORRECTED-FIRST SCREEN (D-41 §4 / C-14 rule 1): the roll it
+// hosts renders the EFFECTIVE tracks (the engine's tracks + the user's
+// overlay), never the raw file. The engine's `notes/<PART>.json` is never
+// rewritten — the overlay is a separate, reversible layer (CONTRACTS v1.1
+// C-11).
+//
+// WHERE THE OVERLAY LIVES (C-11): `corrections/<PART>.json`, INSIDE the song's
+// bundle directory — ONE FILE PER CORRECTED PART, and absence means "no
+// corrections", never "unknown". The song's bundle directory therefore has to
+// reach this screen (`LibrarySong.bundleDirectory`); the synthetic demo
+// tracks have none, so their corrections are not saved and the screen says so
+// plainly.
+//
+// WHERE AN OPERATION GOES (C-11): an operation belongs to the file of the
+// part whose ORIGINAL, IMMUTABLE `notes[]` array holds the target note — that
+// is `op.fromPart`. A reassign to another part therefore lands in the
+// SOURCE part's file, not the destination's.
+//
+// THE UNDO ORDER (honest, and stated in the UI): C-11 fixes the operation
+// order WITHIN a file and says nothing about the order BETWEEN files, so a
+// global "undo the last" is not contract-defined. While the user works, the
+// undo stack is the order they appended in. After a relaunch there is no
+// session order any more, so the undo falls back to a deterministic order
+// (parts in C-1 order, each part's operations in order) — and the UI SAYS SO
+// instead of pretending the order is obvious.
 //
 // HONESTY (AGENTS §11 — a product requirement):
 //   · the corrections are labelled as the USER'S edits, never as the engine's
@@ -17,18 +38,19 @@ import EngineCore
 //     so nothing the user does is a one-way door;
 //   · a skipped or repaired correction is REPORTED, never swallowed;
 //   · the demo tracks say plainly that corrections to them are not saved.
-//
-// WHY A SEPARATE SCREEN AND NOT THE INSPECTOR: the corrections need room to
-// be honest — a list of what was changed, what was skipped, and what the
-// per-song ranges are. The inspector stays the read-only verdict view.
 
-/// The screen's state: the overlay, the effective tracks, and persistence.
+/// The screen's state: the per-part overlays, the calibration, the effective
+/// tracks, and persistence.
 @MainActor
 final class NoteTracksModel: ObservableObject {
 
-    /// The user's corrections for this song.
-    @Published private(set) var overlay: CorrectionOverlay
-    /// The engine's tracks + the overlay — what everything reads.
+    /// The user's note corrections, one overlay per corrected part (C-11).
+    @Published private(set) var overlays: [Part: PartCorrectionOverlay]
+    /// The user's per-song part names + range overrides (X-216 proposal —
+    /// Leto rules). Nil ⇒ no renames and no range overrides (the absence
+    /// rule: behave exactly as before).
+    @Published private(set) var calibration: SongCalibrationOverlay?
+    /// The engine's tracks + the overlays — what everything reads.
     @Published private(set) var effective: EffectiveTracks
     /// Set when the stored corrections could not be read (honest, not silent).
     @Published private(set) var loadMessage: String?
@@ -38,33 +60,65 @@ final class NoteTracksModel: ObservableObject {
 
     private let rawTracks: [Part: NoteTrack]
     private var store: CorrectionStore?
+    /// The parts in the order the USER appended operations to them. Empty
+    /// after a relaunch — then the undo uses the deterministic fallback.
+    private var undoStack: [Part] = []
+    /// The parts whose overlay file was successfully READ. Only those may be
+    /// removed by a save; a file we could not read (quarantined) is left
+    /// alone until the user deliberately edits that part.
+    private var loadedParts: Set<Part> = []
+    /// True when `corrections/song.json` was successfully read (so it may be
+    /// removed when the calibration becomes empty).
+    private var calibrationWasLoaded = false
 
     /// - Parameters:
-    ///   - bundleID: the song's manifest id (nil for the demo tracks).
+    ///   - bundleDirectory: the song's bundle directory (C-11's home for the
+    ///     overlay). Nil ⇒ nothing is saved (the demo tracks, or a failed row).
     ///   - rawTracks: the engine's tracks (never mutated).
-    ///   - persist: false for the demo tracks (there is no song to save to).
-    init(bundleID: String?, rawTracks: [Part: NoteTrack], persist: Bool) {
+    init(bundleDirectory: URL?, rawTracks: [Part: NoteTrack]) {
         self.rawTracks = rawTracks
-        let empty = CorrectionOverlay.empty(bundleID: bundleID ?? "demo")
-        self.overlay = empty
-        self.effective = CorrectionResolver.resolve(raw: rawTracks, overlay: empty)
+        self.overlays = [:]
+        self.calibration = nil
+        self.effective = CorrectionResolver.resolve(raw: rawTracks, overlays: [:])
 
-        if persist, let bundleID {
-            Task { await load(bundleID: bundleID) }
+        if let bundleDirectory {
+            Task { await load(bundleDirectory: bundleDirectory) }
         }
     }
+
+    // MARK: - Derived state
 
     /// The parts of the corrected tracks, in C-1 order.
     var parts: [Part] {
         effective.tracks.keys.sorted { $0.sortOrder < $1.sortOrder }
     }
 
+    /// The parts that have corrections, in C-1 order (the list is grouped by
+    /// part, and the label says so).
+    var partsWithCorrections: [Part] {
+        overlays.keys
+            .filter { !(overlays[$0]?.operations.isEmpty ?? true) }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    /// How many note corrections are stored.
+    var correctionCount: Int {
+        overlays.values.reduce(0) { $0 + $1.operations.count }
+    }
+
+    /// True while the undo order is the USER's session order. False right
+    /// after a relaunch (or before the first correction) — then the undo uses
+    /// the deterministic fallback and the UI says so.
+    var undoOrderIsSessionOrder: Bool { !undoStack.isEmpty }
+
     /// The display name of a part (the user's rename, else the contract name).
-    func displayName(for part: Part) -> String { overlay.displayName(for: part) }
+    func displayName(for part: Part) -> String {
+        calibration?.displayName(for: part) ?? part.displayName
+    }
 
     /// The effective per-song ranges (C-6.1 preset + the song's override).
     var ranges: [Part: EffectivePartRange] {
-        PartCalibration.effectiveRanges(overlay: overlay, parts: parts)
+        PartCalibration.effectiveRanges(calibration: calibration, parts: parts)
     }
 
     /// How many notes of each part fall outside its effective range.
@@ -72,72 +126,148 @@ final class NoteTracksModel: ObservableObject {
         PartCalibration.notesOutsideRange(in: effective.tracks, ranges: ranges)
     }
 
-    // MARK: - Loading
-
-    private enum LoadOutcome: Sendable {
-        case loaded(CorrectionStore, CorrectionLoadResult)
-        case failed(String)
+    /// The range override for a part (nil = the C-6.1 preset).
+    func rangeOverride(for part: Part) -> PartRangeOverride? {
+        calibration?.rangeOverride(for: part)
     }
 
-    private func load(bundleID: String) async {
-        let outcome = await Task.detached(priority: .userInitiated) { () -> LoadOutcome in
-            guard let store = try? CorrectionStore.makeDefault() else {
-                return .failed("Corrections could not be opened on this device.")
-            }
-            return .loaded(store, store.loadResult(forBundleID: bundleID))
+    // MARK: - Loading
+
+    private func load(bundleDirectory: URL) async {
+        let store = CorrectionStore(bundleDirectory: bundleDirectory)
+        self.store = store
+        let result = await Task.detached(priority: .userInitiated) {
+            store.loadResult()
         }.value
 
-        switch outcome {
-        case let .loaded(store, .loaded(stored)):
-            self.store = store
-            self.overlay = stored
-            self.effective = CorrectionResolver.resolve(raw: rawTracks, overlay: stored)
+        switch result {
+        case let .loaded(stored):
+            // An EMPTY overlay is "no corrections" — it is dropped, so the
+            // list only ever shows real corrections. The part stays in
+            // `loadedParts`, so a later save removes the now-pointless file.
+            var loadedOverlays: [Part: PartCorrectionOverlay] = [:]
+            for (part, overlay) in stored.partOverlays where !overlay.isEmpty {
+                loadedOverlays[part] = overlay
+            }
+            self.overlays = loadedOverlays
+            self.loadedParts = Set(stored.partOverlays.keys)
+            if let calibration = stored.calibration, !calibration.isEmpty {
+                self.calibration = calibration
+                self.calibrationWasLoaded = true
+            } else {
+                self.calibration = nil
+                self.calibrationWasLoaded = stored.calibration != nil
+            }
+            self.effective = CorrectionResolver.resolve(raw: rawTracks, overlays: loadedOverlays)
+            self.undoStack = []
+            self.loadMessage = stored.problems.isEmpty
+                ? nil
+                : stored.problems.joined(separator: "\n")
+        case .absent:
+            // No corrections directory ⇒ no corrections at all. The roll is
+            // EXACTLY the engine's output (C-11's absence rule).
+            self.overlays = [:]
+            self.calibration = nil
+            self.effective = CorrectionResolver.resolve(raw: rawTracks, overlays: [:])
             self.loadMessage = nil
-        case let .loaded(store, .corrupted(reason)):
-            self.store = store
-            self.loadMessage = "Your corrections for this song could not be read: \(reason) "
-                + "A copy was kept, and the notes below are the engine's own, uncorrected."
-        case let .loaded(store, .absent):
-            self.store = store
-            self.loadMessage = nil
-        case let .failed(message):
-            self.loadMessage = message
+        case let .failed(reason):
+            self.loadMessage = reason
+                + " The notes below are the engine's own, uncorrected."
         }
     }
 
     // MARK: - Editing
 
-    /// Applies one note correction.
-    func apply(_ op: CorrectionOp) {
-        overlay.append(op)
-        effective = CorrectionResolver.resolve(raw: rawTracks, overlay: overlay)
+    /// Applies one note correction (C-11's operation, already contract-shaped).
+    ///
+    /// The operation lands in the overlay of `op.fromPart` — the part whose
+    /// ORIGINAL array holds the target note.
+    func apply(_ op: CorrectionOperation) {
+        var overlay = overlays[op.fromPart] ?? PartCorrectionOverlay(part: op.fromPart)
+        overlay.operations.append(op)
+        overlays[op.fromPart] = overlay
+        undoStack.append(op.fromPart)
+        recompute()
         persist()
     }
 
     /// Undoes the last correction (an exact reversal).
+    ///
+    /// While the user works, the last correction is the last one they made.
+    /// After a relaunch there is no session order, so the fallback is the
+    /// deterministic one (parts in C-1 order, each part's operations in
+    /// order) — and the UI says which order it is using.
     func undoLast() {
-        overlay.undoLast()
-        effective = CorrectionResolver.resolve(raw: rawTracks, overlay: overlay)
+        guard correctionCount > 0 else { return }
+        if let part = undoStack.last {
+            undoStack.removeLast()
+            removeLastOperation(from: part)
+        } else {
+            guard let part = partsWithCorrections.last else { return }
+            removeLastOperation(from: part)
+        }
+        recompute()
         persist()
     }
 
-    /// Clears every correction — the engine's tracks come back exactly.
-    func clearAll() {
-        overlay.resetAll()
-        effective = CorrectionResolver.resolve(raw: rawTracks, overlay: overlay)
+    /// Clears every note correction — the engine's tracks come back exactly.
+    /// The part names and ranges are the user's display preferences and are
+    /// NOT touched (they have their own reset).
+    func clearAllCorrections() {
+        overlays = [:]
+        undoStack = []
+        recompute()
         persist()
     }
 
     /// Renames a part for this song.
     func rename(part: Part, to name: String) {
-        overlay.rename(part: part, to: name)
+        var overlay = calibration ?? SongCalibrationOverlay()
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            overlay.partRenames.removeValue(forKey: part.rawValue)
+        } else {
+            overlay.partRenames[part.rawValue] = trimmed
+        }
+        calibration = overlay.isEmpty ? nil : overlay
         persist()
     }
 
     /// Sets (or clears) a part's per-song range.
     func setRange(_ rangeOverride: PartRangeOverride?, for part: Part) {
-        overlay.setRange(rangeOverride, for: part)
+        var overlay = calibration ?? SongCalibrationOverlay()
+        if let rangeOverride {
+            overlay.rangeOverrides[part.rawValue] = rangeOverride
+        } else {
+            overlay.rangeOverrides.removeValue(forKey: part.rawValue)
+        }
+        calibration = overlay.isEmpty ? nil : overlay
         persist()
+    }
+
+    /// Clears the part names and the range overrides (back to the contract's
+    /// own names and C-6.1 presets).
+    func resetCalibration() {
+        calibration = nil
+        persist()
+    }
+
+    // MARK: - Internals
+
+    private func recompute() {
+        effective = CorrectionResolver.resolve(raw: rawTracks, overlays: overlays)
+    }
+
+    /// Removes a part's LAST operation; the part's overlay disappears when it
+    /// has none left (absence = "no corrections", C-11).
+    private func removeLastOperation(from part: Part) {
+        guard var overlay = overlays[part], !overlay.operations.isEmpty else { return }
+        overlay.operations.removeLast()
+        if overlay.operations.isEmpty {
+            overlays.removeValue(forKey: part)
+        } else {
+            overlays[part] = overlay
+        }
     }
 
     // MARK: - Persistence
@@ -147,11 +277,32 @@ final class NoteTracksModel: ObservableObject {
             // The demo tracks have no song to save to — the screen says so.
             return
         }
-        let overlay = self.overlay
+        let overlays = self.overlays
+        let calibration = self.calibration
+        let loadedParts = self.loadedParts
+        let calibrationWasLoaded = self.calibrationWasLoaded
+
         Task {
             do {
-                try await Task.detached(priority: .utility) {
-                    try store.save(overlay)
+                try await Task.detached(priority: .utility) { () -> Void in
+                    // A part the user just emptied loses its file (absence =
+                    // "no corrections"). A file we could NOT read is left
+                    // alone — the user's bytes are never destroyed by a save
+                    // that did not touch that part.
+                    for part in loadedParts {
+                        let overlay = overlays[part]
+                        if overlay == nil || overlay!.operations.isEmpty {
+                            try? store.clear(part: part)
+                        }
+                    }
+                    for (part, overlay) in overlays where !overlay.operations.isEmpty {
+                        try store.save(overlay)
+                    }
+                    if let calibration, !calibration.isEmpty {
+                        try store.save(calibration: calibration)
+                    } else if calibrationWasLoaded {
+                        try? store.clearCalibration()
+                    }
                 }.value
                 saveError = nil
             } catch {
@@ -168,8 +319,6 @@ final class NoteTracksModel: ObservableObject {
 /// part calibration.
 struct NoteTracksScreen: View {
 
-    /// The song's manifest id (nil for the demo tracks).
-    let bundleID: String?
     /// The song's title.
     let songTitle: String
     /// The engine's tracks (never mutated).
@@ -178,6 +327,9 @@ struct NoteTracksScreen: View {
     let duration_s: Double
     /// True for the synthetic demo tracks.
     let isMock: Bool
+    /// The song's bundle directory — C-11's home for the overlay. Nil ⇒ the
+    /// corrections are not saved (and the screen says so).
+    let bundleDirectory: URL?
 
     @StateObject private var model: NoteTracksModel
     @State private var renamingPart: Part?
@@ -185,15 +337,15 @@ struct NoteTracksScreen: View {
     @State private var editingRangePart: Part?
     @State private var isConfirmingClear = false
 
-    init(bundleID: String?, songTitle: String, rawTracks: [Part: NoteTrack],
-         duration_s: Double, isMock: Bool) {
-        self.bundleID = bundleID
+    init(songTitle: String, rawTracks: [Part: NoteTrack],
+         duration_s: Double, isMock: Bool, bundleDirectory: URL?) {
         self.songTitle = songTitle
         self.rawTracks = rawTracks
         self.duration_s = duration_s
         self.isMock = isMock
+        self.bundleDirectory = bundleDirectory
         _model = StateObject(wrappedValue: NoteTracksModel(
-            bundleID: bundleID, rawTracks: rawTracks, persist: !isMock))
+            bundleDirectory: bundleDirectory, rawTracks: rawTracks))
     }
 
     var body: some View {
@@ -205,10 +357,11 @@ struct NoteTracksScreen: View {
                     tracks: model.effective.tracks,
                     duration_s: duration_s,
                     isMock: isMock,
-                    correctedIdentities: model.effective.correctedIdentities,
+                    correctedNotes: model.effective.correctedNotes,
+                    noteOrigins: model.effective.origins,
                     ranges: model.ranges,
                     onCorrection: { op in model.apply(op) },
-                    partNames: model.overlay.partNameMap())
+                    partNames: model.calibration?.partNameMap() ?? [:])
 
                 partsSection
                 correctionsSection
@@ -238,7 +391,7 @@ struct NoteTracksScreen: View {
             if let part = editingRangePart {
                 PartRangeEditorSheet(part: part,
                                      displayName: model.displayName(for: part),
-                                     current: model.overlay.rangeOverride(for: part)) { newRange in
+                                     current: model.rangeOverride(for: part)) { newRange in
                     model.setRange(newRange, for: part)
                 }
             }
@@ -246,10 +399,10 @@ struct NoteTracksScreen: View {
         .confirmationDialog("Clear every correction?",
                             isPresented: $isConfirmingClear,
                             titleVisibility: .visible) {
-            Button("Clear all corrections", role: .destructive) { model.clearAll() }
+            Button("Clear all corrections", role: .destructive) { model.clearAllCorrections() }
             Button("Keep them", role: .cancel) {}
         } message: {
-            Text("The engine's own note tracks come back exactly as they were. Nothing is deleted from the song.")
+            Text("The engine's own note tracks come back exactly as they were. Nothing is deleted from the song. Your part names and ranges are kept.")
         }
     }
 
@@ -306,7 +459,7 @@ struct NoteTracksScreen: View {
     }
 
     private var correctionCountText: String {
-        let count = model.overlay.correctionCount
+        let count = model.correctionCount
         if count == 0 { return "No corrections yet" }
         return count == 1 ? "1 correction" : "\(count) corrections"
     }
@@ -316,7 +469,11 @@ struct NoteTracksScreen: View {
             return "These are synthetic demo notes, so corrections to them are not saved. "
                 + "Your corrections to a real song are saved with the song and never change the engine's own tracks."
         }
-        if model.overlay.correctionCount == 0 {
+        if bundleDirectory == nil {
+            return "This song's bundle folder is not available on this device, so corrections to it are not saved. "
+                + "The notes below are the engine's own, uncorrected."
+        }
+        if model.correctionCount == 0 {
             return "Tap a note to move it to another part, split it, or delete it. "
                 + "Your corrections are saved with the song; the engine's own tracks are never rewritten."
         }
@@ -339,6 +496,11 @@ struct NoteTracksScreen: View {
             } else {
                 ForEach(model.parts, id: \.self) { part in
                     partRow(part)
+                }
+                if model.calibration != nil {
+                    Button("Reset names & ranges") { model.resetCalibration() }
+                        .font(Token.Fonts.caption)
+                        .accessibilityHint("Back to the contract's part names and the C-6.1 presets")
                 }
             }
         }
@@ -384,29 +546,61 @@ struct NoteTracksScreen: View {
 
     // MARK: - The corrections list
 
+    /// One group of corrections: a part and the operations in it, in order.
+    private struct CorrectionGroup: Identifiable {
+        let part: Part
+        let operations: [CorrectionOperation]
+        var id: Part { part }
+    }
+
+    private var correctionGroups: [CorrectionGroup] {
+        model.partsWithCorrections.map { part in
+            CorrectionGroup(part: part, operations: model.overlays[part]?.operations ?? [])
+        }
+    }
+
     private var correctionsSection: some View {
         VStack(alignment: .leading, spacing: Token.Spacing.s2) {
             Text("Your corrections")
                 .font(Token.Fonts.caption)
                 .fontWeight(.semibold)
 
-            if model.overlay.ops.isEmpty {
+            if model.correctionCount == 0 {
                 Text("Nothing corrected yet. The roll above is exactly what the engine found.")
                     .font(Token.Fonts.caption)
                     .foregroundStyle(Color.pnTextSecondary)
             } else {
-                ForEach(Array(model.overlay.ops.enumerated()), id: \.offset) { _, op in
-                    HStack {
-                        Image(systemName: "pencil.circle")
-                            .foregroundStyle(Color.pnAccent)
-                            .accessibilityHidden(true)
-                        Text(op.summary)
+                Text("Grouped by the part the correction starts from (contract order); within a part, the order you corrected in.")
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.pnTextSecondary)
+
+                ForEach(correctionGroups) { group in
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text(model.displayName(for: group.part))
                             .font(Token.Fonts.caption)
-                            .foregroundStyle(Color.pnTextPrimary)
-                        Spacer()
+                            .fontWeight(.semibold)
+                        ForEach(Array(group.operations.enumerated()), id: \.offset) { _, op in
+                            HStack {
+                                Image(systemName: "pencil.circle")
+                                    .foregroundStyle(Color.pnAccent)
+                                    .accessibilityHidden(true)
+                                Text(op.summary)
+                                    .font(Token.Fonts.caption)
+                                    .foregroundStyle(Color.pnTextPrimary)
+                                Spacer()
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
                     }
-                    .accessibilityElement(children: .combine)
+                    .padding(.vertical, Token.Spacing.s1)
                 }
+
+                if !model.undoOrderIsSessionOrder {
+                    Text("Undo removes the last correction in contract part order (T1, T2, …), because these corrections were loaded from the file — there is no session order to follow.")
+                        .font(Token.Fonts.caption)
+                        .foregroundStyle(Color.pnTextSecondary)
+                }
+
                 HStack(spacing: Token.Spacing.s2) {
                     Button("Undo the last") { model.undoLast() }
                         .font(Token.Fonts.caption)
@@ -514,7 +708,7 @@ struct PartRangeEditorSheet: View {
                         case .preset:
                             onSave(.preset(for: part, nudgeSemitones: nudge))
                         case .custom:
-                            onSave(.custom(midiLow: low, midiHigh: high))
+                            onSave(.custom(for: part, midiLow: low, midiHigh: high))
                         }
                         dismiss()
                     }
@@ -531,7 +725,7 @@ struct PartRangeEditorSheet: View {
         let rangeOverride: PartRangeOverride
         switch mode {
         case .preset: rangeOverride = .preset(for: part, nudgeSemitones: nudge)
-        case .custom: rangeOverride = .custom(midiLow: low, midiHigh: high)
+        case .custom: rangeOverride = .custom(for: part, midiLow: low, midiHigh: high)
         }
         return PartCalibration.effectiveRange(for: part, rangeOverride: rangeOverride)?.label ?? "—"
     }
@@ -540,7 +734,7 @@ struct PartRangeEditorSheet: View {
         let rangeOverride: PartRangeOverride
         switch mode {
         case .preset: rangeOverride = .preset(for: part, nudgeSemitones: nudge)
-        case .custom: rangeOverride = .custom(midiLow: low, midiHigh: high)
+        case .custom: rangeOverride = .custom(for: part, midiLow: low, midiHigh: high)
         }
         guard let range = PartCalibration.effectiveRange(for: part, rangeOverride: rangeOverride) else {
             return "—"

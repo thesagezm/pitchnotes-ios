@@ -186,6 +186,16 @@ public struct CorrectionStore: Sendable {
         try FileManager.default.removeItem(at: url)
     }
 
+    /// Removes the per-song calibration (the renames + range overrides).
+    ///
+    /// The part overlays are NOT touched — the calibration is the user's
+    /// display preference, not a correction to the engine's notes.
+    public func clearCalibration() throws {
+        let url = songOverlayURL()
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
+    }
+
     /// Removes EVERY correction for this song — the part overlays AND the
     /// calibration. The engine's tracks are never touched.
     public func clearAll() throws {
