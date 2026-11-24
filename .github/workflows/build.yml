@@ -292,20 +292,260 @@ jobs:
       - name: Run spike harness (mock until demucs_real.py lands; real htdemucs after — SHA-verified)
         run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike separation'
 
+  # ---------------------------------------------------------------------
+  # L-302 (M3): basicpitch-spike goes REAL.
+  #
+  # THE RULE THIS JOB ENFORCES (X-206's general rule — "a conditional step
+  # that can only skip is not evidence"): the P-002 MOCK may NOT stand in for
+  # the real basic-pitch path. A green mock here would be green-but-unproven,
+  # and the M3 gate requires a REAL, gate-blocking basicpitch-spike.
+  #
+  # THE SPLIT (Leto's lane vs Paul's — stated so nobody guesses):
+  #   - LETO (.github/**): this job — the preconditions, the SHA-pinned
+  #     download, the REAL-mode assertion, the parity leg.
+  #   - PAUL (Tests/Spikes/**): `Tests/Spikes/basicpitch_real.py` (the runner),
+  #     the `basic-pitch` entry in Models/manifest.json (Models/**), and the
+  #     `real_runners` + `_try_real()` wiring inside run_spike.py.
+  # The vendored basicpitch.cpp sources are ALREADY on main (@bb3fc98), so
+  # the runner is writable today.
+  #
+  # UNTIL PAUL LANDS THOSE, THIS JOB IS RED BY DESIGN — it says exactly which
+  # piece is missing and who owns it. `continue-on-error` is REMOVED at the M3
+  # gate (L-304), when P-301 has landed; the QUEUE row carries that flip.
+  # ---------------------------------------------------------------------
   basicpitch-spike:
-    name: BasicPitch spike (P-002 mock harness)
+    name: "BasicPitch spike (REAL basic-pitch ONNX via the vendored basicpitch.cpp — P-301 runner; RED until it lands, BLOCKING at the M3 gate)"
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    continue-on-error: true
+    env:
+      PITCHNOTES_SPIKE_REAL: required
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Cache pinned model downloads (once per manifest rev)
+        uses: actions/cache@v4
+        with:
+          path: ~/pitchnotes-model-cache
+          key: pitchnotes-models-${{ runner.os }}-${{ hashFiles('Models/manifest.json') }}
+          restore-keys: |
+            pitchnotes-models-${{ runner.os }}-
+      # Runner image python is 3.15 (run 44951410853 red) — onnxruntime ships
+      # no cp315 wheels yet. Pin 3.13 for the ORT venv.
+      - name: Set up Python 3.13 (onnxruntime wheels)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Set up harness deps (numpy + onnxruntime in venv)
+        run: |
+          python3 -m venv "$HOME/spike-venv"
+          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+
+      # The honest-failure gate: name EVERY missing precondition and its
+      # owner, then fail. No silent mock, no "skipped because not present".
+      - name: Preconditions — the REAL basicpitch path must exist (P-301)
+        run: |
+          "$HOME/spike-venv/bin/python" -I - <<'PY'
+          import json, os, sys
+          missing = []
+          try:
+              names = {m["name"] for m in json.load(open("Models/manifest.json"))["models"]}
+          except Exception as e:
+              names = set()
+              print(f"::error::Models/manifest.json is unreadable ({e}) — Models/** is PAUL's lane (AGENTS §12).")
+              sys.exit(1)
+          if "basic-pitch" not in names:
+              missing.append("manifest-entry")
+          if not os.path.exists("Tests/Spikes/basicpitch_real.py"):
+              missing.append("runner")
+          if missing:
+              if "manifest-entry" in missing:
+                  print("::error::Models/manifest.json has NO 'basic-pitch' entry — that entry is PAUL's lane (Models/**, AGENTS §12) and ships with his branch (origin/paul @fd8cac6). Without it there is no SHA-pinned weight to download, so the REAL spike cannot run. NOT a CI bug and NOT a Leto-lane gap.")
+              if "runner" in missing:
+                  print("::error::Tests/Spikes/basicpitch_real.py is MISSING — the real runner is PAUL's lane (Tests/Spikes/**, AGENTS §12). The vendored basicpitch.cpp sources ARE on main (@bb3fc98), so the runner can be written now.")
+              print("::error::The REAL basicpitch path is incomplete — P-301 is the blocker. Failing instead of accepting the P-002 mock (a green mock here is green-but-unproven; X-206 rule).")
+              sys.exit(1)
+          print("preconditions OK: 'basic-pitch' manifest entry + Tests/Spikes/basicpitch_real.py both present")
+          PY
+
+      # SHA-pinned weights (D-42 Tier B — never in git, never claimed clean).
+      - name: Download + SHA256-verify basic-pitch weights (manifest-pinned, D-42 Tier B)
+        run: |
+          "$HOME/spike-venv/bin/python" -I scripts/models/download.py \
+            --manifest Models/manifest.json \
+            --entry basic-pitch \
+            --cache-dir "$HOME/pitchnotes-model-cache"
+
+      - name: Run spike harness (REAL required — PITCHNOTES_SPIKE_REAL=required)
+        run: |
+          set -o pipefail
+          "$HOME/spike-venv/bin/python" -I Tests/Spikes/run_spike.py --spike basicpitch 2>&1 | tee basicpitch-spike.log
+
+      # The harness prints "(real)" only when the real path ran (LAST_MODE).
+      # Asserting it HERE is what makes this job real-gating: the harness
+      # itself cannot fail on a missing basicpitch entry in real_runners, so
+      # without this assertion the job would pass on the MOCK.
+      - name: Assert the spike ran REAL (the P-002 mock may NOT pass this job)
+        run: |
+          if ! grep -q "basicpitch-spike (real)" basicpitch-spike.log; then
+            echo "::error::The basicpitch spike did NOT run in REAL mode (no 'basicpitch-spike (real)' line in the harness output) — the P-002 MOCK ran instead. The real path is not wired, so this job would be GREEN-BUT-UNPROVEN. The wiring is PAUL's lane: add 'basicpitch' to real_runners and call _try_real() inside run_basicpitch() in Tests/Spikes/run_spike.py. Failing instead of accepting the mock."
+            grep -E "basicpitch|PASSED|FAILED|mock|real" basicpitch-spike.log | tail -n 20 || true
+            exit 1
+          fi
+          echo "OK: the basicpitch spike ran in REAL mode"
+
+      # CI CONTRACT (Leto, L-302): `python3 Tests/Spikes/basicpitch_real.py
+      # --parity` compares the vendored basicpitch.cpp runner's output against
+      # the committed C-7 reference sidecars (P-208 / D-24 / C-7) with
+      # tolerance abs 1e-3 OR rel 1e-4, and exits NON-ZERO on a mismatch.
+      # The next step proves that comparison is not vacuous.
+      - name: Parity vs the committed C-7 reference (P-208 harness, tolerance-based)
+        run: |
+          set -o pipefail
+          "$HOME/spike-venv/bin/python" -I Tests/Spikes/basicpitch_real.py --parity 2>&1 | tee basicpitch-parity.log
+
+      # "A CORRUPTED PORT MUST FAIL" — PROVED, not asserted: corrupt one byte
+      # of the committed reference and require the SAME comparison to reject
+      # it. If it still passes, the comparison is vacuous and the job is red.
+      - name: Prove the parity comparison REJECTS a corrupted reference
+        run: |
+          REF_DIR=Tests/Spikes/ReferenceTensors/basicpitch
+          BIN=$(ls "$REF_DIR"/*.bin 2>/dev/null | head -n 1 || true)
+          if [ -z "$BIN" ]; then
+            echo "::error::no C-7 .bin sidecar under $REF_DIR — P-301's parity reference has not landed (PAUL's lane, Tests/Spikes/**). The parity leg cannot be PROVEN without a reference to compare against."
+            exit 1
+          fi
+          cp "$BIN" "$BIN.orig"
+          "$HOME/spike-venv/bin/python" -I - "$BIN" <<'PY'
+          import sys
+          p = sys.argv[1]
+          data = bytearray(open(p, "rb").read())
+          # Flip ONE byte at each of 5 evenly spaced positions: a comparison
+          # that only inspects part of the payload must still SEE the
+          # corruption (a single flipped byte in an unexamined region would
+          # let a weak comparison pass — which is exactly the vacuity this
+          # step is here to catch).
+          n = len(data)
+          for k in range(1, 6):
+              i = min(n - 1, (n * k) // 6)
+              data[i] ^= 0xFF
+              print(f"corrupted byte at offset {i} of {p}")
+          open(p, "wb").write(bytes(data))
+          PY
+          set +e
+          "$HOME/spike-venv/bin/python" -I Tests/Spikes/basicpitch_real.py --parity > corrupted-parity.log 2>&1
+          RC=$?
+          set -e
+          tail -n 20 corrupted-parity.log || true
+          mv -f "$BIN.orig" "$BIN"
+          if [ "$RC" -eq 0 ]; then
+            echo "::error::the parity comparison PASSED against a CORRUPTED reference — the comparison is VACUOUS (it does not actually compare the runner output to the reference). P-208's 'a corrupted port must FAIL' is NOT met."
+            exit 1
+          fi
+          echo "OK: the parity comparison REJECTED the corrupted reference (exit $RC) — the comparison is not vacuous"
+
+      - name: Upload basicpitch spike + parity logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basicpitch-spike-log
+          path: |
+            basicpitch-spike.log
+            basicpitch-parity.log
+            corrupted-parity.log
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------
+  # L-302 (M3): bench v2 — the HONEST-metrics job.
+  #
+  # P-306 (PAUL's lane) owns the harness + the BENCHMARKS.md report; this job
+  # only CONSUMES it and enforces the one thing the M3 gate cares about:
+  # part-AGNOSTIC and part-AWARE metrics reported SEPARATELY (PLAN M3 /
+  # AGENTS §11 honesty rail). It also requires the external part-agnostic
+  # reference point (dettato's Dagstuhl ChoirSet row: onset 55.9 / frame 82.0
+  # / offset 44.4) to be cited in the report, so the two families can never be
+  # silently mixed.
+  #
+  # Informational until the M3 gate (L-304 removes continue-on-error), and
+  # RED BY DESIGN until P-306 lands — it names the missing piece.
+  # ---------------------------------------------------------------------
+  bench-v2:
+    name: "Bench v2 (P-306 — part-AGNOSTIC + part-AWARE reported separately; RED until P-306 lands, BLOCKING at the M3 gate)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up harness deps (numpy in venv — runner python lacks it, run 44869099173)
+      - name: Set up Python 3.13 (onnxruntime wheels)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Set up bench deps (numpy + onnxruntime in venv)
         run: |
           python3 -m venv "$HOME/spike-venv"
-          "$HOME/spike-venv/bin/pip" install --quiet numpy
-      - name: Run spike harness (mock model, no weights in M0)
-        run: '"$HOME/spike-venv/bin/python" Tests/Spikes/run_spike.py --spike basicpitch'
+          "$HOME/spike-venv/bin/pip" install --quiet numpy onnxruntime
+
+      - name: Run bench v2 harness (PAUL's P-306 harness, --assert)
+        run: |
+          set -o pipefail
+          if [ ! -f Tests/Spikes/bench_v2.py ]; then
+            echo "::error::Tests/Spikes/bench_v2.py is MISSING — the bench v2 harness is PAUL's lane (Tests/Spikes/**, AGENTS §12) and lands with P-306. I do NOT write his harness (L-302's note). Failing instead of reporting a bench that does not exist."
+            exit 1
+          fi
+          "$HOME/spike-venv/bin/python" -I Tests/Spikes/bench_v2.py --assert 2>&1 | tee bench-v2.log
+
+      # The gate's honesty requirement, enforced in CI: the report must carry
+      # BOTH metric families as SEPARATE sections, and the external
+      # part-agnostic reference point must be cited. The key matching is
+      # tolerant of naming ("part_agnostic" / "part-agnostic" / "agnostic"),
+      # but strict about substance: both families must be present and
+      # non-empty.
+      - name: Assert the report has BOTH part-AGNOSTIC and part-AWARE sections
+        run: |
+          REPORT=Tests/Spikes/bench_report_v2.json
+          if [ ! -f "$REPORT" ]; then
+            echo "::error::$REPORT was not produced by the bench v2 harness — P-306 must write the deterministic report artifact (same convention as bench_report_v1.json)."
+            exit 1
+          fi
+          "$HOME/spike-venv/bin/python" -I - "$REPORT" <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          d = json.load(open(path))
+          if not isinstance(d, dict):
+              print(f"::error::{path}: top level must be an object")
+              sys.exit(1)
+          def find(sub):
+              for k, v in d.items():
+                  if sub in k.lower():
+                      return k, v
+              return None, None
+          ka, va = find("agnostic")
+          kw, vw = find("aware")
+          missing = []
+          if ka is None or not va:
+              missing.append("part-AGNOSTIC")
+          if kw is None or not vw:
+              missing.append("part-AWARE")
+          if missing:
+              print(f"::error::{path}: missing/non-empty-false section(s): {', '.join(missing)}. The M3 gate requires part-AGNOSTIC and part-AWARE metrics reported SEPARATELY (PLAN M3, AGENTS §11) — a single blended number is a contract violation, not a style nit.")
+              print("::error::top-level keys present: " + ", ".join(sorted(d.keys())))
+              sys.exit(1)
+          text = json.dumps(d)
+          for ref in ("55.9", "82.0", "44.4"):
+              if ref not in text:
+                  print(f"::error::{path}: the external part-agnostic reference point (dettato Dagstuhl ChoirSet: onset 55.9 / frame 82.0 / offset 44.4) is not cited — the reference number {ref} is absent, so the report cannot be checked against the published part-agnostic baseline (PLAN P-306 / RESEARCH Addendum A.1).")
+                  sys.exit(1)
+          print(f"OK: report carries '{ka}' + '{kw}' and cites the Dagstuhl ChoirSet part-agnostic reference")
+          PY
+
+      - name: Upload bench v2 report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-report-v2
+          path: Tests/Spikes/bench_report_v2.json
+          if-no-files-found: warn
 
   silero-vad-spike:
     name: Silero VAD spike (real pinned ONNX, L-101 BLOCKING)
@@ -537,6 +777,84 @@ jobs:
             echo "::error::IPA ${IPA_MB} MB exceeds the 200 MB §8 core guard — weights must download at runtime, never ship"
             exit 1
           }
+
+      # L-302 (M3): the §8 "core bundle < 200 MB" guard done PROPERLY, plus
+      # the explicit ORT contribution.
+      #
+      # WHY A SECOND CHECK: L-202's check measures the IPA, and the IPA carries
+      # NO weights (they download at runtime) — so the IPA number alone
+      # UNDERSTATES the real on-device footprint. What §8 budgets is a BUNDLE:
+      # the app + the model set it will hold. So the guard is app + core models
+      # < 200 MB, computed from the manifest's pinned sizes.
+      # D-39 §2: the trimmed-ORT route may only be reconsidered if the size
+      # check shows ORT is the blocker — so the ORT footprint is measured and
+      # reported explicitly (the SPM checkout is an UPPER BOUND: it holds
+      # slices that are not linked; ORT is linked STATICALLY into the binary).
+      - name: Core-bundle budget + ORT contribution (L-302 — §8 guard, D-39 §2)
+        if: success()
+        run: |
+          APP_PATH="$(find build -path '*Products/Applications/*.app' -maxdepth 6 | head -n 1)"
+          test -n "$APP_PATH" || { echo "::error::archived .app not found"; exit 1; }
+          APP_MB=$(du -sm "$APP_PATH" | cut -f1)
+          BIN_PATH="$APP_PATH/PitchNotes"
+          BIN_MB=0
+          if [ -f "$BIN_PATH" ]; then BIN_MB=$(du -sm "$BIN_PATH" | cut -f1); fi
+          ORT_DIR=$(find build/DerivedData/SourcePackages/checkouts -maxdepth 1 -type d -name 'onnxruntime*' 2>/dev/null | head -n 1 || true)
+          ORT_MB=0
+          if [ -n "$ORT_DIR" ]; then ORT_MB=$(du -sm "$ORT_DIR" | cut -f1); fi
+          echo "--- ORT static footprint ---"
+          if [ -n "$ORT_DIR" ]; then
+            echo "ORT SPM checkout (UPPER BOUND — includes slices that are NOT linked): ${ORT_MB} MB — ${ORT_DIR}"
+            find "$ORT_DIR" -type f -name '*.a' -exec du -km {} + 2>/dev/null | sort -rn | head -n 5 || true
+          else
+            echo "ORT SPM checkout not found under SourcePackages/checkouts (unexpected — project.yml pins the ORT mirror)"
+          fi
+          echo "app binary (contains the statically-linked ORT): ${BIN_MB} MB"
+          # The core model set per AGENTS §8. NanoPitch is NOT in it: D-17
+          # rejected NanoPitch (GTSinger NC training data), so it is never shipped.
+          EVAL=$(python3 -I - <<'PY'
+          import json
+          core = ("swiftf0", "htdemucs", "basic-pitch", "silero-vad")
+          d = json.load(open("Models/manifest.json"))
+          by = {m["name"]: m for m in d["models"]}
+          total = 0
+          missing = []
+          for name in core:
+              m = by.get(name)
+              if m is None:
+                  missing.append(name)
+              else:
+                  total += int(m["size"])
+          print(f"TOTAL_MB={total // (1024 * 1024)}")
+          print(f"MISSING={','.join(missing)}")
+          for name in core:
+              m = by.get(name)
+              if m is not None:
+                  print(f"MODEL {name} {m['size'] / 1024 / 1024:.2f}")
+          PY
+          )
+          TOTAL_MB=$(printf '%s\n' "$EVAL" | grep '^TOTAL_MB=' | cut -d= -f2)
+          MISSING=$(printf '%s\n' "$EVAL" | grep '^MISSING=' | cut -d= -f2)
+          printf '%s\n' "$EVAL" | grep '^MODEL ' || true
+          if [ -n "$MISSING" ]; then
+            echo "::warning::core model entries NOT in Models/manifest.json on this branch: ${MISSING} — the projected core footprint below UNDERSTATES the real one (Models/** is PAUL's lane, AGENTS §12)."
+          fi
+          PROJECTED=$((APP_MB + TOTAL_MB))
+          echo "app bundle: ${APP_MB} MB; core model set (runtime download, never in the IPA): ${TOTAL_MB} MB; projected core footprint: ${PROJECTED} MB"
+          {
+            echo "### Core-bundle budget (L-302)"
+            echo ""
+            echo "- app bundle: ${APP_MB} MB"
+            echo "- app binary (statically-linked ORT inside): ${BIN_MB} MB"
+            echo "- ORT SPM checkout (UPPER BOUND, incl. unlinked slices): ${ORT_MB} MB"
+            echo "- core model set (downloaded at runtime, never shipped): ${TOTAL_MB} MB"
+            echo "- **projected core footprint: ${PROJECTED} MB** (§8 guard: < 200 MB)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$PROJECTED" -lt 200 || {
+            echo "::error::projected core footprint ${PROJECTED} MB (app ${APP_MB} MB + core models ${TOTAL_MB} MB) exceeds the 200 MB §8 core guard"
+            exit 1
+          }
+          echo "OK: projected core footprint ${PROJECTED} MB < 200 MB (§8)"
 
       - name: Upload dSYM artifact
         if: success()
