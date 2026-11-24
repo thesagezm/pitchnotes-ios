@@ -142,15 +142,15 @@ public enum PartCalibration {
     /// Returns nil for parts with no C-6.1 preset (VP, LEAD, INSTRUMENTAL,
     /// VOCALS) — they are not graded singing parts.
     public static func effectiveRange(for part: Part,
-                                      override: PartRangeOverride?) -> EffectivePartRange? {
+                                      rangeOverride: PartRangeOverride?) -> EffectivePartRange? {
         guard let preset = EngineCore.PartRangePresets.preset(for: part) else { return nil }
 
-        if let override, override.mode == .custom {
-            let fmin = EngineContract.hzForMidi(Double(override.midiLow))
-            let fmax = EngineContract.hzForMidi(Double(override.midiHigh))
+        if let rangeOverride, rangeOverride.mode == .custom {
+            let fmin = EngineContract.hzForMidi(Double(rangeOverride.midiLow))
+            let fmax = EngineContract.hzForMidi(Double(rangeOverride.midiHigh))
             return EffectivePartRange(part: part,
-                                      midiLow: override.midiLow,
-                                      midiHigh: override.midiHigh,
+                                      midiLow: rangeOverride.midiLow,
+                                      midiHigh: rangeOverride.midiHigh,
                                       fmin: fmin,
                                       fmax: fmax,
                                       isCustom: true,
@@ -158,7 +158,7 @@ public enum PartCalibration {
                                       nudgeSemitones: 0)
         }
 
-        let nudge = override.map { EngineCore.PartRangePresets.clampNudge($0.nudgeSemitones) } ?? 0
+        let nudge = rangeOverride.map { EngineCore.PartRangePresets.clampNudge($0.nudgeSemitones) } ?? 0
         guard let band = EngineCore.PartRangePresets.calibratedBand(for: part,
                                                                     nudgeSemitones: nudge) else {
             return nil
@@ -178,7 +178,7 @@ public enum PartCalibration {
                                        parts: [Part]) -> [Part: EffectivePartRange] {
         var result: [Part: EffectivePartRange] = [:]
         for part in parts {
-            if let range = effectiveRange(for: part, override: overlay.rangeOverride(for: part)) {
+            if let range = effectiveRange(for: part, rangeOverride: overlay.rangeOverride(for: part)) {
                 result[part] = range
             }
         }

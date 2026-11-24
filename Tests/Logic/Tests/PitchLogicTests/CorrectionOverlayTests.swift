@@ -256,7 +256,7 @@ final class CorrectionOverlayTests: XCTestCase {
     // MARK: - Calibration (C-6.1 presets + a per-song custom range)
 
     func testTheDefaultRangeIsTheC61Preset() {
-        let range = PartCalibration.effectiveRange(for: .bass, override: nil)
+        let range = PartCalibration.effectiveRange(for: .bass, rangeOverride: nil)
         XCTAssertEqual(range?.midiLow, 40)
         XCTAssertEqual(range?.midiHigh, 55)
         XCTAssertEqual(range?.presetName, "E2–G3")
@@ -265,7 +265,7 @@ final class CorrectionOverlayTests: XCTestCase {
 
     func testThePresetCanBeNudgedWithinTheContractLimit() {
         let range = PartCalibration.effectiveRange(
-            for: .t1, override: .preset(for: .t1, nudgeSemitones: 2))
+            for: .t1, rangeOverride: .preset(for: .t1, nudgeSemitones: 2))
         XCTAssertEqual(range?.midiLow, 57)
         XCTAssertEqual(range?.midiHigh, 78)
         XCTAssertEqual(range?.nudgeSemitones, 2)
@@ -274,13 +274,13 @@ final class CorrectionOverlayTests: XCTestCase {
 
     func testANudgeBeyondTheContractLimitIsClamped() {
         let range = PartCalibration.effectiveRange(
-            for: .t1, override: .preset(for: .t1, nudgeSemitones: 9))
+            for: .t1, rangeOverride: .preset(for: .t1, nudgeSemitones: 9))
         XCTAssertEqual(range?.nudgeSemitones, 2, "C-6.1 clamps the nudge to ±2")
     }
 
     func testACustomRangeReplacesThePresetForThisSong() {
         let range = PartCalibration.effectiveRange(
-            for: .bass, override: .custom(midiLow: 43, midiHigh: 60))
+            for: .bass, rangeOverride: .custom(midiLow: 43, midiHigh: 60))
         XCTAssertEqual(range?.midiLow, 43)
         XCTAssertEqual(range?.midiHigh, 60)
         XCTAssertEqual(range?.isCustom, true)
@@ -302,8 +302,8 @@ final class CorrectionOverlayTests: XCTestCase {
     }
 
     func testAPartWithoutAPresetHasNoRange() {
-        XCTAssertNil(PartCalibration.effectiveRange(for: .instrumental, override: nil))
-        XCTAssertNil(PartCalibration.effectiveRange(for: .vocals, override: nil))
+        XCTAssertNil(PartCalibration.effectiveRange(for: .instrumental, rangeOverride: nil))
+        XCTAssertNil(PartCalibration.effectiveRange(for: .vocals, rangeOverride: nil))
     }
 
     func testNotesOutsideTheRangeAreCountedNotRejected() {

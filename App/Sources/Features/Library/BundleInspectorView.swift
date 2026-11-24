@@ -43,9 +43,13 @@ struct BundleInspectorView: View {
         Section {
             if song.hasNoteTracks {
                 NavigationLink {
-                    PianoRollView(tracks: song.noteTracks,
-                                  duration_s: song.manifest.duration_s,
-                                  isMock: false)
+                    // J-302: the corrected-first screen — the roll plus the
+                    // user's corrections and the per-song part calibration.
+                    NoteTracksScreen(bundleID: song.id,
+                                     songTitle: song.manifest.title,
+                                     rawTracks: song.noteTracks,
+                                     duration_s: song.manifest.duration_s,
+                                     isMock: false)
                 } label: {
                     Label("Piano roll", systemImage: "music.note.list")
                         .fontWeight(.semibold)
@@ -59,9 +63,11 @@ struct BundleInspectorView: View {
             }
 
             NavigationLink {
-                PianoRollView(tracks: MockNoteTracks.demoTracks(),
-                              duration_s: MockNoteTracks.demoDuration_s,
-                              isMock: true)
+                NoteTracksScreen(bundleID: nil,
+                                 songTitle: "Demo",
+                                 rawTracks: MockNoteTracks.demoTracks(),
+                                 duration_s: MockNoteTracks.demoDuration_s,
+                                 isMock: true)
             } label: {
                 Label("Piano roll (demo mock tracks)", systemImage: "wand.and.stars")
             }

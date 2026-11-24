@@ -300,6 +300,10 @@ public struct PianoRollModel: Equatable, Sendable {
     /// Display-only transpose in semitones (UX §A.2.4 — the audio is never
     /// touched; the display is clamped to the part's singable range).
     public var transposeSemitones: Int
+    /// J-302: the USER's per-song part names (the overlay's renames).
+    /// Empty = the C-1 contract names. UI-only — the raw values stay the
+    /// contract.
+    public var partNames: [Part: String] = [:]
 
     // MARK: Init
 
@@ -324,6 +328,13 @@ public struct PianoRollModel: Equatable, Sendable {
     }
 
     // MARK: Parts
+
+    /// The display name of a part — the USER's per-song rename when there is
+    /// one, else the C-1 contract name (J-302).
+    public func partName(for part: Part) -> String {
+        let renamed = partNames[part]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return renamed.isEmpty ? part.displayName : renamed
+    }
 
     /// Parts that actually have a track, in C-1 display order.
     public var parts: [Part] {
@@ -451,7 +462,7 @@ public struct PianoRollModel: Equatable, Sendable {
     /// accessible — the roll ships a text list; this is the same wording).
     public func accessibilityDescription(for note: PianoRollNote) -> String {
         var parts: [String] = []
-        parts.append("\(note.part.displayName) \(note.pitchLabel)")
+        parts.append("\(partName(for: note.part)) \(note.pitchLabel)")
         parts.append(String(format: "from %.2f to %.2f seconds", note.note.start_s, note.note.end_s))
         parts.append("confidence \(PianoRollModel.percentText(note.note.confidence))")
         parts.append(note.band.label)

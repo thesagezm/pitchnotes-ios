@@ -90,7 +90,7 @@ public struct NoteKey: Codable, Equatable, Hashable, Sendable {
 /// { "op": "delete", "part": "T2", "start_ms": 30000, "end_ms": 30500, "midi": 62 }
 /// { "op": "split",  "part": "BASS", "start_ms": 40000, "end_ms": 41000, "midi": 43, "at_ms": 40500 }
 /// ```
-public enum CorrectionOp: Equatable, Sendable {
+public enum CorrectionOp: Codable, Equatable, Sendable {
 
     /// Move a note to another part ("this is T2, not T1").
     case move(NoteKey, toPart: Part)
@@ -288,6 +288,16 @@ public struct CorrectionOverlay: Codable, Equatable, Sendable {
     /// The range override for a part (nil = the C-6.1 preset).
     public func rangeOverride(for part: Part) -> PartRangeOverride? {
         rangeOverrides[part.rawValue]
+    }
+
+    /// The renames as a `[Part: String]` map (the raw values are the keys in
+    /// the stored JSON, so this is the typed view of them).
+    public func partNameMap() -> [Part: String] {
+        var map: [Part: String] = [:]
+        for (raw, name) in partRenames {
+            if let part = Part(rawValue: raw) { map[part] = name }
+        }
+        return map
     }
 }
 

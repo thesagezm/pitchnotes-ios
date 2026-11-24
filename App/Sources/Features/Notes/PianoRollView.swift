@@ -68,6 +68,19 @@ struct PianoRollView: View {
     var onLoopRegion: ((Double, Double) -> Void)? = nil
     /// Optional live playhead position (seconds).
     var currentTime: Double? = nil
+    /// J-302: the notes the USER corrected — they are marked on the roll so
+    /// a user's opinion never looks like the engine's output.
+    var correctedIdentities: Set<NoteIdentity> = []
+    /// J-302: the effective per-song ranges (C-6.1 preset + the song's
+    /// override). A note outside its part's band is MARKED, never hidden
+    /// (D-12: a range is a filter, not a gate).
+    var ranges: [Part: EffectivePartRange] = [:]
+    /// J-302: called when the user corrects a note (move / split / delete).
+    /// The roll itself never changes the tracks — the owner does, through
+    /// the correction overlay.
+    var onCorrection: ((CorrectionOp) -> Void)? = nil
+    /// The USER's per-song part names (J-302). Empty = the C-1 names.
+    var partNames: [Part: String] = [:]
 
     @State private var model: PianoRollModel
     @State private var zoom: PianoRollZoom = .standard
@@ -81,7 +94,11 @@ struct PianoRollView: View {
          barStarts: [Double]? = nil, isMock: Bool = false,
          onSeek: ((Double) -> Void)? = nil,
          onLoopRegion: ((Double, Double) -> Void)? = nil,
-         currentTime: Double? = nil) {
+         currentTime: Double? = nil,
+         correctedIdentities: Set<NoteIdentity> = [],
+         ranges: [Part: EffectivePartRange] = [:],
+         onCorrection: ((CorrectionOp) -> Void)? = nil,
+         partNames: [Part: String] = [:]) {
         self.tracks = tracks
         self.duration_s = duration_s
         self.barStarts = barStarts
@@ -89,8 +106,14 @@ struct PianoRollView: View {
         self.onSeek = onSeek
         self.onLoopRegion = onLoopRegion
         self.currentTime = currentTime
-        _model = State(initialValue: PianoRollModel(tracks: tracks, duration_s: duration_s,
-                                                    barStarts: barStarts))
+        self.correctedIdentities = correctedIdentities
+        self.ranges = ranges
+        self.onCorrection = onCorrection
+        self.partNames = partNames
+        var initialModel = PianoRollModel(tracks: tracks, duration_s: duration_s,
+                                          barStarts: barStarts)
+        initialModel.partNames = partNames
+        _model = State(initialValue: initialModel)
     }
 
     var body: some View {
@@ -109,8 +132,54 @@ struct PianoRollView: View {
         .background(Color.pnBackground)
         .navigationTitle("Note tracks")
         .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: partNames) { newValue in model.partNames = newValue }
+        .onChange(of: tracks) { newTracks in
+            // J-302: the corrected tracks arrive as NEW tracks — the model's
+            // notes are immutable, so the roll is rebuilt while the user's
+            // display state (hidden parts, transpose) is kept.
+            var rebuilt = PianoRollModel(tracks: newTracks, duration_s: duration_s,
+                                         barStarts: barStarts)
+            rebuilt.hiddenParts = model.hiddenParts
+            rebuilt.transposeSemitones = model.transposeSemitones
+            rebuilt.partNames = model.partNames
+            model = rebuilt
+        }
         .sheet(item: $selectedNote) { note in
-            NoteDetailSheet(note: note, model: model)
+            NoteDetailSheet(note: note, model: model,
+                            isCorrected: correctedIdentities.contains(NoteIdentity(note: note.note)),
+                            onMove: moveHandler(for: note),
+                            onSplit: splitHandler(for: note),
+                            onDelete: deleteHandler(for: note))
+        }
+    }
+
+    // MARK: - Correction handlers (J-302)
+
+    /// Move the note to another part (nil when the roll is read-only).
+    private func moveHandler(for note: PianoRollNote) -> ((Part) -> Void)? {
+        guard let onCorrection else { return nil }
+        return { target in
+            selectedNote = nil
+            onCorrection(.move(NoteKey(part: note.part, note: note.note), toPart: target))
+        }
+    }
+
+    /// Split the note in two at its midpoint.
+    private func splitHandler(for note: PianoRollNote) -> (() -> Void)? {
+        guard let onCorrection else { return nil }
+        return {
+            selectedNote = nil
+            let middle = NoteIdentityMath.ms((note.note.start_s + note.note.end_s) / 2)
+            onCorrection(.split(NoteKey(part: note.part, note: note.note), at_ms: middle))
+        }
+    }
+
+    /// Delete the note.
+    private func deleteHandler(for note: PianoRollNote) -> (() -> Void)? {
+        guard let onCorrection else { return nil }
+        return {
+            selectedNote = nil
+            onCorrection(.delete(NoteKey(part: note.part, note: note.note)))
         }
     }
 
@@ -165,7 +234,7 @@ struct PianoRollView: View {
                     .fill(visible ? PartPalette.color(for: part) : PartPalette.color(for: part).opacity(0.3))
                     .frame(width: 10, height: 10)
                     .accessibilityHidden(true)
-                Text(part.displayName)
+                Text(model.partName(for: part))
                     .font(Token.Fonts.caption)
                     .fontWeight(.semibold)
                 Image(systemName: visible ? "eye" : "eye.slash")
@@ -179,8 +248,8 @@ struct PianoRollView: View {
             .foregroundStyle(Color.pnTextPrimary)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(part.displayName), \(visible ? "shown" : "hidden")")
-        .accessibilityHint("Double tap to \(visible ? "hide" : "show") the \(part.displayName) lane")
+        .accessibilityLabel("\(model.partName(for: part)), \(visible ? "shown" : "hidden")")
+        .accessibilityHint("Double tap to \(visible ? "hide" : "show") the \(model.partName(for: part)) lane")
     }
 
     // MARK: - The roll itself
@@ -299,6 +368,19 @@ struct PianoRollView: View {
                                                   width: 6, height: 6))
                 context.fill(badge, with: .color(Color.pnTextPrimary))
                 context.stroke(badge, with: .color(Color.pnSurface), lineWidth: 1)
+            }
+            // J-302: a note the USER corrected is marked, so a user's opinion
+            // never looks like the engine's output (honesty, AGENTS §11).
+            if correctedIdentities.contains(NoteIdentity(note: note.note)) {
+                let markCenter = CGPoint(x: cgRect.maxX - 4, y: cgRect.minY + 4)
+                let mark = Path(ellipseIn: CGRect(x: markCenter.x - 2.5, y: markCenter.y - 2.5,
+                                                 width: 5, height: 5))
+                context.fill(mark, with: .color(Color.pnTextPrimary))
+            }
+            // J-302: a note outside its part's per-song range is marked, never
+            // hidden (D-12: a range is a filter, not a gate).
+            if let range = ranges[note.part], !range.contains(midi: note.note.midi) {
+                context.stroke(shape, with: .color(Color.octaveWarn), lineWidth: 1.5)
             }
         }
     }
@@ -478,11 +560,32 @@ struct PianoRollView: View {
 // MARK: - Note detail
 
 /// The tap-note detail sheet (J-301 AC: midi, cents, confidence, time).
+///
+/// J-302 adds the CORRECTION actions: move the note to another part, split
+/// it in two, or delete it. They record a correction in the user's overlay —
+/// the engine's own track is never rewritten, and every correction can be
+/// undone.
 struct NoteDetailSheet: View {
     let note: PianoRollNote
     let model: PianoRollModel
+    /// J-302: the user has already corrected this note.
+    var isCorrected: Bool = false
+    /// J-302: move the note to another part.
+    var onMove: ((Part) -> Void)? = nil
+    /// J-302: split the note in two at its midpoint.
+    var onSplit: (() -> Void)? = nil
+    /// J-302: delete the note.
+    var onDelete: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
+
+    /// The parts a note can be moved to (the singable ones, in C-1 order).
+    private var moveTargets: [Part] {
+        Part.allCases
+            .filter { $0 != note.part }
+            .filter { PartRangeChips.range(for: $0) != nil }
+            .sorted { $0.sortOrder < $1.sortOrder }
+    }
 
     var body: some View {
         NavigationStack {
@@ -501,12 +604,48 @@ struct NoteDetailSheet: View {
                     field("Phrase", "#\(note.phraseIndex)")
                 }
                 Section("Assignment") {
-                    field("Part", note.part.displayName)
+                    field("Part", model.partName(for: note.part))
                     field("Confidence", PianoRollModel.percentText(note.note.confidence))
                     field("Band", note.band.label)
                     Text(note.band.explanation)
                         .font(Token.Fonts.caption)
                         .foregroundStyle(Color.pnTextSecondary)
+                    if isCorrected {
+                        Label("You corrected this note.", systemImage: "checkmark.seal")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnAccent)
+                    }
+                }
+                if onMove != nil || onSplit != nil || onDelete != nil {
+                    Section {
+                        if let onMove {
+                            Menu {
+                                ForEach(moveTargets, id: \.self) { target in
+                                    Button(target.displayName) { onMove(target) }
+                                }
+                            } label: {
+                                Label("Move to another part", systemImage: "arrow.left.arrow.right")
+                            }
+                        }
+                        if let onSplit {
+                            Button {
+                                onSplit()
+                            } label: {
+                                Label("Split in two", systemImage: "scissors")
+                            }
+                        }
+                        if let onDelete {
+                            Button(role: .destructive) {
+                                onDelete()
+                            } label: {
+                                Label("Delete this note", systemImage: "trash")
+                            }
+                        }
+                    } header: {
+                        Text("Correct it")
+                    } footer: {
+                        Text("Your corrections are saved with the song. The engine's own note tracks are never changed, so anything you do here can be undone.")
+                    }
                 }
                 if note.isUnison {
                     Section {
@@ -529,7 +668,7 @@ struct NoteDetailSheet: View {
                     }
                 }
             }
-            .navigationTitle(note.part.displayName)
+            .navigationTitle(model.partName(for: note.part))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
