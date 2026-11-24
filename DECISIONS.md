@@ -16,6 +16,64 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-38 | 2026-11-24 UTC | Leto | RULED (M2 gate session 11 — the HUMAN's close-out order: Leto finishes M2 alone; the gate closes on the CI + contract evidence; the two human legs are carried into M3, NOT claimed as done)
+**Context:** The human owner (thesagezm) closed the M2 lane chats: *"no more Jess and Paul
+sessions for M2… finish everything yourself… I want us to move to M3."* M2 had run for
+days with the gate one step from closing: the whole engine lane was merged, the app lane
+was merged, the swap seam was un-executed, and step 5(c) was blocked on Jess's binding
+being on `main`. The handoff asked for a merge order that needed two other agents to
+show up. The human's instruction removes that dependency. **AGENTS §1 sends
+Leto-vs-principle and scope questions to the human owner; the human has now answered
+one.** This entry records that answer openly rather than letting a lane-rule bend
+happen silently.
+**Ruling:**
+1. **THE HUMAN'S ORDER IS THE RULING, AND IT IS RECORDED HERE.** Leto executes the
+   remaining M2 work in this session, alone, and drives M2 to a tagged close so M3 can
+   open. The order is not "skip the gate" — it is "do the gate yourself".
+2. **LANE DISCIPLINE — ONE RECORDED, HUMAN-AUTHORIZED DEVIATION (AGENTS §12).** Leto
+   executes the **J-lane swap seam #1** and the **J-lane conflict resolution** in the
+   jess→main merge. Both are taken from **Jess's own work** (her probe
+   `jess-swap-probe-v6`), not newly designed: the seam is her recipe, and the ONE
+   change beyond it is the migration of the app's single reference to the deleted
+   lane-local decoder — the line the probe proved was missing. **THE DEVIATION ENDS
+   WITH M2.** From M3 the three-lane discipline resumes: Paul owns `Engine/**`, Jess
+   owns `App/**`/`Features/**`, Leto owns the integration lane.
+3. **THE M2 GATE CLOSES ON THE CI + CONTRACT EVIDENCE.** Specifically: the whole M2
+   stack merged to `main`; the M2 gate run on `main` is green with **ALL 8 jobs**
+   (including `build-ipa`, which compiles the REAL binding + the REAL ALAC writer with
+   `SEPARATION_IMPORT_ENGINE` ON, and `logic-tests`, which runs the swapped suite);
+   `separation-spike` REAL green; contracts at **v1.0.3**; D-22/D-25/D-30/D-31/D-32
+   ruled; `m2` tagged.
+4. **THE UX §10.2 DEVICE DEMO WAS NOT RUN — AND IS NOT CLAIMED.** It needs an iPhone
+   12 Pro Max, the 84 MB htdemucs weights, and a human. **Leto does not fabricate a
+   device result.** The demo's steps are preserved **verbatim** as a seeded M3 row
+   (**L-205**), which also carries the **device RTF / peak RSS / thermal** numbers —
+   the P-603 standing ask and the only source of §8's device numbers. **The M2 device
+   demo rides along with the M3 demo: same device, same weights, one trip, both
+   results.** Rows **J-206 / J-207 / J-208 are REVIEW, not DONE** — their code is
+   complete and green, and each carries a device leg only a human can run.
+5. **THE D-30 TIER B SIGN-OFF IS OUTSTANDING — AND IT DOES NOT BLOCK `m2`.** htdemucs
+   weights are MIT-licensed but their training data carries NC terms ⇒ **Tier B with a
+   recorded risk** ⇒ **human sign-off before any COMMERCIAL / App Store distribution**.
+   Sideloading (SideStore/LiveContainer) needs nothing. The sign-off is a human action
+   **by definition** — Leto cannot sign it and does not pretend to. It is tracked in
+   this entry and surfaces again with the App Store readiness memo (L-602).
+6. **WHAT DOES NOT CHANGE.** **D-37 STANDS:** no separation arm meets §8's device
+   budgets (RTF ≤ 2×, RSS < 1.5 GB) on ANY measured environment, so **M2 separation is
+   an OFFLINE / QUALITY-MODE job** and closing the RTF gap belongs to **M6** (CoreML
+   EP). The miss is **RECORDED, NOT PAPERED OVER**. D-30…D-37 are not re-litigated.
+   The honesty rail (AGENTS §11 — never promise perfect 5-way separation) carries into
+   M3 unchanged, and the M3 milestone header repeats it.
+7. **M3 OPENS IMMEDIATELY, SEEDED AND READY.** `m2` is tagged, the M3 milestone header
+   is live, and the board carries P-301…P-306, X-301, J-301…J-304, L-205, L-301…L-304,
+   X-302 (plus the pre-seeded P-307…P-309, X-311, P-605). **L-303's D10 (MusicXML
+   parser) and D12 (assignment confidence thresholds) must be ruled EARLY** — they
+   block P-303/P-304, the M3 long pole.
+**Affects:** AGENTS §12 (one recorded deviation, M2 only), QUEUE.md (L-204 DONE; J-206/
+J-207/J-208 REVIEW; L-205 seeded; the M3 seed), PLAN.md (the M2 gate row + the M3 open
+condition), DECISIONS.md (this entry), `project.yml` (step 5(c) @dcdfbff), the M2 gate
+run on `main` (ALL 8 GREEN), and the M2 tag.
+
 ## D-37 | 2026-11-23 UTC | Leto | RULED (M2 gate session 10 — the D-25 chunk-policy arm is decided BY MEASUREMENT; Rule 3 escalation answered)
 **Context:** The D-25 protocol was fixed at QUEUE 2026-11-22T21:00Z §6 (Rules 1–4) so the gate could
 never stall on a judgement call. Paul has now landed both measurement legs and escalated the

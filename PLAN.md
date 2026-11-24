@@ -162,10 +162,20 @@ check training at checkpoint, not by waiting.
 
 ---
 
-## M2 — Import & Separation
+## M2 — Import & Separation — **CLOSED 2026-11-24 (D-38)**
 
 **Open condition:** M1 merged. **CI jobs:** `separation-spike` REAL; `logic-tests`, `build-ipa`.
 **Contract:** v1.0 (SongBundle manifest FROZEN, additive thereafter; progress/cancel callbacks).
+**CLOSE-OUT:** the whole M2 stack is on `main`; the M2 gate run on `main` is green with
+**ALL 8 jobs** (including `build-ipa`, which compiles the REAL binding + the REAL ALAC
+writer with `SEPARATION_IMPORT_ENGINE` ON, and `logic-tests`, which runs the swapped
+suite); contracts are at **v1.0.3**; `m2` is tagged. **The UX §10.2 device demo and the
+D-30 Tier B sign-off were NOT done** — both are HUMAN actions; the demo (with its
+device RTF/RSS/thermal numbers, P-603's standing ask) is seeded into M3 as **L-205**,
+and the Tier B ask is recorded in **DECISIONS D-38**. Nothing about them is claimed as
+complete. **D-37 STANDS:** no separation arm meets §8's device budgets on any measured
+environment, so M2 separation is an OFFLINE/QUALITY-MODE job and the RTF gap belongs
+to M6 (CoreML EP) — the miss is RECORDED, not papered over.
 
 | ID | Owner | Task & AC | Deps | Size |
 |---|---|---|---|---|
@@ -181,7 +191,7 @@ check training at checkpoint, not by waiting.
 | L-201 | Leto | DECISIONS: persistence (D4: JSON index M2, GRDB M4), stem SR/channels (D8), bundle id (D3), HF name (D2), instrumental policy (D9). **AC:** rulings recorded. | — | S |
 | L-202 | Leto | CI: separation-spike real; 81 MB weight cache; IPA size check vs core budget; artifact retention. **AC:** spike green; IPA size logged. | P-201 | S |
 | L-203 | Leto | Contract v1.0: SongBundle manifest frozen — **`tuning_cents` REQUIRED at the freeze** (pre-staged per D-22 / v0.1.1 optional); progress/cancel callbacks; stem naming. **AC:** ratified; both lanes ack. | P-204 | S |
-| L-204 | Leto | M2 merge + Device Demo; tag `m2`; open M3; seed queue. **AC:** demo logged (import real FLAC→stems→mixer; RSS/thermal/RTF from device); `m2` tagged. | all M2 | S |
+| L-204 | Leto | M2 merge + Device Demo; tag `m2`; open M3; seed queue. **AC:** demo logged (import real FLAC→stems→mixer; RSS/thermal/RTF from device); `m2` tagged. **→ DONE 2026-11-24 (D-38): the code gate is green on all 8 jobs and `m2` is tagged; the device-demo leg was DEFERRED to M3 (L-205) by the human's order — it was NOT run and is NOT claimed.** | all M2 | S |
 | P-207 | Paul | Tuning-reference estimation at import (D-22): circular-mean spectral-peak estimator (±50c clamp, dettato `retune.py` approach), emit `tuning_cents` into song.json (C-2.1 optional field); weak salience or <10c → 0. **AC:** unit tests on synthetic detuned fixtures (±35c) recover the offset within ±5c; manifest field validates; estimator RTF trivial. | P-203 | S |
 | J-205 | Jess | Tuning indicator UI (D-22): chip/banner when tuning offset matters ("this recording is +32c sharp — reference adjusted") + settings override; consumes C-2.1 `tuning_cents`. **AC:** indicator states unit-tested; override persists; no grading change until M4 wires J-401. | P-207, L-203 | S |
 | J-206 | Jess | Device-metrics readout for the import path (L-204 gate AC + P-603): separation wall-time + source duration → RTF; PEAK resident footprint (Darwin `task_info` phys_footprint, sampled during import); thermal state at start/end. **AC:** metrics visible in the import/debug screen; RTF arithmetic + peak tracking are pure functions in PitchLogic with unit tests; Darwin sampler behind a seam with a test fake; no Engine/ changes, no contract change. | P-204 | S |
@@ -195,7 +205,9 @@ separation-spike green; logic-tests green; build-ipa green; RSS/thermal/RTF logg
 contracts v1.0; D2/D3/D4/D8/D9 ruled.
 **Device Demo M2:** import a real SDA FLAC → watch staged progress → vocals/instrumental
 stems appear → mixer: solo vocals, focus mix, mute instrumental → loop a section →
-check storage usage. Log RTF/RSS/thermal.
+check storage usage. Log RTF/RSS/thermal. **→ DEFERRED TO M3 by D-38 (the human's order
+so M2 could close); the steps are UNCHANGED and are seeded as L-205. The M2 demo rides
+along with the M3 demo — same device, same weights, one trip, both results.**
 **Parallelization M2:** Paul: push P-201 → dispatch separation-spike → start P-203 decode
 (independent of separation). Jess: build J-201/J-202 against mock bundle → swap real at
 P-204. Leto: rule D-items early so lanes don't stall. (P-206 moved to M6 by D-31 —
@@ -204,9 +216,12 @@ warrant pulling the eval forward.)
 
 ---
 
-## M3 — Per-Voice Note Tracks (the hard R&D milestone)
+## M3 — Per-Voice Note Tracks (the hard R&D milestone) — **OPEN 2026-11-24**
 
-**Open condition:** M2 merged. **CI jobs:** `basicpitch-spike` REAL; bench v2; `logic-tests`, `build-ipa`.
+**Open condition:** ~~M2 merged~~ **MET** (M2 closed + `m2` tagged, D-38). **CI jobs:**
+`basicpitch-spike` REAL; bench v2; `logic-tests`, `build-ipa`.
+**Also carried in:** **L-205** — the M2 device demo (UX §10.2) + the device RTF/RSS/thermal
+numbers, deferred from M2 by D-38. Run it with the M3 demo.
 **Contract:** v1.1 (NoteTrack metadata, correction overlay, optional salience).
 **Honesty:** heuristic assignment + score alignment ship here; fine-tuned per-singer
 separation is post-v1 (X-301/X-302 prep only). Expect bleed; show confidence.
