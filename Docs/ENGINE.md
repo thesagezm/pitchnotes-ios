@@ -256,6 +256,129 @@ AVAudioFileDecoder (Engine/ImportKit — APPLE-ONLY package, AVFoundation)
   not an acceptable error message for a native-codec path. The engine's failed
   import surfaces the REAL error (the cleanup can no longer mask it).
 
+### 1.5 M3 note tracking — the vendored basicpitch.cpp pipeline (P-301)
+
+**STACK (one path, one runtime, one set of rules):**
+
+```
+22.05 kHz mono stem
+  → vendor/basicpitch ort_inference.cpp   (the ONE ORT — D-39: the SPM ORT
+                                           1.24.2 pod; never a second runtime,
+                                           never the trimmed ort-builder)
+  → vendor/basicpitch midi_notes.cpp      (the note decode: peak-pick on the
+                                           onsets, frame-threshold continuation,
+                                           the residual "melodia trick" pass)
+  → Engine/Transcription/BasicPitchNotes.hpp   ← THE RULES (below)
+  → Engine/Transcription/BasicPitchBridge.{h,cpp}  (the C ABI the app calls)
+  → EngineCore NoteTrackBuilder           (range filter, min duration, the
+                                           hysteretic amplitude gate, the 30 ms
+                                           same-pitch merge, the overlap repair,
+                                           amplitude → confidence)
+```
+
+**THE TWO RULES (Engine/Transcription/BasicPitchNotes.hpp — the single source
+of truth for the spike AND the app; both are dependency-free, so the Android /
+Linux sibling ports reuse them verbatim):**
+
+**1. FRAME → SECONDS — the chunk-aware mapping.** The vendored `unwrap_output`
+concatenates the model's frames CHUNK-MAJOR and truncates the tail. Each chunk
+keeps 142 frames (172 − 30) but advances by only `hop` = 36 164 samples, while
+142 frames × 256 samples = 36 352 — so the concatenated frame grid drifts
+**−188 samples (−8.5 ms) per chunk ≈ 5.2 ms per second of audio** relative to
+the audio. The naive `frame * 256 / 22050` mapping therefore puts the tail of a
+song progressively LATE: **+37 ms on the 8 s poly fixture, ~1.25 s on a
+4-minute song.** The shipped mapping reconstructs the chunk each frame came
+from (`sample = chunk * 36 164 + within * 256`); the measured onset error drops
+from +37 ms to 0 / +11.6 ms. **The mapping FAILS LOUDLY if the model's
+per-chunk frame count changes** (the runner and the bridge both check it) —
+otherwise the drift would return silently.
+
+**2. THE RELEASE TRIM — a RELATIVE level, and the LAST dip.** Upstream ends a
+note after `ENERGY_TOL = 11` frames (~128 ms) below the frame threshold, and it
+CLEARS the energy band of every note it emits — so a note that runs into the
+next chord's same pitch is MERGED, and the note's end lands late.
+
+- **Why RELATIVE, not absolute:** the model's energy at a note's TRUE end frame
+  ranges **0.353 … 0.944 of that note's own sustain level** across the 21 truth
+  notes. An absolute cut at 0.3 does NOTHING on the mono fixture (that note's
+  energy never crosses 0.3 at all) and a 0.5 / 0.6 / 0.7 cut breaks other notes
+  by up to 132 ms. **No absolute threshold can serve them all.**
+- **The rule:** `sustain` = the **MEDIAN** of the note's own model energy over
+  its frames; the release level = **`kReleaseSustainFraction` = 0.60 × sustain**
+  (an ENGINE TUNING CONSTANT, below); the note is cut at the **START of the LAST
+  contiguous dip** below that level. The trim only ever SHORTENS a note: the cut
+  is clamped to `[startFrame + 1, endFrame]`, and a note whose energy never
+  dips is left untouched.
+- **Why the LAST dip:** the previous implementation scanned BACKWARD but cut at
+  `t+1` of the **FIRST** sustained dip it met — which latches onto the **ATTACK
+  ramp at the start of the note**, not the release at its end. The trim must
+  find the dip NEAREST THE NOTE'S END and cut at its START.
+- **Why 0.60 (the evidence):** ~1 200 candidate rules were swept against ALL 21
+  truth notes (not just the failing ones): the dip start / middle / end, the
+  fractional frame biases, the absolute-floor blends, five sustain bases
+  (median / median60 / mean / max / the event's own amplitude), nine fractions
+  and three minimum dip lengths. **The best worst-case offset over the whole
+  family is 39.3 ms, and the shipped rule is AT that floor** — it is not a lucky
+  pick. 0.65 and 0.70 **FAIL** (one note at 50.9 ms); 0.55 and 0.58 pass but
+  with a 43.5 ms margin; 0.60 keeps the largest margin to the cliff. **The
+  50 ms acceptance budget was NOT loosened to fit a rule** (AGENTS §11 — honesty
+  is a product requirement). The sweep is reproducible:
+  `python3 -I Tests/Spikes/basicpitch_trim_sweep.py` (it re-derives the whole
+  table from the spike's own dumps), and the rule's invariants are pinned by
+  17 unit checks (`Tests/Spikes/basicpitch_trim_test.cpp`, the S9 leg).
+
+**THE VENDORED FRAME GRID AND THE MERGE (the two mechanisms behind the S6
+failures):** the vendor's forward walk tolerates 11 consecutive sub-threshold
+frames (~128 ms) before ending a note, and it clears the energy band of each
+note it emits — so a note whose next same-pitch chord is closer than 128 ms is
+MERGED with it. On the poly fixture that is exactly what happened to midi 55
+(truth `[4.00, 5.90]`, the vendor's event ran to 5.954). The trim recovers the
+true end because the energy dips in the gap and recovers at the next onset.
+
+**THE VENDOR LINK BUG (found by P-301, FIXED by Leto — PATCH 6 + 7 on `main`
+@bc68e0b):** `vendor/basicpitch/src/midi_notes.cpp` DEFINED
+`output_to_notes_polyphonic` at **GLOBAL** scope while `basicpitch.hpp`
+DECLARES it inside `namespace basic_pitch` — the two mangled names never
+matched, so the code **did not link** as committed
+(`undefined reference to basic_pitch::output_to_notes_polyphonic(...)`).
+Leto's intake proof was `-fsyntax-only`, which **cannot** see a link-time
+symbol mismatch; the spike's runner found what the syntax smoke could not.
+PATCH 6 qualifies the definition; the proof is a **LINK test**, not a syntax
+smoke. PATCH 7 restores upstream's only call to `drop_overlapping_pitch_bends`
+(it lived in the MIDI tail PATCH 2 deleted) — a no-op for this pipeline, which
+passes `bends=false`, so it cannot perturb the parity.
+
+**THE BRIDGE (Engine/Transcription/BasicPitchBridge.{h,cpp}):** a plain C ABI
+(plain structs + one function) so Swift sees no C++ interop, no Eigen and no
+ORT types. It runs the vendored inference + decode and converts the
+frame-domain events to TIME with the two rules above. **It does NOT compute a
+confidence:** the engine's `amplitude` IS the note strength and crosses into the
+contract **unchanged (clamped, never rescaled)** by `NoteTrackBuilder` — the
+bridge must not reinterpret it (D-41's confidence bands belong to the
+assignment posterior, P-303). **Engine/Package.swift is deliberately
+untouched**: the ORT pod is Apple-only and the EngineCore package stays
+dependency-free so the Linux `swift test` loop remains portable (AGENTS §0);
+the app-target wiring (module map / bridging header / header search paths /
+link flags) is Leto's lane — the exact spec is the **X-### request in
+QUEUE.md**. The spike drives the BRIDGE too (S10) and asserts it reproduces
+the engine output exactly, so the spike measures what the app ships.
+
+**HONEST LIMITS (AGENTS §11 — never promise perfect separation):**
+
+- **SUB-OCTAVE BLEED:** on the poly fixture the model emits **3 spurious midi 31
+  events (G1, 49 Hz)** under the G2 bass note, at amplitude ≈ 0.36–0.40 — below
+  the 0.5 CONFIRMED band, and the app's part-range filter drops them. They are
+  logged, not hidden.
+- **THE CONFIDENCE IS NOT A PROBABILITY:** it is the model's note strength,
+  clamped, never rescaled.
+- **THE 50 ms IS THE SYNTHETIC-TRUTH BUDGET, NOT A REAL-SONG CLAIM:** the
+  fixtures are synthetic at the model's native rate. Real-choir accuracy is
+  P-306's job (the part-aware macro F1 table), with the honest expectation set
+  by the external reference (dettato's Dagstuhl ChoirSet row: onset 55.9 /
+  frame 82.0 / offset 44.4).
+- **THE CI RTF/RSS NUMBERS ARE RUNNER NUMBERS, NEVER DEVICE CLAIMS** (§8's
+  1.5 GB / RTF targets are measured on an A14 at P-603).
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -344,4 +467,5 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.4 | 2026-11-23 | P-202 L2 (chunked driver + abort seam, no vendor patch) + P-203 (import/decode): §1.4 import stack (ImportPipeline / AVAudioFileDecoder / BLAKE3 / manifest v1.0), the **ImportKit package declaration** answered for Leto's step-5 wiring (extend `Engine/ImportKit`, product `ImportKit`), and the **measured MP3 gapless behaviour** (AVAudioFile keeps the LAME encoder delay + padding → 111744 vs ffmpeg's 110250 frames; duration_s up to ~51 ms long; padding proven frame-aligned + SNR-vs-source 26.0 dB). §1.3 abort seam replaced with the landed design. |
 | v1.5 | 2026-11-23 | P-204 (ALAC stem writer, GREEN on the macOS runner 45156291152@1935a0f): §1.4 gains the **ALAC stem-writing** note — `AVAudioFile` + float32 PLANAR, `AVAssetWriterInput` avoided (CMSampleBuffer-only on this SDK), 8 192-frame streaming chunks, and the **measured runtime root cause**: `AVAudioFile.read(into:frameCount:)` THROWS when fewer frames remain than requested (the tail chunk) — request exactly what remains; the encode reports the failing step (open/read/copy/write) with the NSError details; a failed import surfaces the REAL error (cleanup can no longer mask it). |
 | v1.6 | 2026-11-23 | P-209 (streaming separation — the P-202 follow-up): §1.3 gains the **streaming separation** note — the separation stage no longer holds the song in memory (`AudioWindowSource` reads the staged mix window-by-window from disk; `StemStreamSink` writes each window's blended stems to the stem file as they are finalised; the driver's retained buffer is bounded by ONE window and the streamed output is BIT-IDENTICAL to the old accumulate path). C-8 kept: cancel/failure aborts the sinks (no partial stem file) and the progress stays monotonic. The A14 device peak-RSS number remains P-603's job. |
+| v1.7 | 2026-11-25 | **P-301 — the M3 note-tracking stack (§1.5 added):** the vendored basicpitch.cpp pipeline under the ONE ORT (D-39), the TWO shared rules (the chunk-aware frame → seconds mapping — the vendored frame grid drifts −188 samples/chunk ≈ 5.2 ms per second of audio, so the naive mapping is ~1.25 s late on a 4-minute song — and the RELATIVE release trim that cuts the LAST dip at 0.60 × the note's own median sustain energy), the C ABI bridge the app's Swift side calls (amplitude → confidence stays in NoteTrackBuilder, clamped and never rescaled), the vendor LINK bug P-301 surfaced (a global vs `basic_pitch::`-qualified definition — FIXED by Leto's PATCH 6 + 7 on main @bc68e0b, proven by a LINK test), and the honest limits (sub-octave bleed: 3 spurious midi 31 events at amplitude 0.36–0.40, below the 0.5 band; the CI RTF/RSS are RUNNER numbers, never device claims). The trim constant's provenance: ~1 200 candidate rules swept against ALL 21 truth notes; the shipped rule is at the family's floor (39.3 ms worst offset) and the 50 ms budget was NOT loosened to fit it. |
 
