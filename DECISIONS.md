@@ -16,6 +16,197 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-42 | 2026-11-24 UTC | Leto | RULED (executes D-30 for the basic-pitch weights — **TIER B**, explicitly NOT Tier A)
+**Context:** P-301 needs a note-event model. Where its weights come from — and what
+their upstream training data is — decides the tier, and therefore what the app may say
+about itself and what the human must sign off on. **Verified today (2026-11-24), not
+recalled:**
+- `spotify/basic-pitch` = **Apache-2.0** (LICENSE at the repo root; README §"Copyright
+  and License": *"basic-pitch is Copyright 2022 Spotify AB … licensed under the Apache
+  License, Version 2.0"*). The model ships **inside** that repo at
+  `basic_pitch/saved_models/icassp_2022/nmp.onnx`.
+- `sevagh/basicpitch.cpp` = **MIT** (LICENSE at the repo root, *"MIT License / Copyright
+  (c) 2024 Sevag H"*), HEAD `e0cf072d59fc87846e5be6ee7841bf726552ce9b`, default branch
+  `main`, last upstream push 2024-10-31. Its in-tree `ort-model/model.onnx` is
+  **BYTE-IDENTICAL** to Spotify's `nmp.onnx` — both 230,444 B, both
+  sha256 `2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec` (hashes
+  computed today). So the wrapper repo does not change the provenance: it is Spotify's
+  ICASSP-2022 model either way.
+- **Training data (primary source: the ICASSP 2022 paper, arXiv:2203.09893, §4 Table 1,
+  read via ar5iv):** the model is trained on a mixture including **MAESTRO (1154 train
+  tracks), Slakh (1590), GuitarSet (648), iKala (252), MedleyDB (103)** (Molina and
+  Phenicx appear in evaluation). The upstream repo's own `basic_pitch/data/datasets/`
+  ships exactly these download scripts: `guitarset.py`, `ikala.py`, `maestro.py`,
+  `medleydb_pitch.py`, `slakh.py`.
+- **Verified license:** GuitarSet = `cc-by-4.0` (Zenodo API, record 3371780).
+- **NOT VERIFIED TODAY — recorded as UNVERIFIED, not asserted:** the exact license
+  strings for **MAESTRO**, **MedleyDB** (pitch-tracking subset, Zenodo 2620624 — the
+  record the paper itself cites), **iKala** (Zenodo 3532214) and **Slakh**. The Zenodo
+  API returns no license field for 2620624 / 3532214, `maestro.moz.de` does not resolve,
+  and `medleydb.weebly.com/download.html` returns 404. MAESTRO and MedleyDB are widely
+  documented as **CC BY-NC-SA (NonCommercial)**, but I did not verify the registry text
+  today, so this entry records them as *unverified — not clean*, which is the safe side.
+**Ruling:**
+1. **The basic-pitch ICASSP-2022 weights are TIER B (D-30).** The weights carry an
+   explicit permissive license (Apache-2.0 from Spotify; MIT in the mirror repo), **but
+   their upstream training data includes datasets with NC terms or with terms I could
+   not verify today** ⇒ D-30's Tier B definition applies exactly: *ship with the
+   provenance and the risk recorded; **never** describe them as "clean"; HUMAN SIGN-OFF
+   before any commercial / App Store distribution.* They are **NOT Tier A** (the training
+   data is not clean) and **NOT Tier C** (the weights themselves are permissively
+   licensed and we are not training on NC data).
+2. **This does NOT block the M3 code path.** Sideloading / SideStore / LiveContainer
+   needs nothing. The posture is identical to the htdemucs weights (also Tier B): **the
+   human's Tier B sign-off now covers TWO weight sets — htdemucs AND basic-pitch — and
+   both must be named in it.**
+3. **The app ships ONE model file for the note engine:** `nmp.onnx`, 230,444 B,
+   sha256 `2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec`, downloaded
+   once from the project HF model repo with SHA256 verification (AGENTS §6: **weights
+   never enter git**). Its `Models/manifest.json` entry carries `license: Apache-2.0`,
+   `tier: B`, and `provenance: spotify/basic-pitch @ fa5997af0a8210982619003269994a1be25eddf3
+   (ICASSP 2022 nmp.onnx)`.
+4. **A verification task is REQUIRED before the App Store memo (L-602):** pin the exact
+   license text of MAESTRO, MedleyDB-pitch, iKala and Slakh from their registries and
+   record it here. **If any of them prohibits commercial use of derived weights, the
+   weights become Tier C and basicpitch.cpp becomes STUDY-ONLY.** That is a real gate on
+   commercial distribution, not paperwork.
+5. **NC weights we train ourselves remain Tier C (D-30).** Nothing here licenses
+   training on MAESTRO / MedleyDB / iKala: the X-301 synthetic-SATB path stays the only
+   training path we may use.
+6. **The in-app licenses screen must state Tier B with the provenance, never "clean"**
+   (Jess's lane — J-204's `LicensesCatalog` gains the basic-pitch row).
+**Affects:** P-301, P-302, P-307, `Models/manifest.json`, DECISIONS D-30, L-602, J-204
+(licenses screen), the CI model-download verification.
+
+## D-41 | 2026-11-24 UTC | Leto | RULED (executes D-12 — the assignment confidence thresholds, WITH THE NUMBERS, so P-303/P-304/J-302/J-304 build against ONE target)
+**Context:** D-12 (M0) ruled the *principle* — thresholds tuned on synthetic fixtures,
+score alignment optional — but published **no numbers**, so M3's long pole (P-303) and
+the UI lanes (J-302/J-304) were building against nothing. This entry publishes the
+initial contract values. **These are INITIAL values to be tuned on the synthetic
+fixtures** (P-303's AC: ≥70 % of frames on clean synthetic 5-voice); the tuned numbers
+land in BENCHMARKS v2 with their fixture results (P-306). **If the tuned numbers move,
+that is a NEW appended decision (D-43+) recorded in CONTRACTS v1.1 — these thresholds
+are contract-visible, not a silent tune.**
+**Ruling — the numbers:**
+1. **Per-note assignment confidence `c`** = the normalized posterior of the assigned part
+   over the candidate part set produced by P-303's Viterbi/HMM. Three bands:
+   - `c ≥ 0.80` → **CONFIRMED** (rendered solid; auto-accepted; graded).
+   - `0.50 ≤ c < 0.80` → **PROVISIONAL** (rendered shaded; editable; graded, but the
+     song reports a provisional assignment and the UI invites a correction).
+   - `c < 0.50` → **UNASSIGNED** (**excluded from grading by default**; the user can
+     force-assign it in J-302, and then it grades).
+2. **Part presence per phrase.** A *phrase* is a contiguous **4.0 s** span of the note
+   track (bar-aligned spans when a score is present — P-304's alignment defines the bar
+   map). A part is **PRESENT** in a phrase iff it has ≥ 1 note there **and** the mean
+   assignment confidence of its notes in that phrase is ≥ **0.60**; otherwise **ABSENT**.
+   **ABSENT parts are DIMMED, never hidden**: the user must be able to see that we did
+   not find that part (AGENTS §11 honesty rail; the same pattern as the existing D-9/D-12
+   chip rules).
+3. **Unison flag.** Two or more parts assigned the **same MIDI pitch within ±25 cents**
+   in the same phrase ⇒ every one of those notes carries `unison: true`. Unison notes
+   keep their own per-part confidence. **Grading stays per-part** (a live pitch frame is
+   matched to the best-scoring part), so a unison never double-counts one singer.
+4. **Which track grading uses, in order:** (a) the **correction overlay** (J-302) if
+   present — the overlay is authoritative; (b) else the **score-informed / corrected
+   track** if an alignment succeeded with confidence ≥ **0.70** *and* it improved note
+   agreement; (c) else the **heuristic track**. In case (c) the UI must say the
+   assignment is heuristic and report the CONFIRMED / PROVISIONAL / UNASSIGNED split.
+5. **Tuning is a gate, not a preference:** P-306's BENCHMARKS v2 must publish a
+   **reliability table** (confidence band → precision) so that a band which does not
+   hold its promise is *visible* rather than assumed. A band whose measured precision is
+   worse than the band below it is a tuning defect to fix before the M3 gate.
+6. **Degradation, restated so nobody can misread it:** a missing score ⇒ heuristic-only;
+   a failed or low-confidence assignment ⇒ heuristic-only; **neither may fail the
+   import** (D-10/D-12).
+**Affects:** P-303, P-304, P-305, P-306, J-301, J-302, J-304, J-401 (M4 grading),
+CONTRACTS v1.1 (C-5 grading inputs + the NoteTrack metadata fields), BENCHMARKS v2.
+
+## D-40 | 2026-11-24 UTC | Leto | RULED (executes D-10 — the MusicXML parser scope for M3, and the score's OPTIONAL status)
+**Context:** D-10 ruled the principle (minimal Swift parser, note events only, no
+external XML dependency) but not the *shape* of it. **P-304 (Paul) and J-304 (Jess)
+both need the same parser**, and AGENTS §0 requires the core to stay portable (no
+UIKit/SwiftUI in engine code) so `pitchnotes-android` / `-linux` can reuse it. Two
+parsers would be two truths; a UI-layer parser would not be portable.
+**Ruling:**
+1. **ONE parser, in the portable engine core (Paul's lane, `Engine/**`), Foundation
+   `XMLParser` only. NO new dependency** (no libxml, no MusicXML library). Jess's
+   J-304 consumes the parsed result through the contract — **she does not write a
+   parser.**
+2. **Scope — NOTE EVENTS ONLY.** Input: `<score-partwise>`. Per `<part>`: `<measure>`
+   index, and per `<note>`: `<pitch>` (step + alter + octave → MIDI), `<duration>`
+   (in `<divisions>` units), `<voice>`; `<rest>` is skipped but its duration advances the
+   timeline; `<part-list>/<score-part>/<part-name>` supplies the part label. A
+   `<divisions>` change mid-part is honoured (the timeline stays honest). **Explicitly
+   OUT of scope:** `<score-timewise>` (rejected with an honest error), engraving and
+   layout (`<print>`, `<defaults>`, fonts), `<direction>`/lyrics text, harmony and chord
+   symbols, `<backup>` handling beyond a linear timeline, and MusicXML 4.0 extensions.
+   **A file that uses only excluded features yields an EMPTY score plus an honest
+   "no note events parsed" notice — never a crash, never a failed import.**
+3. **The score is OPTIONAL end-to-end.** A missing `score.musicxml`, an unreadable file,
+   or a malformed score ⇒ **heuristic-only** note tracking; the import still succeeds and
+   the UI states why the score was not used (D-12: score alignment is an accuracy boost,
+   **never** a requirement for grading).
+4. **Output shape = the contract's score-note list (CONTRACTS v1.1):**
+   `{midi, start_s, end_s, measure, part_id, voice}` — times in seconds at the score's
+   own tempo, **before** any alignment to audio. P-304's DTW hook consumes exactly this.
+5. **Alignment is a separate step** (P-304) and is gated by D-41 §4's 0.70 confidence
+   threshold. **The parser never aligns by itself.**
+**Affects:** P-304, J-304, CONTRACTS v1.1 (the score-note list + `score.musicxml`
+optionality), D-12.
+
+## D-39 | 2026-11-24 UTC | Leto | RULED (the ORT runtime + the vendor scope for basicpitch.cpp — the ONE-runtime decision P-301 needs; the trimmed-ORT route is REJECTED and libremidi is DROPPED)
+**Context:** PLAN P-301 and L-008's reference table assume *"basicpitch.cpp + ort-builder
+minimal ORT (weights→.c/.h)"*. basicpitch.cpp's own build uses a **trimmed** ONNX
+Runtime produced by ort-builder, with the model compiled into `model.ort.c/.h` (1.84 MB
+of C source). **We already link ONNX Runtime 1.24.2 via SPM** (D-13; mirror
+`thesagezm/onnxruntime-swift-package-manager`, tag 1.24.2, revision b7fb7f7). Linking a
+second ORT inside one static IPA is a symbol/static-link hazard, and the CI gate's
+no-@rpath + static-patch checks (§6) are exactly where that breaks. **Verified today:**
+`olilarkin/ort-builder` = **MIT**, HEAD `61201bf3b9f4af0df6214d35609e7d18488be602`;
+`celtera/libremidi` license reads **NOASSERTION** on GitHub (**unknown ⇒ not shipped**,
+AGENTS §9); `sevagh/basicpitch.cpp` = **MIT**, HEAD
+`e0cf072d59fc87846e5be6ee7841bf726552ce9b`.
+**Ruling:**
+1. **(a) IS RULED — basic-pitch runs under the EXISTING SPM ORT 1.24.2. ONE runtime.**
+   P-301 loads `nmp.onnx` (D-42) through the ORT session we already link. **No second
+   ORT, no duplicate ORT symbols, no second NOTICE obligation, no ORT version skew
+   against 1.24.2.**
+2. **(b) IS REJECTED for M3 — the ort-builder trimmed-ORT route** (second ORT +
+   `model.ort.c/.h`). It stays a **documented** fallback, not a fallback we build: if
+   L-302's IPA size check shows ORT's footprint is the blocker, that is a **NEW ruling**
+   with its own no-@rpath + symbol proof — never a quiet switch.
+3. **libremidi IS NOT NEEDED ⇒ EXCLUDED from the intake.** Paul emits NoteTrack JSON
+   (C-2); Jess owns UltraStar text (J-303); a MIDI export, if ever needed, is Swift.
+   (libremidi's own license also reads NOASSERTION.) The vendored `src/midi_notes.cpp`
+   is patched to drop the MIDI writer and to **export** the note-event function
+   (`output_to_notes_polyphonic`) that the bridge needs.
+4. **The intake scope is EXACTLY:** `LICENSE` (MIT, verbatim), `README.md` (the L-008
+   intake record), `patches.log`, `src/basicpitch.hpp`, `src/midi_notes.cpp`,
+   `src/ort_inference.cpp` — all from the pinned SHA above. **NOT vendored:** `src_cli/`,
+   `src_wasm/`, `web/`, `scripts/` (reference only), `ort-model/model.ort*` and
+   `model.ort.c/.h` (**the compiled weights — weights never enter git**, AGENTS §6), and
+   every submodule: `vendor/onnxruntime` (we use SPM ORT), `vendor/libremidi` (ruling 3),
+   `vendor/libnyquist` (CLI-only audio loading; our decoder is AVFoundation/EngineCore),
+   `vendor/oboe-resampler` (Android-only, not a current target), `vendor/ort-builder`
+   (**reference only — MIT, HEAD 61201bf…, NO CODE COPIED**), `vendor/eigen` (ruling 5).
+5. **Eigen:** the core needs it (`Dense` + `unsupported/CXX11/Tensor`). Eigen is
+   MPL-2.0, header-only ⇒ shippable unmodified under D-32.5 **with attribution**, but
+   **I recommend the minimal-tensor-shim route** (Paul's lane), because the core needs
+   only a handful of ops (reshape / slice / shuffle) and Eigen's headers are a heavy,
+   permanent addition to the repo. **If Paul prefers Eigen, he queues an intake (X-313)
+   under D-32.5 — it is not vendored by this ruling.**
+6. **The model-load patch is the only behavioural change upstream:** the session is
+   created from a **file path** (`Ort::Session(env, model_path, options)`) instead of
+   the embedded `model_ort_start` blob, and `ort_inference()` gains a model-path
+   parameter. Everything else stays upstream-identical so a future re-drop is a small
+   diff (patches.log).
+7. **Compile proof is P-301's job, and a failure there is a FIX task on the LETO side**
+   (`vendor/**` is mine per AGENTS §12): if the drop does not compile under the SPM ORT,
+   Paul files the FIX and Leto re-applies the patch — **Paul does not edit `vendor/**`.**
+**Affects:** P-301, P-302, P-307, L-302 (basicpitch-spike + IPA size check), L-303,
+X-312, `vendor/README.md` (its reference table is amended by this ruling),
+`Models/manifest.json`.
+
 ## D-38 | 2026-11-24 UTC | Leto | RULED (M2 gate session 11 — the HUMAN's close-out order: Leto finishes M2 alone; the gate closes on the CI + contract evidence; the two human legs are carried into M3, NOT claimed as done)
 **Context:** The human owner (thesagezm) closed the M2 lane chats: *"no more Jess and Paul
 sessions for M2… finish everything yourself… I want us to move to M3."* M2 had run for
