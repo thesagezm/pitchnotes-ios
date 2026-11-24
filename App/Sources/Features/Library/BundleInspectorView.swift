@@ -66,6 +66,20 @@ struct BundleInspectorView: View {
                 Label("Piano roll (demo mock tracks)", systemImage: "wand.and.stars")
             }
             .accessibilityHint("Synthetic notes that show how the piano roll works")
+
+            // J-303: the UltraStar export. One `.txt` per part, shareable so
+            // the file can be checked in an EXTERNAL UltraStar player. When
+            // the bundle has no real tracks yet, the DEMO tracks are exported
+            // instead — clearly labelled as synthetic, never as a chart of the
+            // song.
+            NavigationLink {
+                UltraStarExportView(tracks: song.hasNoteTracks ? song.noteTracks : MockNoteTracks.demoTracks(),
+                                    songTitle: song.manifest.title,
+                                    isMock: !song.hasNoteTracks)
+            } label: {
+                Label("Export UltraStar (.txt)", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityHint("Writes one UltraStar text file per voice part")
         } header: {
             Text("Note tracks (M3)")
         } footer: {
