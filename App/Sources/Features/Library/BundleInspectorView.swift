@@ -93,6 +93,35 @@ struct BundleInspectorView: View {
                 Label("Export UltraStar (.txt)", systemImage: "square.and.arrow.up")
             }
             .accessibilityHint("Writes one UltraStar text file per voice part")
+
+            // J-304: the score import + alignment review. The REAL entry uses
+            // the bundle's own tracks; the screen loads the user's corrections
+            // ITSELF (from `corrections/` inside the bundle directory), so the
+            // C-14 "your corrections win" rule is READ, never guessed. The
+            // DEMO entry is the synthetic score — clearly labelled, and it
+            // never claims to be a parsed score.
+            if song.hasNoteTracks {
+                NavigationLink {
+                    ScoreReviewView(songTitle: song.manifest.title,
+                                    rawTracks: song.noteTracks,
+                                    bundleDirectory: song.bundleDirectory,
+                                    isMock: false)
+                } label: {
+                    Label("Score & alignment", systemImage: "doc.text.magnifyingglass")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityHint("Import a MusicXML score, compare it with the detected notes, accept or reject the alignment")
+            }
+
+            NavigationLink {
+                ScoreReviewView(songTitle: "Demo",
+                                rawTracks: MockNoteTracks.demoTracks(),
+                                bundleDirectory: nil,
+                                isMock: true)
+            } label: {
+                Label("Score & alignment (demo mock tracks)", systemImage: "wand.and.stars")
+            }
+            .accessibilityHint("A synthetic score built from the demo notes — not a parsed MusicXML file")
         } header: {
             Text("Note tracks (M3)")
         } footer: {
