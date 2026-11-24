@@ -56,6 +56,26 @@ dispute: park it in `DECISIONS.md` as `OPEN`, implement the reversible option, k
 - Scoring/grading logic belongs to **Jess** (pure Swift, unit-testable). Pitch frames,
 note tracks, stems, and all ML belong to **Paul**. The boundary is `CONTRACTS.md`.
 If a task crosses the boundary, split it into two tasks with a contract between them.
+- **NO SUBAGENTS. NO DELEGATION TO SUB-CHATS.** Every agent does its own work in its
+own chat, directly, with its own tools. Do **not** spawn subagents, background
+explorer/worker agents, helper sessions, or any other delegated agent to read,
+research, plan, or implement any part of your lane's work — including "just a
+read" or "just a search". Read the files yourself with your own tools and write
+the result yourself. **Why:** this repo has exactly three agents in exactly three
+chats, and the repo is the only shared brain (§1). A subagent has no session
+context, no memory of the lane's history, and no lane ownership — anything it
+produces must be re-read, re-verified and re-written by the lane owner anyway,
+while creating a real risk of two agents writing the same file at once (the
+shared working directory is a single tree; a `git add -A` from either side can
+sweep up the other's work). A subagent also cannot be trusted with a ruling:
+D-39…D-42 were written by Leto, not delegated, and a ruling that reaches
+`DECISIONS.md` must carry the lane owner's own reading of the evidence.
+**This is a hard rule, not a style preference** — it applies to Paul, Jess and
+Leto equally, and it applies to every kind of task (research, contracts, CI,
+vendor intake, benchmarks). If a task looks too big for one chat, that is a
+queueing problem, not a delegation problem: split it into queue rows, claim
+one, and keep moving (AGENTS §2). The only exception is a **human** explicitly
+asking an agent to run a subagent, which Leto records as a decision first.
 
 ---
 
@@ -322,7 +342,8 @@ Because you are a fresh chat with no memory, run this checklist BEFORE any work:
 2. `git clone`/`git fetch`; checkout YOUR branch; read `AGENTS.md` (this file),
 `QUEUE.md` (your section + BLOCKED + LOG top), `PLAN.md` (current milestone),
 `CONTRACTS.md`, `DECISIONS.md` (last 10 rulings), `Docs/RESEARCH.md` if your task
-touches models.
+touches models. **Read them yourself — do not delegate the reading to a subagent
+(§1).**
 3. If LOG shows a milestone merge newer than your branch base → rebase onto origin/main
 first (§3), push (force-with-lease, own branch only).
 4. Check your `BUILD_PENDING` rows (§5 checkpoint rule). File FIX tasks for red runs.
@@ -343,6 +364,8 @@ only; if it isn't in the repo, it didn't happen.
 - No Python/PyTorch on device; no second ML runtime; no CoreML-only models (CPU path must exist).
 - No committing weights, generated .xcodeproj, dist/, or >1 MB audio fixtures.
 - No direct commits to main; no merging another agent's branch; no force-push to shared refs.
+- **No subagents, no delegated helper chats** (§1) — every agent does its own work in its
+  own chat, including "just a read" and "just a search".
 - No copyleft code in shipped targets; no NC-licensed training data for weights WE train
   (D-30 Tier C). Upstream permissive-license weights whose upstream training data has NC
   terms ship ONLY under D-30 Tier B (provenance + risk recorded; human sign-off before

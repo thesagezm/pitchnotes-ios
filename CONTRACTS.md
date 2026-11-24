@@ -4,15 +4,18 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v1.0.3 — RATIFIED 2026-11-23 UTC by Leto (L-204, D-36 — M2 import entry
-> point: C-9.1 + a shape-agnostic C-9 rule 5). Additive-only from
+> Status: **v1.1 — RATIFIED 2026-11-24 UTC by Leto (L-301, D-39/D-40/D-41 — the M3
+> additive delta: C-10 NoteTrack metadata + C-11 correction overlay + C-12 optional
+> salience + C-13 score-note list & alignment metadata + C-14 grading input order;
+> NEW V-rules V16/V17/V18). Additive-only from
 > here on**; breaking changes require a new version + Leto ruling + a migration
 > task (AGENTS §7). Paul + Jess: ack in QUEUE LOG when you first implement against it.
 > Change log at the bottom. v0.0 (L-006,
 > 2026-11-20); v0.0.1 (D-18.4); v0.1 (L-102, 2026-11-21); v0.1.1 (D-22/D-24);
 > **v1.0 (L-203, 2026-11-22 — the M2 freeze); v1.0.1 (L-204, D-34 — C-9);
 > v1.0.2 (L-204, D-35 — rule 5, over-specified, withdrawn by v1.0.3);
-> v1.0.3 (L-204, D-36 — C-9.1 + rule 5 restated)**.
+> v1.0.3 (L-204, D-36 — C-9.1 + rule 5 restated);
+> v1.1 (L-301, 2026-11-24 — the M3 additive delta; v1.0.3 semantics UNCHANGED)**.
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -222,6 +225,8 @@ Field rules (v1.0 — all fields below are **REQUIRED** in a `"v1.0"` manifest):
 - `confidence` — float [0,1].
 - **V-rules:** V7 `start_s < end_s`; V8 notes sorted by `start_s` and NON-overlapping
   within a part; V9 ranges above; V10 `part` matches filename PART.
+- **v1.1 NOTE-TRACK METADATA EXISTS — see C-2.5.** C-2.3 above stays the **v0.0**
+  schema, unchanged and permanently valid; v1.1 only ADDS.
 
 ### C-2.4 · `pitch/<PART>.json` — PitchFrames schema (optional file)
 
@@ -362,6 +367,10 @@ module with unit tests, J-303; Paul aligns engine outputs):
   `PitchFrame`s (grading-grade stream, P-401) + `GradingConfig`.
 - **Outputs:** per-note `{centsDeviation, coverage, sustain, hit}`, per-phrase score,
   session grade (A–F) + heatmap.
+- **Which track is the reference — NEW v1.1: see C-14** (correction overlay →
+  else score-informed if alignment confidence ≥ 0.70 AND agreement improved →
+  else heuristic; UNASSIGNED notes excluded from grading by default; unison
+  grades per-part; absent parts are dimmed, never hidden).
 - Config (defaults FIXED in v0.0; user-tunable from J-405): tolerance ±50 cents,
   octave-equivalence toggle (default ON), onset grace 80–120 ms, breath gate on
   `loudness_db`.
@@ -610,6 +619,288 @@ existing seam rather than inventing one.
 
 ---
 
+## C-10 · NoteTrack v1.1 metadata — NEW v1.1 (L-301, D-41, ADDITIVE)
+
+M3 produces per-voice note tracks that are **honest about how sure the engine
+is** (D-41), can be **corrected by the user** (J-302), and can be **aligned to a
+score** (P-304). C-2.3 froze the v0.0 note shape; this section **ADDS** to it.
+**Nothing in C-2.3 changes meaning, type, or raw value.** A v0.0 note file
+(`contractVersion: "v0.0"`) REMAINs VALID, unchanged, forever — and a consumer
+that meets one MUST behave exactly as it does today.
+
+### C-10.0 · The v1.1 NoteTrack file
+
+`notes/<PART>.json` at v1.1:
+
+```json
+{
+  "contractVersion": "v1.1",
+  "part": "BASS",
+  "engineVersion": "basicpitch-0.3.0",
+  "notes": [
+    { "start_s": 1.232, "end_s": 2.500, "midi": 48, "cents_ref": 12,
+      "confidence": 0.91, "unison": false, "salience": 0.88,
+      "assignmentBand": "CONFIRMED" }
+  ],
+  "partPresence": [
+    { "phraseIndex": 0, "start_s": 0.0, "end_s": 4.0,
+      "present": true, "meanConfidence": 0.87, "noteCount": 6 }
+  ],
+  "assignmentSummary": { "confirmed": 5, "provisional": 1, "unassigned": 0 }
+}
+```
+
+**Field rules (v1.1 — every key below is OPTIONAL except `contractVersion`,
+`part` and `notes`):**
+
+- **`contractVersion`** — `"v1.1"`. A consumer MUST accept `"v0.0"`, `"v1.0"` and
+  `"v1.1"`; it MUST reject an unknown MAJOR.
+- **`engineVersion`** (OPTIONAL, string) — the engine that produced THIS track.
+  Free string, engine-authored. **ABSENT ⇒** treat as `"unknown"`; a consumer
+  MUST NOT invent a value and MUST NOT refuse the file for its absence.
+- **`confidence`** (per note, OPTIONAL at the file level but REQUIRED per note
+  when the file is v1.1) — the note's confidence in [0,1]. **THIS IS THE SAME
+  FIELD C-2.3 ALREADY DEFINED** — its meaning is unchanged. The v1.1 addition is
+  the **`assignmentBand`** beside it, not a redefinition of `confidence`.
+- **`unison`** (per note, OPTIONAL, bool) — **D-41 §3**: this note shares its
+  MIDI pitch (within **±25 cents**) with a note of another part in the same
+  phrase. **ABSENT ⇒** treat as `false`.
+- **`salience`** (per note, OPTIONAL, float [0,1]) — **P-302**'s per-note
+  salience (how strongly the multi-f0 posterior supported this note).
+  **ABSENT ⇒ the consumer MUST behave EXACTLY as it does today** — i.e. no
+  salience-based filtering, weighting, or rendering. This field is
+  **additive-and-optional on purpose**: a consumer written before salience
+  existed must keep working, unchanged, on a file that carries it.
+- **`assignmentBand`** (per note, OPTIONAL, string) — **D-41 §1**: one of
+  `"CONFIRMED"` (c ≥ 0.80), `"PROVISIONAL"` (0.50 ≤ c < 0.80), `"UNASSIGNED"`
+  (c < 0.50). **ABSENT ⇒** the consumer MUST derive the band from `confidence`
+  using those same thresholds. **PRESENT ⇒** it MUST be one of the three exact
+  spellings above (raw values are stable forever).
+- **`partPresence[]`** (OPTIONAL array) — **D-41 §2**, one entry per phrase for
+  THIS part: `{phraseIndex, start_s, end_s, present, meanConfidence, noteCount}`.
+  A part is **PRESENT** in a phrase iff it has ≥ 1 note there AND the mean
+  assignment confidence of its notes in that phrase is ≥ **0.60**; otherwise
+  **ABSENT**. A phrase is a contiguous **4.0 s** span, or **bar-aligned** when
+  a score is present (the score's bar map defines the spans).
+  **ABSENT ⇒** the consumer MUST NOT dim or hide anything; it MUST behave as
+  it does today.
+- **`assignmentSummary`** (OPTIONAL) — `{confirmed, provisional, unassigned}`
+  counts for this part. **ABSENT ⇒** the consumer MAY compute the counts from
+  the notes; it MUST NOT fail.
+
+**The ABSENCE RULE, stated once and binding:** *every field in this section is
+OPTIONAL, and a consumer MUST behave exactly as it did before v1.1 when the
+field is absent.* Absent metadata is never a validation error, never a reason
+to reject a bundle, and never a reason to fail an import.
+
+### C-10.1 · New V-rules (v1.1) — V16, V17, V18
+
+- **V16 — v1.1 note fields:** for a file with `contractVersion == "v1.1"`, every
+  note carries `confidence` in [0,1] (V9); `unison`, if present, is a bool;
+  `salience`, if present, is in [0,1]; `assignmentBand`, if present, is one of
+  the three exact strings. **A v0.0/v1.0 note file is validated under V7–V10
+  ONLY — V16 does not apply to it, and validators MUST keep accepting it.**
+- **V17 — part presence consistency:** `partPresence[]`, if present, is ordered
+  by `phraseIndex` ascending, `start_s < end_s` per entry, `meanConfidence` in
+  [0,1], `noteCount` ≥ 0, and `present == (noteCount >= 1 && meanConfidence >=
+  0.60)`. A `present == false` entry MUST NOT be treated as an error.
+- **V18 — band/presence coherence:** if `assignmentBand` is present on a note,
+  it MUST agree with `confidence` under D-41's thresholds (≥0.80 CONFIRMED,
+  0.50–0.80 PROVISIONAL, <0.50 UNASSIGNED). **A mismatch is a CONTRACT
+  VIOLATION, not something to silently repair** — the engine fixes it, the
+  consumer reports it.
+
+### C-10.2 · `engineVersion` and the manifest
+
+C-2.1 already defines a top-level manifest `engineVersion`. **The NoteTrack's
+own `engineVersion` (C-10.0) is ADDITIONAL and does not replace it:** the
+manifest's is the bundle's producer; the track's is the producer of THAT track
+(a track may be re-derived by a later engine). **A consumer that sees only the
+manifest's `engineVersion` (a v0.0/v1.0 bundle) MUST behave exactly as it does
+today.** P-305 produces the per-track `engineVersion`.
+
+---
+
+## C-11 · Correction overlay — NEW v1.1 (L-301, D-41 §4, ADDITIVE)
+
+The user corrects the assignment (J-302: drag a note to another part, delete a
+note, split a note). **THE HEURISTIC TRACK IS NEVER MUTATED IN PLACE.** The
+engine's `notes/<PART>.json` stays exactly as the engine wrote it — that file is
+the **truth about what the engine heard**, and it stays reproducible. The user's
+corrections live in a **SEPARATE, ADDITIVE** overlay that the consumer applies
+AT GRADING TIME (D-41 §4: the overlay wins).
+
+The overlay is stored **beside** the bundle's notes, in the bundle directory, as
+`corrections/<PART>.json` (one file per corrected part; a part with no
+corrections has NO file — absence means "no corrections", never "unknown").
+
+```json
+{
+  "contractVersion": "v1.1",
+  "part": "T2",
+  "engineVersion": "corrections-0.1.0",
+  "operations": [
+    { "op": "reassign", "fromPart": "T2", "toPart": "T1",
+      "noteIndex": 3, "midi": 62 },
+    { "op": "delete", "fromPart": "T2", "noteIndex": 7 },
+    { "op": "split", "fromPart": "T2", "noteIndex": 9,
+      "splitAt_s": 2.5, "toParts": ["T1", "T2"] }
+  ]
+}
+```
+
+**Field rules:**
+- `contractVersion` — `"v1.1"`.
+- `part` — the C-1 rawValue of the part this overlay describes.
+- `engineVersion` (OPTIONAL) — the writer of the overlay (Jess's UI); ABSENT ⇒
+  `"unknown"`, and the consumer MUST NOT refuse the file.
+- `operations[]` — an ordered list. **The order is the application order**, and
+  it MUST be applied in order.
+- `op` — one of the three exact strings `"reassign"`, `"delete"`, `"split"`.
+- `noteIndex` — the index of the target note **in the engine's original
+  `notes[]` array for `fromPart`** (0-based, the order the engine wrote). This
+  is deliberately an index into the IMMUTABLE engine array, so an overlay stays
+  meaningful even as the consumer re-derives the track.
+- `reassign` — `toPart` (C-1 rawValue) and, OPTIONALLY, `midi` (the corrected
+  pitch). A reassign moves the note; it does not duplicate it.
+- `delete` — removes the note from the corrected track.
+- `split` — `splitAt_s` (a time strictly inside the note) and `toParts` (2
+  parts). The note becomes two notes in the named parts, each keeping the
+  original note's `confidence` unless the operation overrides it.
+
+**Rules:**
+1. **The overlay is separate and additive; the heuristic track is NEVER mutated
+   in place.** A consumer MUST NOT write back to `notes/<PART>.json`.
+2. **Overlay wins at grading time** (D-41 §4): the corrected track is the
+   grading reference when the overlay is present.
+3. **The overlay is OPTIONAL.** **ABSENT ⇒ the consumer MUST behave exactly as
+   it does today** (the heuristic track is the reference). An overlay file that
+   fails its own rules MUST be reported as a problem, not silently applied.
+4. **A correction does not erase the engine's doubt.** A corrected note keeps
+   the engine's `confidence` unless the operation overrides it, and the UI must
+   still be able to show that this note was **user-corrected** (not
+   engine-confirmed). The overlay file records the correction; the consumer
+   reports it.
+
+---
+
+## C-12 · Optional salience field — NEW v1.1 (L-301, P-302, ADDITIVE)
+
+**The salience field is defined in C-10.0 (per note). This section fixes its
+consumer rule, which is the whole point of making it optional.**
+
+- `salience` (OPTIONAL, per note, [0,1]) — P-302's per-note salience: how
+  strongly the multi-f0 posterior supported that note.
+- **ABSENT ⇒ the consumer MUST behave EXACTLY as it does today.** No salience
+  filtering, no salience weighting, no salience-driven rendering, no
+  salience-driven grading change. A consumer written before salience existed
+  MUST work unchanged on a file that carries it.
+- **PRESENT ⇒** the consumer MAY use it, and if it does, it MUST NOT change
+  which notes are graded (D-41's bands govern grading, not salience) and MUST
+  NOT hide a note that salience alone would drop (the honesty rail — AGENTS
+  §11). **Salience is a DISPLAY/ANALYSIS hint, never a silent filter.**
+
+---
+
+## C-13 · Score-note list + alignment metadata — NEW v1.1 (L-301, D-40 §4, ADDITIVE)
+
+D-40 rules that the MusicXML parser outputs the contract's **score-note list**.
+This section fixes that shape. **The score is OPTIONAL end-to-end** — every
+artifact here is OPTIONAL, and absent ⇒ heuristic-only, the import still
+succeeds, and the UI says why.
+
+### C-13.1 · The score-note list
+
+Produced by the ONE parser (D-40: Foundation `XMLParser`, in the portable engine
+core) and consumed by P-304's alignment and by J-304's review UI.
+
+```json
+{
+  "contractVersion": "v1.1",
+  "scoreNotes": [
+    { "midi": 60, "start_s": 0.000, "end_s": 0.500,
+      "measure": 1, "part_id": "P1", "voice": 1 }
+  ]
+}
+```
+
+- `midi` — int, equal-tempered MIDI (A440, C4 = 60).
+- `start_s`, `end_s` — seconds **at the score's own tempo, BEFORE any alignment
+  to audio** (D-40 §4). `start_s < end_s`.
+- `measure` — int ≥ 1 (the measure index within the score).
+- `part_id` — the score's own part identifier (e.g. `"P1"`), NOT a C-1 `Part`
+  rawValue: the score does not know our part naming. The mapping from
+  `part_id` to a C-1 part is the alignment's business.
+- `voice` — int ≥ 1 (the voice within the part).
+
+### C-13.2 · Score-alignment result metadata
+
+```json
+{
+  "contractVersion": "v1.1",
+  "alignment": {
+    "confidence": 0.82,
+    "used": true,
+    "barMap": [
+      { "measure": 1, "start_s": 0.0, "end_s": 2.0 }
+    ],
+    "method": "DTW"
+  }
+}
+```
+
+- `confidence` — float [0,1]. **D-41 §4's threshold: the score-informed track
+  is used ONLY IF `confidence >= 0.70` AND it improved note agreement.**
+- `used` — bool: whether this alignment was actually applied to the graded
+  track. **A consumer MUST NOT assume `used == true`** — read it.
+- `barMap[]` — `{measure, start_s, end_s}` per measure; this is the **bar map**
+  that turns D-41 §2's phrases from fixed 4.0 s spans into **bar-aligned**
+  spans when a score is present.
+- `method` — free string (e.g. `"DTW"`); ABSENT ⇒ `"unknown"`.
+
+**Rules:**
+1. **Everything here is OPTIONAL.** Absent ⇒ heuristic-only; the import
+   succeeds; the UI states that no score was used and why (D-40 §3).
+2. **The parser NEVER aligns by itself** (D-40 §5) — parsing and alignment are
+   separate steps, and only alignment produces C-13.2.
+3. **A score-informed track NEVER replaces the heuristic track on disk.** The
+   score-informed result is derived; the engine's own track stays reproducible.
+
+---
+
+## C-14 · Grading input order — NEW v1.1 (L-301, D-41 §4, ADDITIVE)
+
+C-5 froze the grading INPUTS and deferred the formulas to v1.2 (L-401). This
+section fixes **which track is the grading reference** — the one ordering fact
+both lanes must agree on. **No formula changes here.**
+
+**The grading reference is chosen in this order, and the FIRST match wins:**
+
+1. **The correction overlay** (C-11), if present — the overlay is
+   **authoritative**.
+2. **Else the score-informed track**, if an alignment (C-13.2) succeeded with
+   `confidence >= 0.70` **AND** it improved note agreement.
+3. **Else the heuristic track** (C-2.3 / C-10.0).
+
+**In case 3 the UI MUST say the assignment is heuristic and MUST report the
+CONFIRMED / PROVISIONAL / UNASSIGNED split** (D-41 §4). A consumer MUST NOT
+present a heuristic assignment as a confirmed one (AGENTS §11 — the honesty
+rail).
+
+**Also fixed by D-41, and binding on the grader:**
+- Notes with band **UNASSIGNED** are **excluded from grading by default**;
+  the user can force-assign them (J-302) and then they grade.
+- **UNISON notes keep their own per-part confidence, and grading stays
+  per-part** — a unison never double-counts one singer.
+- **ABSENT parts are DIMMED, never hidden** (D-41 §2).
+
+**Acks:** PAUL + JESS — ack C-10…C-14 in your next LOG line (L-006/L-102
+precedent). If a lane does not answer, this is **RATIFIED by the arbiter**
+(L-006 precedent) and the ack is recorded as OUTSTANDING — the milestone does
+not stall for it.
+
+---
+
 ## Change log
 
 | Version | Date (UTC) | Change | Ruled by |
@@ -623,3 +914,4 @@ existing seam rather than inventing one.
 | **v1.0.1** | 2026-11-22 | **RATIFIED (L-204, D-34 — ADDITIVE, no signature changed):** NEW C-9 `BundleProducingEngine` (over C-8) carrying `importedBundleID` — the fact "which bundle did this import publish" — because C-3 is frozen and `separate` returns raw stem URLs. Set only AFTER the atomic publish (C-2.2), nil on cancel/failure; consumer MAY derive the bundle dir from a stem URL's parent when an engine does not conform (C-9 rule 3), so it can never become a blocker. EngineAPI signatures unchanged; C-1/C-2/C-3/C-5/C-6/C-7/C-8 untouched. | Leto |
 | **v1.0.2** | 2026-11-23 | **RATIFIED (L-204, D-35 — CLARIFICATION, no signature changed):** C-9 gains **rule 5 (M2 flow rule)** — because the C-3 flow is `importAudio` → `separate`, the PUBLISH happens inside that flow: by the time `separate` returns, a conforming M2 engine MUST have published a complete bundle (C-2.2 `song.json` marker) and MUST have set `importedBundleID`. C-3 gains an M2 real-engine note (the app-target facade over C-8 + C-9; concrete class/init fixed in DECISIONS D-35 + QUEUE X-211). Found by reading both implementations: Jess's flow requires the published bundle; Paul's C-3 `separate` returned raw stems without publishing ⇒ the real-engine import would have failed the app's own completeness check at the device demo. NO signature changed; no rule re-opened. **SUPERSEDED IN PART by v1.0.3 (D-36): rule 5's call-shape wording is withdrawn (the finding stands), and the facade is not the ratified shape.** | Leto |
 | **v1.0.3** | 2026-11-23 | **RATIFIED (L-204, D-36 — ADDITIVE, no signature changed):** NEW **C-9.1 (the M2 whole-import entry point)** — the M2 bundle-producing engine exposes `importSong(source:title:) -> ImportOutcome`, ONE call that owns decode → separate → assemble → atomic publish (all-or-nothing per C-8); the app drives an engine that has it through that call and an engine that does not (the mock) with the frozen C-3 pair. **C-9 rule 5 is RESTATED shape-agnostically: the contract requires the OUTCOME (the flow ends with a complete published bundle + `importedBundleID` set), not a particular call shape.** Rationale: the manifest needs the decode stage's facts (source hash, duration), so splitting decode from publish forces a second decode/hash and splits C-8's no-residue guarantee across two calls with the app in between. Jess's rewritten binding (probe-v5, build-ipa SUCCESS with the real classes) already implements exactly this and is the ratified shape. NO new Swift protocol required; no EngineAPI signature changed. | Leto |
+| **v1.1** | 2026-11-24 | **RATIFIED (L-301 — the M3 ADDITIVE delta; v1.0.3 semantics UNCHANGED, every v1.0.3 field and validator still valid):** NEW **C-10 (NoteTrack v1.1 metadata)** — per-note `unison` (D-41 §3), `salience` (P-302, OPTIONAL), `assignmentBand` (D-41 §1, three exact strings), per-phrase `partPresence` (D-41 §2, 4.0 s spans or bar-aligned), `assignmentSummary`, and a per-track `engineVersion` (C-10.2 — additional to the manifest's, never replacing it); **NEW V16/V17/V18** (v1.1 note fields; presence consistency; band/presence coherence — **a mismatch is a CONTRACT VIOLATION, not silently repaired**). NEW **C-11 (correction overlay)** — a SEPARATE additive file `corrections/<PART>.json` with ordered `reassign`/`delete`/`split` operations against the engine's immutable `notes[]` indices; **the heuristic track is NEVER mutated in place**, and the overlay wins at grading time (D-41 §4). NEW **C-12 (optional salience)** — absent ⇒ the consumer behaves EXACTLY as it does today; present ⇒ a DISPLAY/ANALYSIS hint, never a silent filter and never a change to what is graded. NEW **C-13 (score-note list + alignment metadata)** — the D-40 §4 list `{midi, start_s, end_s, measure, part_id, voice}` (times at the score's own tempo, BEFORE alignment) + alignment `{confidence, used, barMap, method}`; the score is OPTIONAL end-to-end and the parser NEVER aligns by itself. NEW **C-14 (grading input order)** — correction overlay → else score-informed (alignment confidence ≥ **0.70** AND agreement improved) → else heuristic (and the UI must say "heuristic" + report the CONFIRMED/PROVISIONAL/UNASSIGNED split); UNASSIGNED excluded from grading by default; unison grades per-part; absent parts DIMMED, never hidden. **C-2.3's `confidence` field is NOT redefined** — v1.1 adds `assignmentBand` beside it. **The ABSENCE RULE is binding: every new field is OPTIONAL, and absent ⇒ behave exactly as before v1.1.** | Leto |
