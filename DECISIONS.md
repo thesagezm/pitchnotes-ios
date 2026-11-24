@@ -16,6 +16,42 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-43 | 2026-11-24 UTC | Leto | RULED (the HUMAN's order: **NO SUBAGENTS** — every agent works its own lane in its own chat, directly; the rule is now written into AGENTS.md §1 + §11 so all three lanes see it)
+**Context:** mid-session, on the Leto branch, the human owner (thesagezm) said
+verbatim: *"no subagents.... put this so everyone know in agents md"*. Leto had
+launched one background explorer agent to read `CONTRACTS.md` for the v1.1
+delta; **that agent was stopped immediately and its output discarded — nothing
+it produced was read, used, or committed.** Leto's own reading of the file
+follows instead. The order is not merely a preference for this session: it is
+a statement about how this repo is built, so it is **written into `AGENTS.md`**
+(§1 "Rules of identity" — the rule and its rationale; §10 — the bootstrap
+reminder; §11 "Hard rails" — so it is an instant-veto item, not a style note).
+**Ruling:**
+1. **NO SUBAGENTS, NO DELEGATED HELPER CHATS — for Paul, Jess and Leto alike,
+   for every kind of task** (research, reading a file, contracts, CI, vendor
+   intake, benchmarks, planning). Every agent does its own work in its own chat
+   with its own tools.
+2. **Why it is a hard rule here and not a style preference:** (a) this repo is
+   three agents in three chats and the repo is the only shared brain (§1) — a
+   subagent has no session context, no lane history and no lane ownership, so
+   its output must be re-read, re-verified and re-written by the lane owner
+   anyway; (b) **the working directory is ONE shared tree** — two writers at
+   once is a real hazard (a `git add -A` from either side can sweep up the
+   other's work), and the M3 session has already hit this: Leto's uncommitted
+   `vendor/**` intake was found sitting on the `jess` branch checkout while
+   Jess's J-301 work was live in the same tree; (c) **a ruling must carry the
+   lane owner's own reading of the evidence** — D-39…D-42 were written by Leto
+   reading the sources, and that is exactly the property a subagent would
+   remove.
+3. **The remedy for a too-big task is QUEUEING, not delegation:** split it into
+   rows, claim one, keep moving (§2). If a chat genuinely cannot finish a row,
+   it stops with an honest handoff note on the row — it does not fork the work.
+4. **Exception:** a **human** explicitly asking an agent to run a subagent.
+   That exception is recorded here first, by Leto, before it is used.
+**Affects:** `AGENTS.md` §1 + §10 + §11, all three lanes' working practice,
+D-39…D-42 (unchanged by this ruling; their authorship is exactly what this
+rule preserves).
+
 ## D-42 | 2026-11-24 UTC | Leto | RULED (executes D-30 for the basic-pitch weights — **TIER B**, explicitly NOT Tier A)
 **Context:** P-301 needs a note-event model. Where its weights come from — and what
 their upstream training data is — decides the tier, and therefore what the app may say
