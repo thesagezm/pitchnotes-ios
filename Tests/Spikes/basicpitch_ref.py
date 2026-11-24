@@ -14,8 +14,25 @@ This is the INDEPENDENT reimplementation of the upstream pipeline that the
                     ":0" (contours)
   2. UNWRAP (upstream `unwrap_output`, semantics PINNED by an Eigen probe —
      see Tests/Spikes/README.md): drop 15 time frames at each end of every
-     chunk, concatenate chunk-major, truncate to floor(len/256) frames, and
-     the result is indexed [time, freq] (88 freq bins, freq-major in memory).
+     chunk, concatenate chunk-major, truncate to the frame count the VENDOR
+     computes, and the result is indexed [time, freq] (88 freq bins; the
+     vendor tensor's memory is column-major over [time, freq], so the
+     row-major [time, freq] dump is what the spike compares).
+
+     **THE FRAME-COUNT TRUNCATION IS AN INT-86 TRUNCATION (upstream quirk,
+     reproduced faithfully here):** `basicpitch.hpp` declares
+     `constexpr int ANNOTATIONS_FPS = SAMPLE_RATE / FFT_HOP;` — INTEGER
+     division, so ANNOTATIONS_FPS is **86**, NOT 22050/256 = 86.1328. The
+     vendor's `unwrap_output` therefore computes
+     `floor(audio_len * (86f / 22050f))`, which is 1-4 frames SHORTER than
+     the exact `floor(audio_len / 256)` for longer inputs (8 s = 176400
+     samples => 688 frames, not 689). `n_output_frames()` below mirrors the
+     vendor expression EXACTLY, including its float32 arithmetic — a
+     reference that used the "mathematically correct" 86.1328 would produce
+     a SHAPE MISMATCH against the C++ runner and the parity gate would be
+     measuring the wrong thing. (The frame -> SECONDS conversion is a
+     different question: the bridge uses the exact `frame * 256 / 22050`,
+     which is what `frame_to_seconds()` does.)
   3. DECODE (vendor/basicpitch/src/midi_notes.cpp): peak-picking on the onsets
      + the frame-threshold continuation + the "melodia trick" residual pass.
 
@@ -41,7 +58,12 @@ import numpy as np
 # --- constants (vendor/basicpitch/src/basicpitch.hpp, verbatim) -------------
 SAMPLE_RATE = 22050
 FFT_HOP = 256
-ANNOTATIONS_FPS = SAMPLE_RATE / FFT_HOP  # 86.13...
+ANNOTATIONS_FPS = SAMPLE_RATE / FFT_HOP  # 86.13... (the EXACT rate, used for
+#                                         frame -> seconds in the bridge)
+# The VENDOR's integer-division constant (basicpitch.hpp): 22050 / 256 == 86.
+# Used for the unwrap truncation — see n_output_frames() and the module
+# docstring. Upstream quirk, reproduced deliberately.
+ANNOTATIONS_FPS_INT = SAMPLE_RATE // FFT_HOP  # 86
 AUDIO_N_SAMPLES = SAMPLE_RATE * 2 - FFT_HOP  # 43844
 N_OVERLAPPING_FRAMES = 30
 OVERLAP_LEN = N_OVERLAPPING_FRAMES * FFT_HOP  # 7680
@@ -64,6 +86,20 @@ OUTPUT_NAMES = ("StatefulPartitionedCall:1",   # notes
 TOLERANCE = {"abs": 1e-3, "rel": 1e-4}
 
 
+def n_output_frames(audio_length: int) -> int:
+    """The VENDOR's frame-count truncation, reproduced bit-for-bit.
+
+    `vendor/basicpitch/src/basicpitch.hpp` declares ANNOTATIONS_FPS as an
+    INT (22050 / 256 == 86, integer division) and `ort_inference.cpp` uses
+    `floor(audio_original_length * (ANNOTATIONS_FPS / 22050.0f))` in float32
+    arithmetic. Reproduced exactly here (float32 division, float32 multiply,
+    floor) so the reference and the C++ runner agree on the SHAPE.
+    """
+    ratio = np.float32(ANNOTATIONS_FPS_INT) / np.float32(SAMPLE_RATE)
+    scaled = np.float32(audio_length) * ratio
+    return int(math.floor(scaled))
+
+
 def build_input_chunks(audio: np.ndarray) -> np.ndarray:
     """Padded + chunked model input, shape [chunks, AUDIO_N_SAMPLES, 1]."""
     padded = np.concatenate([np.zeros(OVERLAP_LEN // 2, dtype=np.float32),
@@ -79,23 +115,20 @@ def build_input_chunks(audio: np.ndarray) -> np.ndarray:
 
 def unwrap_output(raw: np.ndarray, audio_length: int) -> np.ndarray:
     """Upstream `unwrap_output`, numpy port. `raw` is [batch, times, freqs]
-    as returned by ORT; the result is [time_frames, freqs]."""
+    as returned by ORT; the result is [time_frames, freqs] (row-major)."""
     n_times = raw.shape[1]
     sliced = raw[:, N_OLAP:n_times - N_OLAP, :]
     flat = sliced.reshape(-1, raw.shape[2])
-    n_out = int(math.floor(audio_length * (ANNOTATIONS_FPS / SAMPLE_RATE)))
-    n_out = min(n_out, flat.shape[0])
+    n_out = min(n_output_frames(audio_length), flat.shape[0])
     return flat[:n_out, :]
 
 
 def find_peaks(onsets: np.ndarray) -> list[tuple[int, int]]:
-    """Upstream `find_peaks` — row-major scan (t outer, f inner)."""
+    """Upstream `find_peaks` — row-major scan (t outer, f inner), strict local
+    max over time, threshold `> 0.5`."""
     peaks: list[tuple[int, int]] = []
     n_times, n_freqs = onsets.shape
     for t in range(1, n_times - 1):
-        col = onsets[t]
-        if col[0] > ONSET_THRESHOLD:
-            pass
         for f in range(n_freqs):
             v = onsets[t, f]
             if v > ONSET_THRESHOLD and v > onsets[t - 1, f] and v > onsets[t + 1, f]:
