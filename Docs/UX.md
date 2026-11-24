@@ -353,35 +353,160 @@ table, mapping, and a11y code are untouched.
 
 ## 5. Flow storyboards (M1–M5) — so later milestones don't re-design
 
-### 5.1 Import flow (M2, J-201/J-202)
+### 5.1 Import flow (M2, J-201/J-202) — **AS-BUILT v0.2 (J-201, 2026-11-22)**
+
+The M0 drawing's 4-stage bar and the "Remove instruments?" toggle are both
+**superseded** by CONTRACTS v1.0 (C-8) and D-9 as-built:
+
+- **Stages fold onto C-8's THREE engine stages** (`decoding → separating →
+  assembling` — rawValues frozen): the old "instrumental removal" is part of
+  `separating` (two-stem demucs runs one pass), "notes & bundles" is part of
+  `assembling` (ALAC + song.json). The progress screen renders
+  `ImportProgress {stage, fraction, detail}` verbatim — the fraction is
+  OVERALL (engine-weighted, monotonic; UI-side `ImportProgressTracker` clamps
+  contract regressions and counts them, D-12 honesty).
+- **The "Remove instruments?" toggle is NOT an M2 user choice.** D-9 always
+  runs the two-stem path; whether an INSTRUMENTAL stem exists comes from the
+  SOURCE (`hasInstrumental`, V15), not a checkbox. The setup screen carries
+  ONE honest line instead: *"This song is processed on this iPhone only —
+  voices and backing are separated automatically."* The M3 per-voice lanes
+  arrive with the manifest (M3+), not with a M2 toggle.
+- **Cancel = Task cancellation (C-8 FROZEN):** the sheet's Cancel cancels the
+  Swift Task; the engine throws `CancellationError`, the staging directory
+  (`<id>.tmp`, C-2.2) is removed, and the Library never shows a partial song
+  (BundleStore.scan ignores `*.tmp`). UI resets to idle on the thrown error.
+- **Interruption-safe:** backgrounding mid-import keeps the Task running with
+  an honest hint ("import continues in background"); the scenePhase hint does
+  not mutate engine behavior.
+- **Accessibility:** every stage row has a combined VoiceOver label/value
+  ("Separating, 43 percent, chunk 7 of 40"); dynamic type scales; the cancel
+  button is a 44 pt target.
+- **Recent imports** render from the bundle index (D-4 v0) newest-first;
+  Library rows appear on completion via disk-truth reload (5.2 AS-BUILT).
+- Seam: `ScriptedImportEngine` (paced mock, C-8-shaped) is the MOCK half of
+  one seam; Paul's real engine (P-204, `SongBundleImportEngine`) is the REAL
+  half — same `ProgressReportingEngine` protocol surface, ZERO view changes
+  at the swap (M1 preset precedent).
+- **AS-BUILT v0.3 (J-208, session 6): WHICH ENGINE, SAID TWICE.** The engine
+  is chosen behind one seam (`ImportEngineFactory` → `ImportEngineHandle`),
+  never by a view. The screen states it in two moments:
+  1. **BEFORE the import** (the setup screen): what the NEXT import will do —
+     *"Real engine (htdemucs fp16) — ready."* (engine in the build + weights
+     on the device) · *"… the model is not on this device yet (Settings →
+     Models)."* (engine in, weights missing) · the mock line (no engine in
+     this build) · and, when the weights are on the device but the build has
+     no real engine, an explicit warning that the import will FAIL rather
+     than quietly run the mock. The rule lives in one pure, tested function
+     (`ImportEngineAvailability.resolve(compiledIn:modelPresent:)`) and the
+     compile-time half is one flag (`RealEngineBuild.isCompiledIn`).
+  2. **AFTER the import** (the done screen): which engine ACTUALLY ran —
+     *"Real engine (htdemucs fp16)."* vs *"DEMO ENGINE (mock) — no real
+     separation was run."* The mock line is loud on purpose: the M2 gate does
+     not accept the mock path (D-12 honesty in BOTH directions — a real build
+     must not look like a mock one, and a mock build must not look like a
+     real one).
+- **AS-BUILT v0.3 (J-207, session 6): the bundled manifest is found in
+  EITHER bundle layout.** XcodeGen can place `Models/manifest.json` at the
+  bundle root (single file in `sources:`) or under a `Models/` subfolder
+  (directory in `sources:`); the Models screen tries both, in an explicit
+  order, and prints where it found it ("Manifest: Models/manifest.json.") so
+  the demo shows the layout instead of guessing. Without this, a legal
+  one-line wiring could produce a false "this build has no bundled model
+  manifest" — a demo failure that looks like a missing one-liner.
+- **AS-BUILT v0.4 (J-208, session 7): ONE CALL SHAPE, TWO ENGINES — and the
+  separation is timed from the stage stream.** The seam's handle now carries
+  ONE way to run an import (`runImport`), and the app never has to know which
+  shape it got:
+  - the **REAL** engine publishes ATOMICALLY — it owns decode → separate →
+    assemble → the atomic rename (C-2.2) — so it is driven through its
+    `importSong(source:title:)` entry point;
+  - the **MOCK** publishes during `separate`, so it is driven through the
+    frozen C-3 pair (`importAudio` → `separate`).
+  **Why this is not a detail:** the real engine's `separate` returns raw stem
+  URLs and publishes NOTHING, so an app that drove the C-3 pair against it
+  would get stems but no bundle — and then fail its own completeness check,
+  which looks like a separation failure and is not. The engine's own result
+  is translated at the seam into one app-side type (`PublishedImport`: the
+  C-9 bundle id, the source duration, the stems), so the app compiles
+  against a shape it owns.
+  - **The separation wall time now comes from the `.separating` PROGRESS
+    BAND** (first `.separating` event → first `.assembling` event) instead of
+    wrapping the `separate()` call. The stage stream is the one signal both
+    call shapes share, so the RTF number means the SAME thing on either path
+    — and it is now honest about what it excludes (the old measurement
+    silently included the mock's ALAC assembly). If the band is never
+    observed, NO separation number is reported at all: a fabricated 0.0 would
+    read as "infinitely fast" in the RTF line (D-12).
+  - The real path is compiled in only when the build can see the import
+    package AND the separation bridge AND the deliberate
+    `SEPARATION_IMPORT_ENGINE` switch is on — a build with any one of them
+    missing runs the mock and says so, loudly.
+
+Failure states (unchanged from the drawing, as shipped): unsupported file →
+`.unsupportedFile`; permission denied → system prompt + retry hint; disk full
+→ needed-vs-available bytes (ImportDiskBudget pre-flight); thermal → advice
+banner (ImportThermalGate).
+
+**AS-BUILT v0.3 (J-209, session 8) — THE FAILURE SCREEN SHOWS WHY.**
+The failure screen is **title + the specific reason + the advice**, in that
+order, and the two "not ready yet" states have their OWN advice (they must
+never be told to retry):
 
 ```
-Library (+) → Document picker (MP3/FLAC/WAV/M4A per Info.plist CFBundleDocumentTypes)
-  → Import Setup sheet: title (prefilled), detected format, size
-  → "Remove instruments?" toggle (default ON; D-9 two-stem always runs;
-     if instrumental ends near-silent it is hidden later — explain that here in one line)
-  → Separation progress (BLOCKING screen, engine-owned):
-       stages: 1 Decode ✓ → 2 Instrumental removal → 3 Part separation → 4 Notes & bundles
-       each stage: percent + elapsed + throughput; overall ETA from measured RTF
-       [Cancel] — engine honours cooperative cancellation; bundle written atomically
-       (C-2) so a cancel never leaves a partial song in Library
-  → Done → Song detail (5.2)
-Failure states: decode failure (suggest WAV/FLAC), unsupported codec, out-of-memory
-  (suggest "Quality mode: charge + Wi-Fi OFF not required — runs offline overnight"
-  → BGProcessingTask, AGENTS §8).
+Failure screen (ImportView.failureView):
+  title      ImportError.title            "Separation model unavailable" ·
+                                            "Real separation unavailable" ·
+                                            "Not enough storage" · …
+  reason     ImportError.detail           the SPECIFIC reason, e.g.
+                                            "The separation model (htdemucs, 84 MB) is not on
+                                             this device yet. Download it in Settings → Models…"
+                                            "This import needs about 12.0 MB of free space;
+                                             this iPhone has 3.2 MB free."   (disk full, MB)
+  advice     ImportError.recoverySuggestion   the fix FOR THAT STATE:
+                                            model  → "Download the separation model in
+                                                      Settings → Models, then import again."
+                                            build  → "This build of PitchNotes cannot separate
+                                                      audio for real. Use a build with the real
+                                                      separation engine — a demo (mock) build
+                                                      cannot make a real import."
+                                            other  → retry / re-pick advice (unchanged)
+  WHY: the app has always written ACTIONABLE messages into the error cases;
+  the screen rendered only title + advice, so the reason never reached the
+  human. The copy was written for the screen and the screen dropped it.
+  D-12 honesty: "Retrying usually helps" is NEVER offered for a state that a
+  retry cannot fix (a missing model, a mock-only build).
+  A bad weights file fails FAST at the START of the import (the weights are
+  loaded there, off the main actor), not half-way through the separation.
 ```
 
-### 5.2 Library & Song detail (M2)
+### 5.2 Library & Song detail (M2) — **AS-BUILT v0.2 (J-202, 2026-11-22)**
 
 ```
-Library: list rows [title · parts chips · duration · meanNoteConfidence badge]
-  swipe: Delete (confirm; deletes bundle dir), Settings→Storage shows totals.
-Song detail: parts overview with confidence bars (0–100%), honesty caption
-  ("T1/T2 may bleed into each other — see Unison notes"), actions:
-  [Listen (mixer)] [Learn a part (session)] [Notes inspector (debug, J-002)]
-Debug inspector (ships hidden behind Settings → Developer): renders song.json,
-  per-part stem/notes/pitch file presence, V-rule validation summary, schema
-  contractVersion — J-002 delivers this; it stays the first stop for bug reports.
+Library (disk truth first, J-202):
+  rows: title · a cappella|backed chip (D-9: hasInstrumental false ⇒ "a cappella")
+        · conf % chip (amber < 60% — D-12 bleed honesty) · parts chips (+ unison ×n)
+          ⚠ the conf chip appears ONLY when the bundle carries note tracks:
+          C-2.1 sets meanNoteConfidence to 0.0 when there are none (every M2
+          two-stem bundle — note tracks arrive with M3), so an amber "conf 0%"
+          on a healthy import would be a FALSE warning. Omitted, not shown.
+        · imported rows: provenance line "source file · date · on-disk size"
+        · demo rows (MockEngine, until P-204): "Demo: scenario" line, NOT deletable
+  header: "<total> on device" (BundleStore.totalBytesOnDisk) + all-valid seal
+  swipe (imported only): Delete → confirm dialog ("…and its stems are removed;
+    the original file you imported is not touched") → BundleStore.delete
+  empty state: "No songs yet — tap + … nothing leaves this iPhone"
+  error banner: store/scan/delete failures render with [Retry] — never a silent
+    empty list (D-12).
+  merge order: BundleStore.scan() (C-2.2 complete-marker rule) THEN demo catalog.
+Song detail (Bundle Inspector):
+  song.json fields (contractVersion/engineVersion/sourceHash/confidence…)
+  "Mean note confidence" reads "not yet — no note tracks in this bundle" when
+    the bundle has none (same honesty rule as the row chip — never "0.00")
+  Import section: source file · added at · on-disk size (per-song bytes)
+  Tuning section: D-22 chip copy + override picker (Recording / Force A440 /
+    Manual ±50c stepper) — persists per song in the index (J-205)
+  Validation: per-file V-rules PASS/FAIL with expandable violations (disk truth)
+  Parts: stem/notes/pitch paths, channels, note confidence, unison warnings
 ```
 
 ### 5.3 Mixer / focus mix (M2, J-203)
@@ -620,6 +745,7 @@ spoken state cadence is the M1 minimum, refinement tracked in M4.
 | **X-002** | Ratify MockEngine named scenarios (perfect / flat −30¢ / sharp +35¢ / octave error / silent / breathy / late onset / vibrato) as C-3 additive note | deterministic ribbon/grading previews (J-002) | **STRUCK (D-16)**: satisfied by P-001 `MockScenario` |
 | **X-003** | Wire Paul's Engine into `project.yml` when P-001 lands: app target needs EngineAPI+MockEngine; PitchLogic needs contract Codable types WITHOUT ONNX Runtime (proposal: pure `PitchEngineContracts` target vs `PitchEngine` target) | J-002/J-004 consume; schema tests import Paul's models | **DONE (L-009 + X-006)**: EngineCore wired in project.yml; Tests/Logic path dep `../../Engine`; JSON shim deleted |
 | — | Portable logic-test package | **already satisfied** (PitchLogic Package.swift, `swift test` on CI) | ✓ |
+| **X-021** | ~~Add `UIBackgroundModes` = `[audio]` to project.yml app target (Info.plist)~~ | J-203 background playback + lock-screen transport (§5.3, §11 A.1) | **RESOLVED-AS-STALE (Leto review sweep 2, 2026-11-22T13:05Z; stale-premise note per 13:40Z): the key has been in project.yml since the M0 scaffold (L-003 @ba3182a) — filed without checking project.yml first; background playback + lock-screen transport worked in every build from M1 onward. No Leto action was ever needed. MixerPlayer's runtime `hasBackgroundAudioMode` detection stays as a plist drift guard; device verification = §10.2 step 6b. Lesson: check the built plist config before filing an X-task on it.** |
 
 ## 10. M0 device demo checklist (human runs; log results in QUEUE LOG)
 
@@ -656,7 +782,14 @@ IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
 5. **Mic permission flow**: the mic UX appears on Learn — first visit shows
    "Enable microphone" prompt card. DENY it → denied card with [Open Settings]
    (no crash — AC). Grant later from Settings → re-open app → card gone, level
-   meter animates (mock level until P-104).
+   meter animates. **J-102 (M1 demo finding, still open):** the meter still
+   reads the MOCK level source (a 10 Hz wobble) even though the REAL P-104
+   capture is live on the ribbon path — so the meter wiggles "hot" regardless
+   of the singer, which reads as "the mic is very sensitive". The fix
+   (PitchLogic `InputLevelTracker` from the frame's `loudness_db`, real level
+   in liveMic mode, labeled mock kept for demo mode) is fully specified on the
+   J-102 row and lands AFTER the M2 gate. **Treat the meter as a mock until
+   then** — the ribbon's own pitch readout is the real capture.
 6. **Headphone banner**: with no headphones connected (granted state) → orange
    speaker guidance banner; plug in wired/BT headphones → banner disappears
    (route-change observer).
@@ -680,3 +813,157 @@ IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
     network, no prompts).
 11. Log PASS/FAIL per step + RTF/latency-feel notes in QUEUE LOG (L-103 gate
     evidence).
+
+### 10.2 M2 device demo checklist (human runs at the M2 gate; import → mixer → storage)
+
+IPA: artifact of the first ALL-GREEN `build-ipa` carrying the M2 Jess lane
+(≥ J-202/J-205 merge).
+
+> **GATE RULE (Leto, 2026-11-22T21:55Z — binding on this checklist): the MOCK
+> path does NOT satisfy the M2 gate.** The demo MUST run the REAL engine
+> (J-208's swap seam + P-204's assembled bundle): the L-204 AC says "import a
+> real SDA FLAC → stems → mixer", and a scripted mock demo would be a D-12
+> honesty failure at the gate (the mock cannot separate a real FLAC). The
+> mock path stays valid for UI regression only, never for the gate. The import
+> screen states which engine ran, so a mock run cannot be mistaken for a
+> real one: it reads **"DEMO ENGINE (mock) — no real separation was run."**
+
+0. **One-time model download (NEW — before step 1).** The separation weights
+   (htdemucs fp16 ggml, 84 MB) are fetched ONCE, verified against the
+   manifest's SHA256, and cached; after that the app works in airplane mode
+   forever (AGENTS §0 rail — download once, then offline).
+   - Path: Settings → Models → "One-time downloads" → **Download** (J-207).
+     The screen states the outcome honestly: "Downloaded and verified — cached
+     on this device." / a checksum mismatch says so and caches NOTHING.
+   - **Fallback (only if the download path is not in the build):** the human
+     places the ggml file in the app's Files container and taps "Use file from
+     Files" — the checksum is still verified. The gate EXPECTS the download
+     path.
+   - **Then turn AIRPLANE MODE ON and leave it on for the rest of the demo.**
+   - The import sheet must show the **"Real engine (htdemucs fp16)"** badge
+     (J-208). A "DEMO ENGINE (mock)" badge means the demo is not a gate demo.
+   - **CHECK THE BADGE BEFORE YOU IMPORT (as-built, session 6):** the import
+     sheet's setup screen now states what the NEXT import will do, before it
+     runs — **"Real engine (htdemucs fp16) — ready."** when the engine is in
+     the build and the weights are on the device; **"… the model is not on this
+     device yet (Settings → Models)."** when only the weights are missing; and
+     the mock line when this build has no real engine. After the import the
+     badge switches to the engine that ACTUALLY ran (the same words as before).
+     So the human can verify the demo will run the real path *before* the
+     first import, and a mock build can never pass as a real one.
+1. **Import a real SDA FLAC** (a short hymn, airplane mode ON): Library (+) →
+   Files picker (FLAC selectable) → Import sheet shows title prefilled.
+2. **Staged progress**: the three C-8 stages light in order — Decode ✓ →
+   Separating (chunk detail, e.g. "chunk 7/40") → Assembling — fraction
+   strictly rising, no jumps backward.
+   **2b. RECORD THE DEVICE NUMBERS (J-206 surface — the L-204 AC's
+   "RSS/thermal/RTF from device" and the human's P-603 ask).** The done
+   screen shows one copyable line; write it into the QUEUE LOG VERBATIM (it
+   feeds BENCHMARKS §6 / the M2 gate row):
+   `Separation <m:ss> for <m:ss> source → RTF <n.nn>× · peak RSS <n> MB · thermal <start>→<end>`
+   - separation wall-time, source duration, computed separation RTF
+     (wall-time ÷ source duration — RTF < 1.0 = faster than real time);
+   - **peak resident footprint** during the import (Darwin `task_info`
+     phys_footprint — the §8 budget is peak RSS < 1.5 GB during separation);
+   - **thermal state at the start and at the end** of the separation pass.
+   - **What "separation wall-time" means (as-built, session 7):** the time
+     between the FIRST "Separating" stage event and the FIRST "Assembling"
+     stage event — the separation pass itself, EXCLUDING the decode before it
+     and the ALAC assembly after it. The stage stream is the only signal the
+     app and the engine share, so the number means the same thing whichever
+     engine ran.
+   - Honest readings: an unsampled peak reads "not sampled" (never 0 MB); an
+     unknown RTF reads "—" (never "0.00×"). The live "Peak memory so far"
+     line is visible during the import.
+3. **Cancel integrity**: start a second import, cancel mid-separation → sheet
+   resets; Library shows NO new song; Settings → Storage shows no growth from
+   the cancelled run (stray `*.tmp` absent — C-2.2).
+4. **Stems appear**: song row shows parts chips + a cappella/backed chip +
+   provenance line (filename · date · size). **No conf % chip on an M2
+   bundle** — a two-stem bundle carries no note tracks, so the confidence
+   value is undefined (C-2.1 sets it to 0.0 when there are none); the chip is
+   omitted rather than showing a false amber "conf 0%". The chip appears from
+   M3 on, when note tracks exist (amber < 60%).
+   [P: two-stem bundle with INSTRUMENTAL when source has backing.]
+5. **Inspector**: Import section (source/added/size), Tuning section shows the
+   D-22 estimate ("+32c sharp — reference adjusted" when P-207 landed; a
+   manifest with no usable estimate shows the honest "— (no usable estimate in
+   this manifest)" line — v0-era, or a v1.x manifest whose estimate is
+   missing/out-of-range, with the V14/V15 violation named in Validation),
+   per-file V-rules PASS.
+6. **Mixer solo/focus/mute/loop** (J-203; skip if not merged at demo time):
+   open mixer → focus preset default (target unity, others −12 dB — "others
+   quieter", never "solo"); MUTE mutes; SOLO isolates honestly (label copy);
+   seek is instant; region loop (A/B) holds.
+6b. **Background + lock-screen transport** (J-203; the `audio` background
+   mode ships since M0 — X-021 was stale): start
+   playback → background the app (home screen, then lock) → audio continues;
+   lock-screen controls appear (title/pause/seek) and respond. If the built
+   plist ever lost the `audio` background mode, the mixer shows the honest
+   foreground-only notice instead (runtime drift guard).
+7. **Storage usage**: Settings → Storage shows per-song + total; delete the
+   imported song (swipe + confirm) → total drops by the song's shown size;
+   original file in Files untouched.
+8. **Tuning override persists** (J-205): inspector → Force A440 → leave →
+   return: selection still Force A440; chip reflects resolved offset.
+9. **Airplane mode ON → kill → relaunch**: Library rows, index overrides, and
+   storage totals all survive (index persistence).
+10. VoiceOver spot-check one imported row (a cappella state, size, verdict) +
+    one mixer fader label. Dynamic type largest: rows wrap, no clipping.
+11. Log PASS/FAIL per step in QUEUE LOG (L-203/L-20x gate evidence) — plus
+    the step-2b numbers line, verbatim.
+
+## 11. Addendum A — as-built UX patterns & forward specs (Jess)
+
+### A.1 M2 interaction patterns (as-built, with reasoning — reuse in M3+)
+
+1. **Live-first, background-completion imports.** The import sheet is a
+   blocking, foreground UX (staged progress, cancel). Backgrounding keeps the
+   Task running with an honest hint instead of pausing — a killed app leaves
+   only a `*.tmp` staging dir (C-2.2) that scan ignores and Settings can
+   clean. Reasoning: separation is minutes-long on A14 (AGENTS §8); users
+   should be able to leave the screen, but a BGProcessingTask "quality mode"
+   (charge-only overnight) arrives with the real engine (P-204) — the mock
+   would make the setting a lie (D-12).
+2. **Instant seek.** Stems are precomputed files; seek = player node offset
+   (J-203), never re-decode. No spinner on the transport. Reasoning: bleed-
+   honest focus mixing makes users re-check parts frequently; every 100 ms of
+   seek friction kills the sing-along loop.
+3. **~15 ms gain glides.** Fader/mute/focus changes ramp linearly over
+   ~15 ms — no zipper noise, no clicks, and slow enough to stay under the
+   just-noticeable-difference threshold for level, fast enough to feel
+   immediate. (J-203 implements with AVAudioEngine mixer output gain ramps.)
+4. **LRU stem cache with a user-visible budget.** Bundles live in
+   Application Support and count against the Storage screen's total; "cache
+   limit + delete" UI ships in J-204 with honest per-song bytes
+   (BundleStore.bytesOnDisk) — never silent eviction of user-imported bundles
+   (only derived caches may auto-evict). Reasoning: re-import costs minutes;
+   silent data loss is the one thing an offline-first app must never do.
+5. **Focus mix, not hard solo (D-12 bleed honesty).** The default preset
+   attenuates other lanes −12 dB (configurable) instead of muting: separation
+   bleeds, so a "solo" that promised isolation would lie. Labels say "others
+   quieter". A true MUTE exists per lane, and SOLO is labeled honestly.
+
+### A.2.4 Notation display forward spec (M3/M5, J-501/J-502 — so it isn't re-designed)
+
+Static engraved pages + a moving play line, NOT a scrolling staff:
+
+- **Layout:** static page(s) engraved from `score.musicxml` (C-2 optional) or
+  the NoteTrack-derived lead sheet (M3+). System breaks fixed at engrave
+  time; the page turn splits **half** (top system(s) stay, bottom system(s)
+  become the next page's top) so the eye never jumps mid-phrase.
+- **Moving line:** a vertical cursor line interpolates by time between note
+  x-positions (no reflow during playback). Notehead highlight for the current
+  note; sung-note coloring (in-tune/flat/sharp) lands with M4 grading.
+- **Click-note-to-seek:** tapping any notehead seeks the transport to that
+  note's `start_s` (C-4 beat↔seconds mapping; same math as UltraStar import).
+- **Drag-to-region-loop:** dragging along a system selects a beat range →
+  A/B loop handles for the transport (J-203's region-loop, notation entry
+  point). Cancel by tapping outside the range.
+- **Arrows transpose:** ↑/↓ (or two buttons) transpose the DISPLAYED score
+  and the reference tracks in semitones (reference transpose only — audio
+  byte-true, D-22 sibling rule); persisted per song next to the tuning
+  override; range-clamped so part ranges (C-6.1) stay singable.
+- **Symbols:** treat this display as STUDY-ONLY-reimplementation territory —
+  render with our own Canvas drawing (no OSMD/Verovio link: LGPL — AGENTS §9).
+  data model stays ours: {start_s, midi, duration, voice, page, x, y}.

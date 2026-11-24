@@ -116,11 +116,17 @@ public enum RibbonMapper {
     /// - tolerance: in-tune half-width in cents (default 50, C-5).
     /// - octaveEquivalence: ON folds exact octaves to in-tune WITH a badge
     ///   (UX §3.5); OFF renders plain flat/sharp.
+    /// - referenceOffsetCents: D-22/J-205 — the recording's systematic offset
+    ///   from A440 (+ = sharp). The REFERENCE is offset, never the audio: a
+    ///   voice faithfully reproducing the recording reads in-tune at 0¢, and
+    ///   the returned `nearestMidi` (→ note name) sits on the recording's
+    ///   tuning grid. Default 0 keeps every pre-J-205 caller unchanged.
     public static func reading(hz: Double,
                                confidence: Double,
                                reference: RibbonReference?,
                                tolerance: Double,
-                               octaveEquivalence: Bool) -> RibbonReading {
+                               octaveEquivalence: Bool,
+                               referenceOffsetCents: Int = 0) -> RibbonReading {
         // Unvoiced gate first (spec order): hz == 0.0 or confidence < 0.5.
         guard hz > 0, confidence >= voicedMinimumConfidence else {
             return RibbonReading(state: .unvoiced, direction: .none, octaveBadge: nil,
@@ -128,12 +134,17 @@ public enum RibbonMapper {
                                  lowConfidence: false)
         }
 
-        let nearest = PitchMath.midiNearest(forHz: hz) ?? 60
+        // D-22: re-quantize against the recording's tuning grid (adjust before
+        // nearest-semitone; a +35¢-sharp recording's sung A reads as A, 0¢).
+        let gridHz = referenceOffsetCents == 0
+            ? hz
+            : hz * pow(2.0, Double(-referenceOffsetCents) / 1200.0)
+        let nearest = PitchMath.midiNearest(forHz: gridHz) ?? 60
         let dev: Double
         if let ref = reference {
-            dev = PitchMath.cents(from: ref.hz, to: hz)
+            dev = PitchMath.cents(from: ref.hz, to: hz) - Double(referenceOffsetCents)
         } else {
-            dev = PitchMath.centsRef(hz: hz, midi: nearest)
+            dev = PitchMath.centsRef(hz: gridHz, midi: nearest)
         }
 
         let low = confidence < lowConfidenceThreshold
@@ -171,8 +182,10 @@ public enum RibbonMapper {
     public static func reading(frame: PitchFrame,
                                reference: RibbonReference?,
                                tolerance: Double,
-                               octaveEquivalence: Bool) -> RibbonReading {
+                               octaveEquivalence: Bool,
+                               referenceOffsetCents: Int = 0) -> RibbonReading {
         reading(hz: frame.hz, confidence: frame.confidence, reference: reference,
-                tolerance: tolerance, octaveEquivalence: octaveEquivalence)
+                tolerance: tolerance, octaveEquivalence: octaveEquivalence,
+                referenceOffsetCents: referenceOffsetCents)
     }
 }

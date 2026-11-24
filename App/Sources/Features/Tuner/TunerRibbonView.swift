@@ -313,6 +313,22 @@ struct TunerRibbonView: View {
 
     private var controls: some View {
         VStack(spacing: Token.Spacing.s2) {
+            // J-205/D-22: visible only when a song context (J-203) sets a
+            // resolved offset ≥ the chip threshold — demo/standalone modes
+            // carry 0 and stay chip-free. Copy comes from PitchLogic
+            // (TuningDisplay), unit-tested states, never view-local math.
+            let tuning = TuningDisplay(resolvedCents: model.tuningOffset)
+            if tuning.showsChip {
+                Label(tuning.label, systemImage: "tuningfork")
+                    .font(Token.Fonts.caption)
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Token.Spacing.s3)
+                    .padding(.vertical, Token.Spacing.s2)
+                    .background(Color.octaveWarn.opacity(0.15), in: Capsule())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Recording tuning: \(tuning.label)")
+            }
             Picker("Tolerance", selection: $model.tolerance) {
                 ForEach(RibbonTolerance.allCases) { t in
                     Text(t.label).tag(t)
@@ -322,43 +338,45 @@ struct TunerRibbonView: View {
             .accessibilityLabel("Tolerance band")
 
             HStack(spacing: Token.Spacing.s3) {
-                Toggle("8va fold", isOn: $model.octaveEquivalence)
-                    .toggleStyle(.switch)
-                    .font(Token.Fonts.caption)
-                    .fixedSize()
-                    .accessibilityLabel("Octave equivalence")
-
-                Spacer()
-
-                // J-105 source selector: demo singer (scripted, the M1 demo
-                // input) vs live mic (the REAL causal ribbon — engine_id
-                // RIBBON_MPM_YIN, 0 ms lookahead; C-6.0). The SwiftF0 grading
-                // source is post-hoc only and never appears here. The demo
-                // menu stays until real capture wires into the target
-                // (X-011a); its removal is then a one-line change (UX §3.9).
-                Menu {
-                    ForEach(RibbonModel.SourceMode.allCases) { m in
-                        Button(m.label) { model.sourceMode = m }
+                // J-FIX-104: mode selection is a segmented Picker — ONE tap
+                // toggles demo↔liveMic in EITHER direction, with fixed hit
+                // targets. The M1 defect had both modes inside one Menu whose
+                // content mutated on selection (taps raced the relayout and
+                // were dropped; →demo unreliable). Wiring data + regression
+                // tests live in PitchLogic (RibbonSourceMode).
+                Picker("Source", selection: $model.sourceMode) {
+                    ForEach(RibbonSourceMode.allCases) { m in
+                        Text(m.label).tag(m)
                     }
-                    if model.sourceMode == .demo {
-                        Divider()
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .accessibilityLabel("Pitch source")
+                .accessibilityHint(model.sourceMode == .demo
+                    ? "Scripted demo singer. Tap Live mic to sing into the microphone."
+                    : "Real pitch engine on microphone input. Tap Demo for the scripted singer.")
+
+                if model.sourceMode.showsScenarioPicker {
+                    // J-105 demo-scenario menu — demo mode ONLY (it lists the
+                    // 8 scripted singer states; liveMic has no script). Kept
+                    // OUT of the mode selector so switching modes is always a
+                    // single reliable tap (J-FIX-104). The menu stays until
+                    // real capture is the only path (X-011a done; removal is a
+                    // one-line change, UX §3.9).
+                    Menu {
                         ForEach(MockScenario.allCases, id: \.self) { s in
                             Button(s.menuLabel) { model.demoScenario = s }
                         }
+                    } label: {
+                        Label(model.demoScenario.menuLabel,
+                              systemImage: "person.wave.2.fill")
+                            .font(Token.Fonts.caption)
+                            .padding(.horizontal, Token.Spacing.s3)
+                            .padding(.vertical, Token.Spacing.s2)
+                            .background(Color.pnTrack, in: Capsule())
                     }
-                } label: {
-                    Label(model.sourceMode == .demo
-                          ? "Demo: \(model.demoScenario.menuLabel)"
-                          : "Source: live mic",
-                          systemImage: model.sourceMode == .demo ? "person.wave.2.fill" : "waveform.badge.mic")
-                        .font(Token.Fonts.caption)
-                        .padding(.horizontal, Token.Spacing.s3)
-                        .padding(.vertical, Token.Spacing.s2)
-                        .background(Color.pnTrack, in: Capsule())
+                    .accessibilityLabel("Demo singer scenario, currently \(model.demoScenario.menuLabel)")
                 }
-                .accessibilityLabel(model.sourceMode == .demo
-                    ? "Demo singer scenario, currently \(model.demoScenario.menuLabel)"
-                    : "Live source, real pitch engine")
             }
         }
     }

@@ -26,11 +26,31 @@ struct LibrarySong: Identifiable {
     let unisonPairs: [UnisonPair]
     let reports: [BundleFileReport]
     /// Provenance caption ("perfect", "breathy", "tampered — must FAIL").
-    /// Mock-era only; real imports (M2) drop it.
+    /// Demo rows only; real imports render their own provenance via `record`.
     let scenarioCaption: String
+    /// J-202: non-nil for a REAL imported bundle (BundleStore disk truth) —
+    /// delete/storage/provenance UI applies; nil for the demo catalog.
+    let record: BundleRecord?
+    /// J-202: bytes this bundle occupies on disk (0 for demo rows — their
+    /// temporary-directory size is meaningless and would mislead).
+    let bytesOnDisk: Int64
+    /// J-205/D-22: the manifest's `tuning_cents` when the bundle is a v1.0
+    /// manifest (nil = v0-era/unknown — the lane-local ManifestV1 decoder
+    /// rejects v0.x; callers treat nil as "no estimate yet").
+    let tuningCents: Int?
+    /// J-203: the bundle directory (stems live here) — nil only for failed
+    /// rows with nothing playable.
+    let bundleDirectory: URL?
 
     var id: String { manifest.id }
     var allReportsValid: Bool { reports.allSatisfy(\.isValid) }
+    /// Real imported song (deletable, storage-counted) vs demo catalog row.
+    var isImported: Bool { record != nil }
+    /// J-202/J-205: does this bundle carry note tracks at all? C-2.1 defines
+    /// `meanNoteConfidence` as 0.0 when there are none (the M2 two-stem
+    /// bundles carry none — M3+ adds them), so the UI must NOT render that
+    /// 0.0 as a "0% low confidence" warning (D-12 honesty).
+    var hasNoteTracks: Bool { ManifestContents.hasNoteTracks(in: manifest) }
 }
 
 enum LibraryCatalog {
@@ -50,6 +70,24 @@ enum LibraryCatalog {
     }
 
     // MARK: - One song: materialize → read back → validate
+
+    /// J-202: assemble a LibrarySong from a REAL imported bundle directory
+    /// (BundleStore.scan() record). Same disk-truth validation as the demo
+    /// rows — the only difference is provenance and the on-disk size.
+    /// `scan()` guarantees a parseable song.json, but a vanished/corrupted
+    /// bundle between scan and read still renders as a failed row, not a crash.
+    static func importedSong(at dir: URL, record: BundleRecord, bytesOnDisk: Int64) -> LibrarySong {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("song.json")),
+              let manifest = try? JSONDecoder().decode(SongManifest.self, from: data) else {
+            return failedSong(id: record.id, error: BundleStoreError.bundleIncomplete(record.id),
+                              record: record, bytesOnDisk: bytesOnDisk)
+        }
+        // J-205: v1.0 manifests carry tuning_cents (D-22); v0-era → nil.
+        let tuning = (try? ManifestV1.decode(data))?.tuning_cents
+        return assemble(manifest: manifest, in: dir,
+                        caption: "", record: record, bytesOnDisk: bytesOnDisk,
+                        tuningCents: tuning)
+    }
 
     private static func song(scenario: MockScenario, seed: UInt64, caption: String) -> LibrarySong {
         let engine = MockEngine(scenario: scenario, seed: seed, referencePart: .bass)
@@ -84,7 +122,9 @@ enum LibraryCatalog {
     /// Reads song.json + notes/* + pitch/* FROM DISK and validates each with
     /// EngineCore validators (per-file reports) plus the file-level bundle pass
     /// (V1/V2/V3 stem reality/V10). This is the honesty layer: disk truth.
-    private static func assemble(manifest: SongManifest, in dir: URL, caption: String) -> LibrarySong {
+    private static func assemble(manifest: SongManifest, in dir: URL, caption: String,
+                                 record: BundleRecord? = nil, bytesOnDisk: Int64 = 0,
+                                 tuningCents: Int? = nil) -> LibrarySong {
         var reports: [BundleFileReport] = []
         var tracks: [Part: NoteTrack] = [:]
 
@@ -111,21 +151,26 @@ enum LibraryCatalog {
                     ? []
                     : [ContractViolation("V2", "stemFile \(p.stemFile) does not exist in bundle")]))
 
-            // notes/<PART>.json (V7–V10 from disk). C-2.1 v1.0: notesFile is
-            // optional — nil takes the missing-file V1 path (semantics review
-            // at Jess ratify; lane-exception compile fix, P-FIX-201).
-            let notesName = p.notesFile ?? ""
-            let notesURL = dir.appendingPathComponent(notesName)
-            if let data = try? Data(contentsOf: notesURL),
-               let track = try? JSONDecoder().decode(NoteTrack.self, from: data) {
-                tracks[p.part] = track
-                reports.append(BundleFileReport(
-                    fileName: notesName,
-                    violations: BundleValidator.validate(noteTrack: track).violations))
-            } else {
-                reports.append(BundleFileReport(
-                    fileName: notesName,
-                    violations: [ContractViolation("V1", "notes file missing or does not parse as NoteTrack")]))
+            // notes/<PART>.json (V7–V10 from disk). notesFile is OPTIONAL since
+            // contract v1.0 (C-2.1: M2 two-stem manifests omit it) — a part that
+            // declares none is not a violation; only a DECLARED file that is
+            // missing/unparseable fails. The local Optional normalization
+            // compiles against both the pre-v1.0 PartInfo (required) and the
+            // v1.0 PartInfo (String?) — nil path tested at the EngineCore swap.
+            let notesFile: String? = p.notesFile
+            if let notesFile = notesFile {
+                let notesURL = dir.appendingPathComponent(notesFile)
+                if let data = try? Data(contentsOf: notesURL),
+                   let track = try? JSONDecoder().decode(NoteTrack.self, from: data) {
+                    tracks[p.part] = track
+                    reports.append(BundleFileReport(
+                        fileName: notesFile,
+                        violations: BundleValidator.validate(noteTrack: track).violations))
+                } else {
+                    reports.append(BundleFileReport(
+                        fileName: notesFile,
+                        violations: [ContractViolation("V1", "notes file missing or does not parse as NoteTrack")]))
+                }
             }
 
             // pitch/<PART>.json — optional file (C-2); validated when present.
@@ -162,15 +207,24 @@ enum LibraryCatalog {
             noteTracks: tracks,
             unisonPairs: UnisonDetector.pairs(in: tracks),
             reports: reports,
-            scenarioCaption: caption)
+            scenarioCaption: caption,
+            record: record,
+            bytesOnDisk: bytesOnDisk,
+            tuningCents: tuningCents,
+            bundleDirectory: dir)
     }
 
     /// Materialization itself failed — one red report row, no crash.
-    private static func failedSong(id: String, error: Error, caption: String) -> LibrarySong {
+    /// `caption` doubles as the honest reason ("tampered — must FAIL" for the
+    /// demo, "bundle no longer readable" for a real import that went bad).
+    private static func failedSong(id: String, error: Error, caption: String = "",
+                                   record: BundleRecord? = nil, bytesOnDisk: Int64 = 0,
+                                   tuningCents: Int? = nil,
+                                   bundleDirectory: URL? = nil) -> LibrarySong {
         let manifest = SongManifest(
-            engineVersion: "mock-failed",
+            engineVersion: "unavailable",
             id: id,
-            title: "Mock bundle failed to materialize",
+            title: "Bundle failed to load",
             sourceHash: SourceHash(hex: String(repeating: "0", count: 64)),
             duration_s: 1.0,
             hasInstrumental: false,
@@ -182,7 +236,11 @@ enum LibraryCatalog {
             unisonPairs: [],
             reports: [BundleFileReport(
                 fileName: "bundle",
-                violations: [ContractViolation("V1", "materialization error: \(error)")])],
-            scenarioCaption: caption)
+                violations: [ContractViolation("V1", "load error: \(error)")])],
+            scenarioCaption: caption,
+            record: record,
+            bytesOnDisk: bytesOnDisk,
+            tuningCents: tuningCents,
+            bundleDirectory: bundleDirectory)
     }
 }

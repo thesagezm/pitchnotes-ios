@@ -63,21 +63,18 @@ final class RibbonModel: ObservableObject {
     /// the device demo runs before mic capture wires in, X-011a);
     /// `.liveMic` = the REAL LivePitchEngine causal ribbon via
     /// `ribbonFrame(_:)` (C-6.0; standalone-tuner semantics, no reference
-    /// track). Selector lands in TunerRibbonView next to the demo menu.
-    @Published var sourceMode: SourceMode = .demo {
+    /// track). Selection control = segmented Picker (J-FIX-104 — the M1 menu
+    /// dropped taps when its content mutated on selection); the wiring type
+    /// lives in PitchLogic (`RibbonSourceMode`) for the regression tests.
+    @Published var sourceMode: RibbonSourceMode = .demo {
         didSet { if oldValue != sourceMode { rebuildSource() } }
     }
-
-    enum SourceMode: String, CaseIterable, Identifiable {
-        case demo
-        case liveMic
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .demo: return "Demo singer"
-            case .liveMic: return "Live mic (real engine)"
-            }
-        }
+    /// D-22/J-205: the song's resolved tuning-reference offset (+ = sharp).
+    /// 0 in demo/liveMic standalone modes (no song context — J-203 sets this
+    /// from the playing bundle's manifest/override). The REFERENCE offsets,
+    /// never the audio; the chip renders via TuningDisplay when non-zero.
+    @Published var tuningOffset: Int = 0 {
+        didSet { if oldValue != tuningOffset { redecideLastFrame() } }
     }
 
     /// Reduce Motion (§7): snap the follow window instead of animating.
@@ -181,7 +178,8 @@ final class RibbonModel: ObservableObject {
         let reference = self.reference(at: frame.t)
         let r = RibbonMapper.reading(frame: frame, reference: reference,
                                      tolerance: tolerance.cents,
-                                     octaveEquivalence: octaveEquivalence)
+                                     octaveEquivalence: octaveEquivalence,
+                                     referenceOffsetCents: tuningOffset)
         reading = r
 
         appendTrace(frame: frame, reading: r)
@@ -256,6 +254,7 @@ final class RibbonModel: ObservableObject {
         reading = RibbonMapper.reading(frame: frame,
                                        reference: reference(at: frame.t),
                                        tolerance: tolerance.cents,
-                                       octaveEquivalence: octaveEquivalence)
+                                       octaveEquivalence: octaveEquivalence,
+                                       referenceOffsetCents: tuningOffset)
     }
 }

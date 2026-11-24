@@ -37,11 +37,16 @@ final class EngineCoreIntegrationTests: XCTestCase {
 
     func testPartSortOrderAndComparableMatchContract() {
         // C-1 numeric sortOrder (UI/display): soprano < alto < t1 < t2 <
-        // baritenor < baritone < bass < vp < lead < instrumental < vocals
-        // (vocals = v1.0 C-1/L-203, sortOrder 10, appended — additive rule).
-        // Comparable uses sortOrder (v0.0.1 clarification D-18.4).
-        let expected: [Part] = [.soprano, .alto, .t1, .t2, .baritenor, .baritone, .bass, .vp, .lead, .instrumental, .vocals]
-        XCTAssertEqual(Part.allCases.sorted(), expected)
+        // baritenor < baritone < bass < vp < lead < instrumental. Comparable
+        // uses sortOrder (v0.0.1 clarification D-18.4). The C-1 v1.0 freeze
+        // appends additions (P-201a: vocals, sortOrder 10) after the stable
+        // ten without renumbering — pinned here without naming the addition,
+        // so this compiles both pre- and post-P-201a EngineCore swap.
+        let stable: [Part] = [.soprano, .alto, .t1, .t2, .baritenor, .baritone, .bass, .vp, .lead, .instrumental]
+        XCTAssertEqual(Part.allCases.filter { stable.contains($0) }.sorted(), stable)
+        XCTAssertTrue(Part.allCases.filter { !stable.contains($0) }
+            .allSatisfy { $0 > .instrumental },
+            "C-1 additions append after the stable ten (vocals sortOrder 10)")
         XCTAssertTrue(Part.t1 < Part.bass, "Comparable is display order, NOT pitch order")
     }
 
