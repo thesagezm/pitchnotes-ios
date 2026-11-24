@@ -23,6 +23,17 @@ Generates the git-committed fixture set for Tests/Spikes (all SYNTHETIC, all
   mix48k_stereo.wav         2.5 s 48 kHz STEREO variant of the same mixture
                             (P-203 decode: 48k->44.1k resample + channel-preserving
                             staging under D-8)
+  bp_mono_22050.wav         5 s MONOPHONIC at basic-pitch's NATIVE rate (22.05 kHz):
+                            MIDI 48/52/55/52/48, 0.9 s notes, 0.1 s gaps,
+                            5-harmonic voice-ish spectrum, seeded noise floor
+                            (P-301 basicpitch-spike truth)
+  bp_poly_22050.wav         8 s POLYPHONIC at 22.05 kHz: the C-F-G-C progression,
+                            1.9 s chords every 2 s (P-301 basicpitch-spike truth)
+
+Truth sidecars (JSON, committed next to the WAVs — the SYNTHESIS truth, NOT a
+re-measurement; the spike asserts the model's onsets/offsets against them):
+  bp_mono_22050_truth.json  per note {midi, start_s, end_s}
+  bp_poly_22050_truth.json  per note {midi, start_s, end_s}
 
 Encoded format fixtures (P-203 ac "each format fixture imports"): lossy/lossless
 encodes of the canonical mix44k_short.wav via ffmpeg (dev box; files are
@@ -53,6 +64,7 @@ when an encoded fixture file is missing.
 """
 import argparse
 import hashlib
+import json
 import sys
 import wave
 from pathlib import Path
@@ -66,6 +78,9 @@ SHA_FILE = OUT_DIR / "fixtures.sha256"
 SR = 16000
 SR_HIGH = 44100
 SR_48K = 48000
+SR_BP = 22050  # basic-pitch's NATIVE rate (vendor SAMPLE_RATE) — no resampling
+               # is involved in the P-301 spike, so the fixture is the model's
+               # own input rate.
 
 # Contract V11 voiced band edges (CONTRACTS v0.0).
 HZ_MIN = 46.9
@@ -289,6 +304,85 @@ def synthetic_voice_f0(t: np.ndarray) -> np.ndarray:
     return f0
 
 
+# --- basic-pitch (P-301) fixtures at the model's NATIVE rate -----------------
+# The truth tables below ARE the synthesis parameters: the audio is rendered
+# from them and the JSON sidecar is written from them, so the committed truth
+# can never drift from the committed audio (the sidecar is the SYNTHESIS
+# truth, not a re-measurement of the model).
+BP_MONO_NOTES = [(48, 0.0, 0.9), (52, 1.0, 1.9), (55, 2.0, 2.9),
+                 (52, 3.0, 3.9), (48, 4.0, 4.9)]
+BP_MONO_DUR = 5.0
+# Voice-ish spectrum (decaying harmonics) — the same shape as the M1
+# synthetic_voice fixture, so the model sees a plausible voice rather than a
+# bare sine.
+BP_VOICE_HARMONICS = ((1, 1.0), (2, 0.50), (3, 0.30), (4, 0.15), (5, 0.08))
+# Chord tones: slightly fewer harmonics so four simultaneous voices stay clean.
+BP_CHORD_HARMONICS = ((1, 1.0), (2, 0.25), (3, 0.12))
+
+BP_POLY_CHORDS = [(0.0, [48, 52, 55, 60]),   # C: C3 E3 G3 C4
+                  (2.0, [53, 57, 60, 65]),   # F: F3 A3 C4 F4
+                  (4.0, [43, 50, 55, 59]),   # G: G2 D3 G3 B3
+                  (6.0, [48, 52, 55, 60])]   # C again
+BP_POLY_NOTE_DUR = 1.9
+BP_POLY_DUR = 8.0
+
+
+def gen_bp_mono() -> np.ndarray:
+    """5 s MONOPHONIC fixture at 22.05 kHz (basic-pitch's native rate):
+    MIDI 48/52/55/52/48, 0.9 s notes separated by 0.1 s gaps, voice-ish
+    5-harmonic spectrum, seeded noise floor."""
+    n = int(SR_BP * BP_MONO_DUR)
+    buf = np.zeros(n, dtype=np.float64)
+    for midi, start, end in BP_MONO_NOTES:
+        length = int(round((end - start) * SR_BP))
+        piece = tone(midi_hz(float(midi)), length, SR_BP, amp=0.35,
+                     harmonics=BP_VOICE_HARMONICS)
+        place(buf, start, SR_BP, piece)
+    rng = np.random.default_rng(0xB0DE)
+    buf += 0.0015 * rng.standard_normal(n)
+    return buf
+
+
+def gen_bp_poly() -> np.ndarray:
+    """8 s POLYPHONIC fixture at 22.05 kHz: the C-F-G-C progression, four
+    voices per chord, 1.9 s chords starting every 2 s (0.1 s of silence
+    between chords), seeded noise floor."""
+    n = int(SR_BP * BP_POLY_DUR)
+    buf = np.zeros(n, dtype=np.float64)
+    for start, voicing in BP_POLY_CHORDS:
+        for midi in voicing:
+            piece = tone(midi_hz(float(midi)), int(BP_POLY_NOTE_DUR * SR_BP),
+                         SR_BP, amp=0.15, harmonics=BP_CHORD_HARMONICS)
+            place(buf, start, SR_BP, piece)
+    rng = np.random.default_rng(0xB0F7)
+    buf += 0.0015 * rng.standard_normal(n)
+    return buf
+
+
+def bp_mono_truth() -> list[dict]:
+    """Synthesis truth for bp_mono_22050.wav."""
+    return [{"midi": int(m), "start_s": float(s), "end_s": float(e)}
+            for m, s, e in BP_MONO_NOTES]
+
+
+def bp_poly_truth() -> list[dict]:
+    """Synthesis truth for bp_poly_22050.wav (every voice of every chord)."""
+    notes = []
+    for start, voicing in BP_POLY_CHORDS:
+        for midi in voicing:
+            notes.append({"midi": int(midi), "start_s": float(start),
+                          "end_s": float(start + BP_POLY_NOTE_DUR)})
+    return notes
+
+
+def write_truth_json(path: Path, fixture: str, notes: list[dict]) -> None:
+    """Write a deterministic truth sidecar (sorted keys, fixed formatting)."""
+    import json
+
+    payload = {"fixture": fixture, "sample_rate": SR_BP, "notes": notes}
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
 FIXTURES = [
     ("sweep_46_2100Hz_16k.wav", gen_sweep, SR),
     ("synthetic_voice_16k.wav", gen_synthetic_voice, SR),
@@ -300,6 +394,19 @@ FIXTURES = [
     ("mix44k_detuned_plus35.wav", gen_mix44k_detuned_plus35, SR_HIGH),
     ("mix44k_detuned_minus35.wav", gen_mix44k_detuned_minus35, SR_HIGH),
     ("mix48k_stereo.wav", gen_mix48k_stereo, SR_48K),  # stereo (L, R)
+    # P-301 basic-pitch fixtures — the model's NATIVE rate (22.05 kHz), so the
+    # spike exercises no resampling.
+    ("bp_mono_22050.wav", gen_bp_mono, SR_BP),
+    ("bp_poly_22050.wav", gen_bp_poly, SR_BP),
+]
+
+# Truth sidecars for the P-301 fixtures (JSON, committed next to the WAVs).
+# They are part of the fixture set: the sha rows cover them AND the check
+# loop re-derives their contents from the synthesis tables, so a sidecar that
+# no longer matches the audio it describes FAILS the integrity gate.
+TRUTH_FIXTURES = [
+    ("bp_mono_22050_truth.json", "bp_mono_22050.wav", bp_mono_truth),
+    ("bp_poly_22050_truth.json", "bp_poly_22050.wav", bp_poly_truth),
 ]
 
 # Encoded format fixtures (P-203): ffmpeg encodes of the canonical mono 44.1k
@@ -383,9 +490,16 @@ def regenerate() -> list[tuple[str, str]]:
             write_wav(path, gen(), sr)
         size = path.stat().st_size
         assert size <= 1_000_000, f"{name} is {size} bytes (> 1 MB policy)"
+    # Truth sidecars (P-301) — written from the same synthesis tables the
+    # audio is rendered from, so they cannot drift apart.
+    for name, fixture, truth_fn in TRUTH_FIXTURES:
+        write_truth_json(OUT_DIR / name, fixture, truth_fn())
     encode_missing()
-    # sha file covers every fixture on disk (WAVs byte-identical, encodes pinned).
-    names = [n for n, _, _, _ in ENCODED_FIXTURES] + [n for n, _, _ in FIXTURES]
+    # sha file covers every fixture on disk (WAVs byte-identical, encodes
+    # pinned, truth sidecars pinned).
+    names = ([n for n, _, _, _ in ENCODED_FIXTURES]
+             + [n for n, _, _ in FIXTURES]
+             + [n for n, _, _ in TRUTH_FIXTURES])
     rows = [(name, sha256(OUT_DIR / name)) for name in names]
     SHA_FILE.write_text("".join(f"{h}  {n}\n" for n, h in rows))
     return rows
@@ -431,6 +545,30 @@ def check() -> bool:
                     ok = False
         if path.stat().st_size > 1_000_000:
             print(f"FAIL: {name} exceeds 1 MB", file=sys.stderr)
+            ok = False
+    # Truth sidecars (P-301): pinned by sha AND re-derived from the synthesis
+    # tables — a sidecar that no longer describes the committed audio fails.
+    for name, fixture, truth_fn in TRUTH_FIXTURES:
+        path = OUT_DIR / name
+        if not path.exists():
+            print(f"FAIL: {name} missing", file=sys.stderr)
+            ok = False
+            continue
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if expected.get(name) != actual:
+            print(f"FAIL: {name} hash drift (committed {expected.get(name)}, actual {actual})", file=sys.stderr)
+            ok = False
+        try:
+            payload = json.loads(path.read_text())
+        except Exception as e:
+            print(f"FAIL: {name} is not valid JSON ({e})", file=sys.stderr)
+            ok = False
+            continue
+        if payload.get("fixture") != fixture:
+            print(f"FAIL: {name} names fixture {payload.get('fixture')!r}, expected {fixture!r}", file=sys.stderr)
+            ok = False
+        if payload.get("notes") != truth_fn():
+            print(f"FAIL: {name} notes differ from the synthesis truth", file=sys.stderr)
             ok = False
     return ok
 
