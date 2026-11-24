@@ -127,7 +127,17 @@ struct MicAccessBanners: View {
 // MARK: - Input level meter + latency stub (under the ribbon controls)
 
 struct MicMeterRow: View {
-    @ObservedObject var audio: AudioSessionController
+    /// The level to render, 0…1.
+    ///
+    /// J-102: the row takes the level as a VALUE now — it no longer reaches
+    /// into the audio controller itself. In liveMic mode the value is the
+    /// REAL mic level (the engine's per-frame loudness, C-2.4, mapped by the
+    /// pure `InputLevelTracker`); in demo mode it is the labelled mock
+    /// wobble, so the M1 demo's look is unchanged and nobody mistakes a
+    /// simulation for a reading.
+    let level: Double
+    /// True when the value is the MOCK wobble (demo mode) — the row says so.
+    var isSimulated: Bool = false
 
     var body: some View {
         HStack(spacing: Token.Spacing.s3) {
@@ -139,16 +149,16 @@ struct MicMeterRow: View {
                     Capsule().fill(Color.pnTrack)
                     Capsule()
                         .fill(Color.pnAccent)
-                        .frame(width: max(4, geo.size.width * audio.inputLevel))
-                        .animation(.easeOut(duration: 0.1), value: audio.inputLevel)
+                        .frame(width: max(4, geo.size.width * level))
+                        .animation(.easeOut(duration: 0.1), value: level)
                 }
             }
             .frame(height: 10)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Input level")
-            .accessibilityValue("\(Int(audio.inputLevel * 100)) percent")
+            .accessibilityLabel(isSimulated ? "Input level (simulated)" : "Input level")
+            .accessibilityValue("\(Int(level * 100)) percent")
 
-            Text("\(Int(audio.inputLevel * 100))%")
+            Text("\(Int(level * 100))%")
                 .font(Token.Fonts.numeric)
                 .foregroundStyle(Color.pnTextSecondary)
                 .frame(width: 40, alignment: .trailing)

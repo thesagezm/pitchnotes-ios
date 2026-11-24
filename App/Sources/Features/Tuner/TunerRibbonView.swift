@@ -31,9 +31,9 @@ struct TunerRibbonView: View {
             partChips
             ribbon
             controls
-            MicMeterRow(audio: audio)
+            MicMeterRow(level: meterLevel, isSimulated: model.sourceMode != .liveMic)
             LatencyStubRow()
-            Text("Preview: MockEngine singer (P-001) and mock input level (P-104 wires the real mic tap). This view will not change at the swap.")
+            Text(meterCaption)
                 .font(Token.Fonts.caption)
                 .foregroundStyle(Color.pnTextSecondary)
                 .multilineTextAlignment(.center)
@@ -60,8 +60,24 @@ struct TunerRibbonView: View {
         }
     }
 
-    // MARK: - Ribbon canvas (§3.3 vertical mapping, §3.2 time model)
+    // MARK: - The input-level meter's source (J-102)
 
+    /// In liveMic mode this is the REAL mic level (the engine's per-frame
+    /// loudness, mapped by PitchLogic's `InputLevelTracker`); in demo mode it
+    /// is the labelled mock wobble, so the M1 demo's look is unchanged and a
+    /// simulation is never mistaken for a reading.
+    private var meterLevel: Double {
+        model.sourceMode == .liveMic ? model.inputLevel : audio.inputLevel
+    }
+
+    private var meterCaption: String {
+        if model.sourceMode == .liveMic {
+            return "Live: the input level is the real microphone (P-104 capture → C-2.4 loudness)."
+        }
+        return "Preview: MockEngine singer (P-001) and a SIMULATED input level — switch the source to Live to see the real microphone."
+    }
+
+    // MARK: - Ribbon canvas (§3.3 vertical mapping, §3.2 time model)
     private var ribbon: some View {
         GeometryReader { geo in
             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { _ in
