@@ -551,7 +551,7 @@ public struct ScoreReview: Equatable, Sendable {
         var result: [ScoreAlignedNote] = []
         for (index, note) in score.scoreNotes.enumerated() {
             guard let bar = alignment.bar(for: note.measure) else { continue }
-            let span = measureSpans[note.measure]
+            guard let span = measureSpans[note.measure] else { continue }
             let scoreSpan = max(span.end - span.start, 0)
             let audioSpan = max(bar.end_s - bar.start_s, 0)
             let scale: Double = (span.count > 1 && scoreSpan > 0) ? audioSpan / scoreSpan : 1
