@@ -1,4 +1,5 @@
 import Foundation
+import EngineCore
 
 // Tuning reference policy (D-22, J-205): old SDA recordings often sit
 // systematically sharp/flat of A440. The DEFAULT behavior offsets the
@@ -33,7 +34,6 @@ public enum TuningPolicy {
 
     /// D-22 clamp for manual overrides (matches the manifest field range).
     public static let centsRange: ClosedRange<Int> = -50...50
-
     /// Resolves the effective reference offset for a song.
     /// - detected: the manifest's `tuning_cents` (0 when unknown/v0-era).
     /// - override: nil ⇒ `.recording` default.
@@ -71,5 +71,36 @@ public struct TuningDisplay: Equatable, Sendable {
         let sign = resolvedCents > 0 ? "+" : "−"
         let direction = resolvedCents > 0 ? "sharp" : "flat"
         return "\(sign)\(abs(resolvedCents))c \(direction) — reference adjusted"
+    }
+}
+
+// MARK: - Manifest → tuning estimate (SWAP SEAM #1: EngineCore consumes)
+
+public extension SongManifest {
+
+    /// D-22: the recording's tuning offset, when the manifest carries one that
+    /// is PRESENT and IN RANGE.
+    ///
+    /// Validity is decided by the ENGINE's own rules, not by a lane-local copy:
+    /// for a v1.x manifest the engine's V14 (required fields + ranges) and V15
+    /// (INSTRUMENTAL ⇔ hasInstrumental) decide it; a v0-era manifest is judged
+    /// by its era's rules (V1–V13) — `tuning_cents` was optional since v0.1.1,
+    /// so a v0.1.1 manifest MAY carry an estimate and it is honored.
+    ///
+    /// nil means "NO ESTIMATE" (v0-era without one, or an invalid v1.x
+    /// manifest) — callers treat nil as 0/unknown. An invalid estimate is
+    /// NEVER silently clamped into a plausible-looking number (D-12 honesty).
+    ///
+    /// SWAP SEAM #1: this replaces the lane-local `ManifestV1` decoder that
+    /// existed while EngineCore lacked the v1.0 types (J-205). The engine's
+    /// model + validator are now the single source of truth (D-33 principle:
+    /// app mirrors engine — one semantic, never two).
+    var validTuningCents: Int? {
+        let report = BundleValidator.validate(manifest: self)
+        let versionInvalid = report.violations.contains { $0.rule == "V14" || $0.rule == "V15" }
+        guard !versionInvalid,
+              let cents = tuning_cents,
+              TuningPolicy.centsRange.contains(cents) else { return nil }
+        return cents
     }
 }

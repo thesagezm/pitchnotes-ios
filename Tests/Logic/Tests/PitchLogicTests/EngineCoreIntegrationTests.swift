@@ -107,6 +107,37 @@ final class EngineCoreIntegrationTests: XCTestCase {
                       "duration 0 must trip V4, got: \(result.violations)")
     }
 
+    /// D-33 (RULING, L-203): `notesFile`/`pitchFile` are OPTIONAL since
+    /// contract v1.0 (C-2.1). A part that declares NO notes track is NOT a
+    /// violation — the M2 two-stem bundles (VOCALS/INSTRUMENTAL) carry no
+    /// note tracks at all, and the engine's own validator must say so.
+    ///
+    /// This is the test the J-lane owed at the EngineCore swap: it pins the
+    /// SEMANTIC (nil ⇒ skip, never "V1 missing file") in the lane that
+    /// consumes it, so the app can never drift back into flagging healthy
+    /// M2 bundles as invalid.
+    func testPartWithoutNotesFileIsNotAViolation() throws {
+        let (_, dir) = try makeMockBundle(scenario: .perfect, seed: 0x5028)
+
+        // Rewrite song.json with every notesFile/pitchFile key REMOVED — the
+        // M2 two-stem shape (parts[] entries, no note tracks).
+        let manifestURL = dir.appendingPathComponent("song.json")
+        var manifest = try JSONDecoder().decode(SongManifest.self, from: Data(contentsOf: manifestURL))
+        manifest.parts = manifest.parts.map { info in
+            var stripped = info
+            stripped.notesFile = nil
+            stripped.pitchFile = nil
+            return stripped
+        }
+        try JSONEncoder().encode(manifest).write(to: manifestURL)
+
+        let result = BundleValidator.validate(bundleDirectory: dir)
+        XCTAssertTrue(result.isValid,
+                      "a part with no notesFile is legal (C-2.1 optional) — got: \(result.violations)")
+        XCTAssertFalse(result.violations.contains { $0.rule == "V10" },
+                       "V10 (notes filename convention) only applies to a DECLARED notesFile")
+    }
+
     // MARK: - 3 · PitchMath (Jess) ↔ MockEngine scenarios (Paul)
 
     /// The ribbon consumes `livePitch` frames and computes deviation with

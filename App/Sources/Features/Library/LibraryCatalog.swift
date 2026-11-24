@@ -34,9 +34,11 @@ struct LibrarySong: Identifiable {
     /// J-202: bytes this bundle occupies on disk (0 for demo rows — their
     /// temporary-directory size is meaningless and would mislead).
     let bytesOnDisk: Int64
-    /// J-205/D-22: the manifest's `tuning_cents` when the bundle is a v1.0
-    /// manifest (nil = v0-era/unknown — the lane-local ManifestV1 decoder
-    /// rejects v0.x; callers treat nil as "no estimate yet").
+    /// J-205/D-22: the manifest's `tuning_cents` when the bundle carries a
+    /// VALID estimate (nil = no estimate — a v0-era manifest without one, or
+    /// a v1.x manifest that fails V14/V15). The ENGINE's own rules decide
+    /// (the swap seam's `SongManifest.validTuningCents`); callers treat nil
+    /// as "no estimate yet".
     let tuningCents: Int?
     /// J-203: the bundle directory (stems live here) — nil only for failed
     /// rows with nothing playable.
@@ -82,8 +84,13 @@ enum LibraryCatalog {
             return failedSong(id: record.id, error: BundleStoreError.bundleIncomplete(record.id),
                               record: record, bytesOnDisk: bytesOnDisk)
         }
-        // J-205: v1.0 manifests carry tuning_cents (D-22); v0-era → nil.
-        let tuning = (try? ManifestV1.decode(data))?.tuning_cents
+        // J-205: the manifest's tuning estimate (D-22). SWAP SEAM #1: the
+        // lane-local ManifestV1 decoder is GONE — the ENGINE's manifest model
+        // + validator are the single source of truth (one semantic, never
+        // two). `validTuningCents` is nil for a v0-era manifest with no
+        // estimate and for a v1.x manifest that fails V14/V15; an invalid
+        // estimate is never clamped into a plausible-looking number (D-12).
+        let tuning = manifest.validTuningCents
         return assemble(manifest: manifest, in: dir,
                         caption: "", record: record, bytesOnDisk: bytesOnDisk,
                         tuningCents: tuning)

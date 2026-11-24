@@ -66,7 +66,7 @@ final class TuningOffsetTests: XCTestCase {
         XCTAssertEqual(TuningDisplay(resolvedCents: 0).label, "", "hidden → empty label")
     }
 
-    // MARK: - ManifestV1 decoder (lane-local interim, V14/V15)
+    // MARK: - Manifest → tuning estimate (SWAP SEAM #1: EngineCore consumes)
 
     private func v1JSON(channels: String = "2", tuning: String = "32",
                         hasInstrumental: String = "true",
@@ -90,92 +90,89 @@ final class TuningOffsetTests: XCTestCase {
         """.data(using: .utf8)!
     }
 
+    /// A v0-era manifest that carries NO estimate (v0.0 had no `tuning_cents`).
+    private func v0JSON(parts: String, contractVersion: String = "v0.0") -> Data {
+        """
+        {
+          "contractVersion": "\(contractVersion)",
+          "engineVersion": "mock-test",
+          "id": "01JTTTTTTTTTTTTTTTTTTTTTTT",
+          "title": "Tuning probe",
+          "sourceHash": { "algo": "blake3", "hex": "\(String(repeating: "a", count: 64))" },
+          "duration_s": 30.0,
+          "sampleRate": 44100,
+          "hasInstrumental": false,
+          "parts": [\(parts)],
+          "confidenceSummary": { "meanNoteConfidence": 0.8 }
+        }
+        """.data(using: .utf8)!
+    }
+
     // Fixtures use T1 (a C-1 rawValue on THIS branch) — the M2 two-stem
     // "VOCALS" rawValue decodes only after Paul's Part.vocals merge; the
-    // decoder itself is rawValue-agnostic and needs no change then.
-    // notesFile: REQUIRED on this branch's v0-era PartInfo (optional per
-    // C-2.1 only on Paul's unmerged P-201a) — present keys survive that swap.
+    // estimate reader is rawValue-agnostic and needs no change then.
+    // notesFile: OPTIONAL per C-2.1 since v1.0 (Paul's EngineCore) and
+    // tolerated on v0.x — present keys survive either way.
     private let voicePart = #"""
         { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "notesFile": "notes/T1.json", "noteConfidence": 0.0 }
         """#
 
-    private let voiceAndInstrumental = #"""
-        { "part": "T1", "stemFile": "stems/T1.m4a", "channels": 1, "notesFile": "notes/T1.json", "noteConfidence": 0.0 },
-        { "part": "INSTRUMENTAL", "stemFile": "stems/INSTRUMENTAL.m4a", "channels": 2, "notesFile": "notes/INSTRUMENTAL.json", "noteConfidence": 0.0 }
-        """#
+    private func manifest(_ data: Data) throws -> SongManifest {
+        try JSONDecoder().decode(SongManifest.self, from: data)
+    }
 
-    func testManifestV1DecodesSharpFlatAndInTune() throws {
+    func testValidTuningCentsReadsSharpFlatAndInTune() throws {
         for (cents, name) in [(32, "sharp"), (-35, "flat"), (0, "in-tune")] {
-            let decoded = try ManifestV1.decode(v1JSON(tuning: String(cents),
-                                                       hasInstrumental: "false",
-                                                       parts: voicePart))
-            XCTAssertEqual(decoded.tuning_cents, cents, name)
-            XCTAssertEqual(decoded.channels, 2)
-            XCTAssertFalse(decoded.hasInstrumental)
-            XCTAssertEqual(decoded.manifest.title, "Tuning probe")
+            let m = try manifest(v1JSON(tuning: String(cents),
+                                        hasInstrumental: "false",
+                                        parts: voicePart))
+            XCTAssertEqual(m.validTuningCents, cents, name)
+            XCTAssertEqual(m.title, "Tuning probe")
         }
     }
 
-    func testManifestV1RejectsMissingRequiredField() {
-        // tuning_cents absent entirely → V14 failure (strict decode of the
-        // extras struct). hasInstrumental:false + no INSTRUMENTAL entry is
-        // V15-consistent, so the missing tuning field is what fails.
-        let missing = """
+    func testValidTuningCentsIsNilWhenTheEngineFlagsV14() throws {
+        // V14 (the ENGINE's rule): a v1.x manifest must carry tuning_cents in
+        // [−50,+50]. Missing or out-of-range ⇒ "no estimate" — never a
+        // clamped guess (D-12 honesty).
+        let missing = try manifest("""
         {
           "contractVersion": "v1.0", "engineVersion": "m", "id": "x", "title": "t",
           "sourceHash": { "algo": "blake3", "hex": "\(String(repeating: "a", count: 64))" },
           "duration_s": 30.0, "sampleRate": 44100, "channels": 1, "hasInstrumental": false,
           "parts": [], "confidenceSummary": { "meanNoteConfidence": 0.0 }
         }
-        """.data(using: .utf8)!
-        XCTAssertThrowsError(try ManifestV1.decode(missing)) { error in
-            guard case .missingRequiredField = error as? ManifestV1DecodeError else {
-                XCTFail("expected missingRequiredField, got \(error)")
-                return
-            }
-        }
+        """.data(using: .utf8)!)
+        XCTAssertNil(missing.validTuningCents, "missing tuning_cents → no estimate")
+        XCTAssertTrue(BundleValidator.validate(manifest: missing).violations.contains { $0.rule == "V14" },
+                      "the ENGINE flags V14 — the app mirrors it, it does not re-decide")
+
+        let outOfRange = try manifest(v1JSON(tuning: "80", parts: voicePart))
+        XCTAssertNil(outOfRange.validTuningCents, "tuning_cents 80 → no estimate")
     }
 
-    func testManifestV1RejectsOutOfRangeFields() {
-        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(channels: "3", parts: voicePart))) { error in
-            XCTAssertEqual(error as? ManifestV1DecodeError, .rangeViolation("channels 3"))
-        }
-        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(tuning: "80", parts: voicePart))) { error in
-            XCTAssertEqual(error as? ManifestV1DecodeError, .rangeViolation("tuning_cents 80"))
-        }
+    func testValidTuningCentsIsNilWhenTheEngineFlagsV15() throws {
+        // V15: hasInstrumental true but no INSTRUMENTAL entry ⇒ the manifest
+        // disagrees with itself ⇒ no estimate.
+        let inconsistent = try manifest(v1JSON(parts: voicePart))
+        XCTAssertNil(inconsistent.validTuningCents)
+        XCTAssertTrue(BundleValidator.validate(manifest: inconsistent).violations.contains { $0.rule == "V15" },
+                      "the ENGINE flags V15")
     }
 
-    func testManifestV1EnforcesV15InstrumentalConsistency() {
-        // hasInstrumental true but no INSTRUMENTAL entry → V15 violation.
-        XCTAssertThrowsError(try ManifestV1.decode(v1JSON(parts: voicePart))) { error in
-            XCTAssertEqual(error as? ManifestV1DecodeError, .instrumentalInconsistent)
-        }
-        // INSTRUMENTAL entry but hasInstrumental false → V15 violation.
-        XCTAssertThrowsError(
-            try ManifestV1.decode(v1JSON(hasInstrumental: "false", parts: voiceAndInstrumental))
-        ) { error in
-            XCTAssertEqual(error as? ManifestV1DecodeError, .instrumentalInconsistent)
-        }
-        // Consistent pairs decode fine.
-        XCTAssertNoThrow(try ManifestV1.decode(v1JSON(parts: voiceAndInstrumental)))
-        XCTAssertNoThrow(try ManifestV1.decode(v1JSON(hasInstrumental: "false", parts: voicePart)))
+    func testValidTuningCentsIsNilForAV0EraManifestWithoutAnEstimate() throws {
+        // `tuning_cents` has been OPTIONAL since v0.1.1 (D-22) — a v0-era
+        // manifest that carries one keeps it (the estimate is era-independent;
+        // V14/V15 are era-scoped to v1.x and do not fire here). A v0-era
+        // manifest WITHOUT one ⇒ no estimate.
+        let v0 = try manifest(v0JSON(parts: voicePart))
+        XCTAssertNil(v0.validTuningCents)
+        XCTAssertTrue(BundleValidator.validate(manifest: v0).violations.allSatisfy { $0.rule != "V14" },
+                      "V14 is era-scoped to v1.x — a v0-era manifest is judged by V1–V13")
     }
 
-    func testManifestV1RejectsV0EraManifest() {
-        let v0 = v1JSON(parts: voicePart, contractVersion: "v0.0")
-        XCTAssertThrowsError(try ManifestV1.decode(v0)) { error in
-            XCTAssertEqual(error as? ManifestV1DecodeError, .notV1(found: "v0.0"))
-        }
-        XCTAssertNil(ManifestV1.tuningCents(in: v0), "v0-era → nil (callers treat as unknown)")
-    }
-
-    func testTuningCentsConvenienceReturnsEstimate() {
-        // V15-consistent fixture (hasInstrumental false + T1-only parts) —
-        // the default-true variant is intentionally inconsistent and would
-        // fail V15 before the estimate is read.
-        XCTAssertEqual(ManifestV1.tuningCents(
-            in: v1JSON(hasInstrumental: "false", parts: voicePart)), 32)
-        XCTAssertNil(ManifestV1.tuningCents(in: Data("not json".utf8)))
+    func testValidTuningCentsIsNilForUnparseableInput() {
+        XCTAssertNil(try? manifest(Data("not json".utf8)))
     }
 
     // MARK: - Override persistence (bundle index, D-4 v0)
