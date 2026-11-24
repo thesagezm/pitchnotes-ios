@@ -401,30 +401,16 @@ public enum UltraStarCodec {
                                 cents_ref: 0, confidence: 1.0))
         }
 
-        // C-2.3 V8: sorted by start_s, non-overlapping within a part.
-        pitched.sort { lhs, rhs in
-            if lhs.start_s != rhs.start_s { return lhs.start_s < rhs.start_s }
-            if lhs.end_s != rhs.end_s { return lhs.end_s < rhs.end_s }
-            return lhs.midi < rhs.midi
-        }
-
-        var repaired = 0
-        var repairedNotes: [Note] = []
-        for note in pitched {
-            if let last = repairedNotes.last, note.start_s < last.end_s {
-                let trimmed = Note(start_s: last.start_s, end_s: note.start_s, midi: last.midi,
-                                   cents_ref: last.cents_ref, confidence: last.confidence)
-                if trimmed.end_s > trimmed.start_s {
-                    repairedNotes[repairedNotes.count - 1] = trimmed
-                    repaired += 1
-                } else {
-                    droppedCount += 1
-                    warnings.append("Dropped a note that starts at the same instant as the previous one "
-                                    + "and overlaps it.")
-                    continue
-                }
-            }
-            repairedNotes.append(note)
+        // C-2.3 V8: sorted by start_s, non-overlapping within a part. The
+        // repair is the SHARED one (J-302's NoteTrackRepair) so the importer
+        // and the correction overlay agree on what "non-overlapping" means.
+        let repair = NoteTrackRepair.repair(pitched)
+        let repairedNotes = repair.notes
+        let repaired = repair.trimmedCount
+        droppedCount += repair.droppedCount
+        if repair.droppedCount > 0 {
+            warnings.append("Dropped \(repair.droppedCount) note(s) that start at the same instant as the previous one "
+                            + "and overlap it.")
         }
 
         if repaired > 0 {
