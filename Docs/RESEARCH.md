@@ -267,13 +267,31 @@ count) — NOT part-aware; our PawCT ceiling (0.225 macro part-aware) still gove
 assignment honesty (§3). Evidence repairer measured alone: +0.30 composite.
 
 **Training data / license split (verified):**
-- **Transcriber: COMMERCIALLY CLEAN.** Synthetic instruments + CC URMP solos + ~20
-  morphed soundfonts (the published ["soundfont babies"](https://kobi.music/research/making-soundfont-babies)
-  technique) + CC vocals; "no copyrighted recordings"; no benchmark leakage; in-house
-  audio not released. (Residual: the ~20 soundfonts' own file licenses → X-310.)
-- **Evidence repairer: COMMERCIALLY CLEAN (verified 2026-11-21 — upgrades the fact
-  sheet's "card not yet verified").** Apache-2.0; trained ONLY on in-house synthetic
-  audio generated from an earlier transcriber checkpoint where exact notes are known.
+- **Transcriber: TIER B (D-45, 2026-11-24) — NOT "commercially clean" by our
+  verification.** Code + weights Apache-2.0 (upstream: "the code and the weights are
+  under Apache-2.0, so commercial use is fine"); trained on synthetic instruments + CC
+  URMP solos + **~20 morphed soundfonts** (the published ["soundfont babies"](https://kobi.music/research/making-soundfont-babies)
+  technique) + CC vocals; "no copyrighted recordings"; no benchmark leakage. **THE
+  RESIDUAL IS NOW RULED, NOT PENDING:** upstream **never names the ~20 soundfonts**
+  (repo README + transcriber card + evidence card all say the training audio was
+  "made in-house" and **"I will not be releasing it"**), and the upstream NOTICE
+  attributes **no third-party samples** ⇒ **their file licenses are NOT VERIFIABLE
+  from published sources.** The published technique's own reference implementation
+  (`kobimusic/babymaker`) attributes its demo samples to **Sonatina Symphonic Orchestra
+  (CC Sampling Plus 1.0)** — a sampling license, not a plain permissive software
+  license — and names FluidR3_GM / TimGM6mb / A320U as the fonts it morphs (their own
+  terms were NOT verified here, so nothing is asserted about them). ⇒ **Tier B: ship
+  with recorded risk + human sign-off before commercial/App Store distribution; never
+  describe these weights as clean.**
+- **Evidence repairer: TIER B (D-45, 2026-11-24).** Apache-2.0; trained ONLY on
+  in-house synthetic audio generated from an earlier transcriber checkpoint where exact
+  notes are known — **and that in-house audio descends from the same unnamed ~20
+  soundfonts**, so it inherits the same provenance residual (the earlier "card verified
+  clean 2026-11-21" note was about the LICENCE, not the training-data provenance).
+- **METHOD vs DATA (the actionable split):** the soundfont-babies TECHNIQUE is
+  Apache-2.0 code and may be implemented/used; our own synthetic pipeline (X-301) must
+  use **only soundfonts whose file license we verify one by one**, and we never
+  redistribute fonts or rendered samples in the app.
 - **Grouper: NC-ENCUMBERED — NEVER SHIP.** CC BY 4.0 sets (Slakh2100, MusicNet,
   GuitarSet, Medley-solos-DB; OpenMIC-2018 CC-BY labels + FMA CC audio) PLUS
   **MUSDB18 (academic use, tracks CC BY-NC-SA) and IRMAS (CC BY-NC-SA 3.0)**. Card's
