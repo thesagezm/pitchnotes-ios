@@ -9,11 +9,14 @@ import Foundation
 /// swap in AVAudioConverter upstream, P-104/P-203).
 public enum AudioResampler {
     /// Zero crossings of the sinc per side (kernel half-width in cycles).
-    private static let zeroCrossings = 16.0
+    /// SHARED with `StreamingAudioResampler` (P-210) through
+    /// `AudioResamplerCutoff`, so the whole-buffer and the streaming resampler
+    /// cannot drift apart — their output must stay bit-identical.
+    private static let zeroCrossings = AudioResamplerCutoff.zeroCrossings
     /// Kaiser window shape parameter (β ≈ 8.6 ⇒ ~ −80 dB sidelobes).
-    private static let kaiserBeta = 8.6
+    private static let kaiserBeta = AudioResamplerCutoff.kaiserBeta
     /// Anti-alias cutoff as a fraction of the target Nyquist rate.
-    private static let cutoffFraction = 0.90
+    private static let cutoffFraction = AudioResamplerCutoff.cutoffFraction
 
     /// Resample mono `samples` at `sourceRate` to 16 kHz. Identical rates are
     /// still copied through the generic path by callers that need it; the

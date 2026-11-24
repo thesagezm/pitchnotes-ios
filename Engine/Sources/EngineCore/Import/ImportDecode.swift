@@ -176,6 +176,10 @@ public extension AudioDecoding {
     /// AudioResampler), writes the staging WAV, and returns the descriptor.
     /// Apple conformers MAY replace the resample with AVAudioConverter upstream
     /// but must still land here with source-rate samples for one code path.
+    ///
+    /// THIS IS THE WHOLE-BUFFER REFERENCE PATH — P-210 keeps it in the tree
+    /// unchanged, because the streaming path's output is asserted BYTE-IDENTICAL
+    /// to it (the Linux tests) and the CI-proven path must not be destabilised.
     static func normalizeAndStage(_ decoded: (samples: [Float], sampleRate: Int, channels: Int),
                                   workDir: URL) throws -> DecodedAudio {
         guard decoded.sampleRate > 0 else {
@@ -217,6 +221,35 @@ public extension AudioDecoding {
                             channels: mixChannels,
                             duration_s: Double(outFrames) / Double(DecodePolicy.targetSampleRate))
     }
+    /// The STREAMING normalization + staging (P-210): the SAME policy and the
+    /// SAME bytes as `normalizeAndStage`, but the source samples arrive in
+    /// chunks and the staged mix is written AS they are produced — the song is
+    /// never held in memory.
+    ///
+    /// `produce` returns the next channel-interleaved SOURCE-rate chunk, or
+    /// `nil` when the source is exhausted. On ANY failure the partial staging
+    /// file is removed (C-2.2: a failed or cancelled import leaves no residue).
+    static func normalizeAndStageStreaming(sourceSampleRate: Int,
+                                           sourceChannels: Int,
+                                           workDir: URL,
+                                           produce: () throws -> [Float]?) throws -> DecodedAudio {
+        try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
+        let mixURL = workDir.appendingPathComponent("staging-mix-44k1.f32.wav")
+        try? FileManager.default.removeItem(at: mixURL)
+        let stager = try StreamingMixStager(url: mixURL,
+                                            sourceSampleRate: sourceSampleRate,
+                                            sourceChannels: sourceChannels)
+        do {
+            while let chunk = try produce() {
+                guard !chunk.isEmpty else { continue }
+                try stager.push(interleaved: chunk)
+            }
+            return try stager.finish()
+        } catch {
+            stager.abort()
+            throw error
+        }
+    }
 }
 
 /// Channel-preserving WAV source decoder (the Linux-testable conformer; MP3/
@@ -225,18 +258,39 @@ public extension AudioDecoding {
 public struct WavSourceDecoder: AudioDecoding {
     public init() {}
 
+    /// The STREAMING decode (P-210): the WAV is read window-by-window from a
+    /// file handle (the old path did `Data(contentsOf:)` on the whole file) and
+    /// staged as it goes. The staged bytes are identical to the whole-buffer
+    /// path's (asserted in the Linux tests).
     public func decodeToMix(source: URL, workDir: URL) throws -> DecodedAudio {
         guard FileManager.default.fileExists(atPath: source.path) else {
             throw EngineError.importFailed("input file does not exist at \(source.path)")
         }
-        let bytes = try Array(Data(contentsOf: source))
-        let parsed = try parseWav(bytes)
-        return try Self.normalizeAndStage(parsed, workDir: workDir)
+        let reader = try WavFileReader(url: source)
+        guard reader.totalFrames > 0, reader.channels >= 1 else {
+            throw EngineError.unsupportedFormat(
+                "empty decode (\(reader.totalFrames) frames, \(reader.channels) ch) for \(source.lastPathComponent)")
+        }
+        var frame = 0
+        return try Self.normalizeAndStageStreaming(
+            sourceSampleRate: reader.sampleRate,
+            sourceChannels: reader.channels,
+            workDir: workDir) {
+                guard frame < reader.totalFrames else { return nil }
+                let count = min(8192, reader.totalFrames - frame)
+                let chunk = try reader.read(startFrame: frame, frameCount: count)
+                frame += count
+                return chunk
+            }
     }
 
     /// Channel-preserving PCM16/float32 WAV parse → interleaved Float samples
     /// at the SOURCE rate/channels (no policy here — normalizeAndStage owns it).
-    private func parseWav(_ bytes: [UInt8]) throws -> (samples: [Float], sampleRate: Int, channels: Int) {
+    ///
+    /// THIS IS THE WHOLE-FILE REFERENCE PARSE (P-210): the streaming decoder
+    /// uses `WavFileReader` instead, and the tests assert that both produce the
+    /// same staged bytes. Kept as the reference implementation.
+    func parseWav(_ bytes: [UInt8]) throws -> (samples: [Float], sampleRate: Int, channels: Int) {
         guard bytes.count >= 12,
               String(bytes: bytes[0..<4], encoding: .ascii) == "RIFF",
               String(bytes: bytes[8..<12], encoding: .ascii) == "WAVE" else {
