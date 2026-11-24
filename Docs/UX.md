@@ -313,7 +313,13 @@ table, mapping, and a11y code are untouched.
   wireframe + source/demo menu).
 - `App/Features/Audio` (J-102): `AudioSessionController` (permission/
   interruption/route glue over `MicPermissionFlow`), `MicAccessBanners`,
-  `MicMeterRow`, `LatencyStubRow` (§5.8).
+  `MicMeterRow` (takes the level as a VALUE + an `isSimulated` flag),
+  `LatencyStubRow` (§5.8).
+- `PitchLogic.InputLevelTracker` (J-102, pure + tested): the meter's dBFS →
+  0…1 mapping (floor −60 dBFS ⇒ 0, 0 dBFS ⇒ 1, linear in dB) with attack 0.5
+  / release 0.15 smoothing per frame. `RibbonModel.inputLevel` is fed from the
+  ingested frame's `loudness_db` (C-2.4); `TunerRibbonView` shows it in
+  `liveMic` mode and keeps the labelled mock wobble in `demo` mode.
 
 **As-built constants** (§3.2/§3.3 values confirmed; refine only via this doc):
 
@@ -782,14 +788,17 @@ IPA: artifact of the first green `build-ipa` on `jess` after the CI billing fix
 5. **Mic permission flow**: the mic UX appears on Learn — first visit shows
    "Enable microphone" prompt card. DENY it → denied card with [Open Settings]
    (no crash — AC). Grant later from Settings → re-open app → card gone, level
-   meter animates. **J-102 (M1 demo finding, still open):** the meter still
-   reads the MOCK level source (a 10 Hz wobble) even though the REAL P-104
-   capture is live on the ribbon path — so the meter wiggles "hot" regardless
-   of the singer, which reads as "the mic is very sensitive". The fix
-   (PitchLogic `InputLevelTracker` from the frame's `loudness_db`, real level
-   in liveMic mode, labeled mock kept for demo mode) is fully specified on the
-   J-102 row and lands AFTER the M2 gate. **Treat the meter as a mock until
-   then** — the ribbon's own pitch readout is the real capture.
+   meter animates. **J-102 (M1 demo finding) — FIXED:** the meter used to read
+   the MOCK level source (a 10 Hz wobble) even though the REAL P-104 capture
+   was live on the ribbon path, so it wiggled "hot" regardless of the singer
+   ("the mic is very sensitive"). It now reads the REAL microphone: the pure
+   PitchLogic `InputLevelTracker` maps the frame's `loudness_db` (C-2.4, the
+   chunk RMS dBFS the facade already computes) to 0…1 — floor −60 dBFS ⇒ 0,
+   0 dBFS ⇒ 1, linear in dB — with attack 0.5 / release 0.15 smoothing per
+   frame. **In LIVE MIC mode the meter is the real level; in DEMO mode it keeps
+   the labelled mock wobble** (the row says "SIMULATED input level", so a
+   simulation is never mistaken for a reading). The ribbon's pitch readout was
+   always the real capture; now the meter agrees with it.
 6. **Headphone banner**: with no headphones connected (granted state) → orange
    speaker guidance banner; plug in wired/BT headphones → banner disappears
    (route-change observer).

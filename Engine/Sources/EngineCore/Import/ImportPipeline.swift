@@ -87,18 +87,15 @@ public enum ImportPipeline {
             resolvedTuning = explicit
         } else {
             do {
-                let (samples, sr, ch) = try PCMF32Wav.read(url: decodedMix.url)
-                // Channel-mean fold (stereo stays stereo in the STAGED mix; the
-                // estimator is mono by design).
-                let mono: [Float]
-                if ch == 1 {
-                    mono = samples
-                } else {
-                    var folded = [Float](repeating: 0, count: samples.count / ch)
-                    for (i, v) in samples.enumerated() { folded[i / ch] += v / Float(ch) }
-                    mono = folded
-                }
-                resolvedTuning = TuningEstimator().estimate(samples: mono, sampleRate: sr)
+                // P-210: the staged mix is read FILE-BACKED and streamed into
+                // the estimator's 16 kHz mono domain (the old path read the
+                // whole file into a `Data` + a sample array, folded it into
+                // another whole-song array and resampled it into a third).
+                // The result is BIT-IDENTICAL to the old path's input (asserted
+                // in the Linux tests) — only the transient memory changed: a
+                // window instead of the song.
+                let x16 = try PCMF32Wav.mono16k(url: decodedMix.url)
+                resolvedTuning = TuningEstimator().estimate(samples16k: x16, frames: [])
             } catch {
                 resolvedTuning = 0 // weak/failed estimate → D-22 default 0
             }

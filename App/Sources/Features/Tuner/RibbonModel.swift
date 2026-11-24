@@ -40,6 +40,14 @@ final class RibbonModel: ObservableObject {
     @Published private(set) var centerIsHeld = false
     /// VoiceOver summary, throttled to ≤ 1 Hz (UX §7).
     @Published private(set) var spoken = "unvoiced"
+    /// REAL input level 0…1 for the meter (J-102): the engine's per-frame
+    /// loudness (C-2.4 `loudness_db` — the chunk RMS dBFS the facade already
+    /// computes) mapped by the pure `InputLevelTracker`. The meter used to
+    /// render a MOCK wobble at the M1 device demo, so the reading was never
+    /// the singer's — this is the real one. In demo mode the frames come
+    /// from the MockEngine (which reports −95 dBFS), so the view keeps the
+    /// labelled mock wobble there and shows this in liveMic mode.
+    @Published private(set) var inputLevel: Double = 0
 
     // MARK: - Configuration (UX §3.4/§3.5/§3.6; persisted from J-405/M4)
 
@@ -108,6 +116,8 @@ final class RibbonModel: ObservableObject {
     private var noteTrack = NoteTrack(part: .bass, notes: [])
     private var lastFrame: PitchFrame?
     private var frameIndex = 0
+    /// J-102: the pure dBFS → 0…1 meter tracker (PitchLogic; unit-tested).
+    private var levelTracker = InputLevelTracker()
     private var lastSpokenUpdate = Date.distantPast
     /// The real live engine (J-105). One instance per live session; `reset()`
     /// clears ribbon/VAD state on interruption per the facade contract.
@@ -174,6 +184,8 @@ final class RibbonModel: ObservableObject {
     private func ingest(_ frame: PitchFrame) {
         lastFrame = frame
         windowTime = frame.t
+        // J-102: the REAL mic level for the meter (pure tracker, PitchLogic).
+        inputLevel = levelTracker.ingest(loudnessDB: frame.loudness_db)
 
         let reference = self.reference(at: frame.t)
         let r = RibbonMapper.reading(frame: frame, reference: reference,
