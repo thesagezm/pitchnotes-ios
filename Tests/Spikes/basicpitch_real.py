@@ -397,7 +397,16 @@ def _slice_fat_archive(path: Path) -> Path | None:
 
 
 def _link_flag_candidates(root: Path) -> list[tuple[str, list[str]]]:
-    """The candidate link flag sets for the pod, best (shipped form) first."""
+    """The candidate link flag sets for the pod, best (shipped form) first.
+
+    THE SYSTEM FRAMEWORKS MATTER (measured, not guessed): the pod's archive is
+    a SINGLE prelinked object that contains the WHOLE runtime — including the
+    CoreML execution provider, whose protobuf code calls into Apple's
+    `CoreML::Specification` classes and the protobuf runtime, and whose
+    Objective-C/Foundation calls need Foundation. A plain C++ link does NOT get
+    those frameworks for free the way the app's ObjC/Swift link does, so the
+    link must name them: `-framework Foundation -framework CoreML`.
+    """
     candidates: list[tuple[str, list[str]]] = []
     xcf = root / "onnxruntime.xcframework"
     if xcf.is_dir():
@@ -407,12 +416,15 @@ def _link_flag_candidates(root: Path) -> list[tuple[str, list[str]]]:
             fw_dir = slice_dir / "onnxruntime.framework"
             if not fw_dir.is_dir():
                 continue
+            system = ["-framework", "Foundation", "-framework", "CoreML"]
             candidates.append(
-                ("xcframework framework (the SHIPPED form: -F <slice> -framework onnxruntime)",
-                 ["-F", str(slice_dir), "-framework", "onnxruntime"]))
+                ("xcframework framework + Foundation + CoreML "
+                 "(the SHIPPED form: -F <slice> -framework onnxruntime)",
+                 ["-F", str(slice_dir), "-framework", "onnxruntime"] + system))
             candidates.append(
-                ("xcframework framework + -Wl,-all_load",
-                 ["-F", str(slice_dir), "-framework", "onnxruntime", "-Wl,-all_load"]))
+                ("xcframework framework + Foundation (no CoreML)",
+                 ["-F", str(slice_dir), "-framework", "onnxruntime",
+                  "-framework", "Foundation"]))
             fw = fw_dir / "onnxruntime"
             if fw.exists() or fw.is_symlink():
                 thin = None
@@ -422,13 +434,13 @@ def _link_flag_candidates(root: Path) -> list[tuple[str, list[str]]]:
                     print(f"  [basicpitch] fat-slice fallback unavailable ({e})")
                 if thin is not None:
                     candidates.append(
-                        (f"host-arch slice of the same static archive, force_load "
-                         f"({thin.name})",
-                         [f"-Wl,-force_load,{thin}"]))
+                        (f"host-arch slice of the same static archive, force_load + "
+                         f"Foundation + CoreML ({thin.name})",
+                         [f"-Wl,-force_load,{thin}"] + system))
                     candidates.append(
-                        (f"host-arch slice of the same static archive, plain input "
-                         f"({thin.name})",
-                         [str(thin)]))
+                        (f"host-arch slice of the same static archive, plain input + "
+                         f"Foundation + CoreML ({thin.name})",
+                         [str(thin)] + system))
             break
     if not candidates:
         # A plain dylib/framework elsewhere in the tree.
@@ -546,7 +558,10 @@ def _compile_and_link(base_cmd: list[str], link_candidates: list[tuple[str, list
             print(f"  linked {label} with: {name}")
             print(f"    link flags: {' '.join(flags)}")
             return name
-        failures.append((name, r.stderr[-1500:]))
+        # Keep the HEAD as well as the tail: the undefined-symbol list starts
+        # with the symbol itself and the tail only shows the referrers.
+        err = r.stderr
+        failures.append((name, err[:2000] + ("\n…\n" + err[-800:] if len(err) > 2800 else "")))
     raise RuntimeError(
         f"{label} compile/link failed for EVERY link strategy:\n" +
         "\n".join(f"--- {n}:\n{e}" for n, e in failures))
