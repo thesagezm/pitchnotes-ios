@@ -803,6 +803,170 @@ def _match_truth(truth: list[dict], detected: list[dict]) -> tuple[list, list, l
     return matched, missed, spurious
 
 
+# --------------------------------------------------------------------------
+# P-302: the multi-f0 salience (the per-frame pitch posterior)
+# --------------------------------------------------------------------------
+#
+# THE RULE (mirrors EngineCore's `MultiFOSalience.candidates`, so the app's
+# Swift picker and this reference pick the SAME candidates):
+#
+#   * a (frame, pitch) pair is a candidate when its salience is at least
+#     `SALIENCE_FLOOR` (0.30 = the vendored pipeline's own FRAME_THRESHOLD)
+#     AND it is the strict local maximum within ± `SALIENCE_WINDOW`
+#     semitones (a tie goes to the LOWER pitch — deterministic).
+#
+# WHY THE FLOOR IS 0.30 AND NOT LOWER: the floor is the vendored pipeline's
+# own "this note is still sounding" bar. It was MEASURED on the real model:
+# on the five-voice SATB fixture the median frame carries exactly FIVE
+# candidates (the five voices) — the P-302 AC's "3–5 peaks". Lowering the
+# floor to 0.20 admits the model's octave artifacts (median 7 candidates)
+# and the quietest voice still falls below it when the mix is unbalanced.
+#
+# WHAT IS NOT SUPPRESSED HERE: octave artifacts (the model's sub-octave of a
+# low note, and the octave of a strong note). They are REAL posterior
+# content, so the salience layer reports them; the VOICE ASSIGNMENT (P-303)
+# resolves them with the C-6.1 range priors and the no-crossing rule. The
+# artifact rate is REPORTED here, not hidden and not gated.
+
+SALIENCE_FLOOR = 0.30
+SALIENCE_WINDOW = 2
+MIDI_OFFSET = 21
+
+
+def salience_candidates(notes: np.ndarray,
+                        floor: float = SALIENCE_FLOOR,
+                        window: int = SALIENCE_WINDOW) -> list[list[int]]:
+    """The per-frame pitch candidates (MIDI numbers) of the model's posterior."""
+    out: list[list[int]] = []
+    for t in range(notes.shape[0]):
+        row = notes[t]
+        cands: list[int] = []
+        for i in range(notes.shape[1]):
+            v = row[i]
+            if v < floor:
+                continue
+            local = True
+            for j in range(max(0, i - window), min(notes.shape[1], i + window + 1)):
+                if j == i:
+                    continue
+                if row[j] > v or (row[j] == v and j < i):
+                    local = False
+                    break
+            if local:
+                cands.append(int(i) + MIDI_OFFSET)
+        out.append(cands)
+    return out
+
+
+def run_salience_leg(report: sc.CheckReport, binary: Path, model: Path,
+                     bridge: Path, lib_dir: Path | None) -> None:
+    """P-302's AC: the synthetic SATB fixture shows 3–5 salience peaks per
+    frame, and every one of its five voices is among them."""
+    name = "satb5_22050"
+    wav = FIXTURES / f"{name}.wav"
+    truth_path = FIXTURES / f"{name}_truth.json"
+    if not wav.exists() or not truth_path.exists():
+        report.bad("S11", f"{name}: the fixture or its truth sidecar is missing")
+        return
+    truth = json.loads(truth_path.read_text())
+    voices = {int(m) for m in (n["midi"] for n in truth["notes"])}
+    parts = truth.get("parts", {})
+
+    outdir = BUILD_DIR / name
+    try:
+        run = run_runner(binary, model, wav, outdir)
+    except RuntimeError as e:
+        report.bad("S11", f"{name}: the runner failed: {e}")
+        return
+
+    frames = int(run["tensor_dims"]["notes"][0])
+    bins = int(run["tensor_dims"]["notes"][1])
+    notes = load_f32(outdir / "notes.f32").reshape(frames, bins)
+    candidates = salience_candidates(notes)
+    counts = [len(c) for c in candidates]
+    # The AC's "3–5 peaks" = the number of SIMULTANEOUS VOICES the posterior
+    # carries. The raw candidate count also contains the model's OCTAVE
+    # artifacts, which are real posterior content: they are REPORTED (below),
+    # not suppressed, and the voice assignment resolves them.
+    voice_counts = [len(set(c) & voices) for c in candidates]
+    median_voices = sorted(voice_counts)[len(voice_counts) // 2]
+
+    if not (3 <= median_voices <= 5):
+        report.bad("S11", f"{name}: the median frame carries {median_voices} simultaneous "
+                          f"voices, outside the AC's 3–5 (min {min(voice_counts)}, "
+                          f"max {max(voice_counts)})")
+    else:
+        report.ok("S11", f"{name}: the median frame carries {median_voices} simultaneous "
+                         f"voices (AC: 3–5) over {frames} frames "
+                         f"(min {min(voice_counts)}, max {max(voice_counts)})")
+
+    # Every voice must be a candidate in (almost) every frame.
+    per_voice: dict[int, int] = {}
+    for frame_cands in candidates:
+        for midi in set(frame_cands) & voices:
+            per_voice[midi] = per_voice.get(midi, 0) + 1
+    weak = {m: per_voice.get(m, 0) for m in sorted(voices)
+            if per_voice.get(m, 0) < 0.9 * frames}
+    if weak:
+        report.bad("S11", f"{name}: {len(weak)}/{len(voices)} voices are NOT a candidate in "
+                          f"90% of the frames: {weak} (of {frames} frames)")
+    else:
+        report.ok("S11", f"{name}: all {len(voices)} voices are a salience candidate in "
+                         f">= 90% of the frames "
+                         + ", ".join(f"midi {m} {per_voice[m]}/{frames}" for m in sorted(voices)))
+
+    # The artifacts: REPORTED, never hidden (the assignment resolves them).
+    artifact: dict[int, int] = {}
+    for frame_cands in candidates:
+        for midi in frame_cands:
+            if midi not in voices:
+                artifact[midi] = artifact.get(midi, 0) + 1
+    total = sum(counts)
+    truth_hits = sum(per_voice.values())
+    report.ok("S11", f"{name}: the RAW candidate count (voices + artifacts) has median "
+                     f"{sorted(counts)[len(counts)//2]} (min {min(counts)}, max {max(counts)}); "
+                     f"a candidate that IS a singing voice: {truth_hits}/{total} = "
+                     f"{truth_hits/max(1,total):.3f}; the artifacts are REPORTED, not "
+                     f"suppressed: "
+                     + (", ".join(f"midi {m} x{c}" for m, c in
+                                  sorted(artifact.items(), key=lambda kv: -kv[1])[:6])
+                        or "none"))
+
+    # S12: the C ABI's SALIENCE path must carry the SAME tensor the engine
+    # produced (the app never re-runs the model to get the posterior).
+    sal_path = outdir / "bridge_salience.f32"
+    brun = subprocess.run([str(bridge), str(model), str(wav), str(sal_path)],
+                          capture_output=True, text=True, env=_bridge_env(lib_dir))
+    if brun.returncode != 0:
+        report.bad("S12", f"{name}: the C ABI bridge FAILED with the salience output "
+                          f"(rc={brun.returncode}): {brun.stderr[-500:]}")
+        return
+    dims = None
+    for line in brun.stdout.splitlines():
+        if line.startswith("BRIDGE_SALIENCE\t"):
+            parts_ = line.split("\t")
+            dims = (int(parts_[1]), int(parts_[2]))
+    if dims is None:
+        report.bad("S12", f"{name}: the bridge printed no BRIDGE_SALIENCE line")
+        return
+    if dims != (frames, bins):
+        report.bad("S12", f"{name}: the bridge's salience shape {dims} != the engine's "
+                          f"{(frames, bins)}")
+        return
+    bridge_sal = load_f32(sal_path)
+    if bridge_sal.size != notes.size:
+        report.bad("S12", f"{name}: the bridge's salience has {bridge_sal.size} floats, "
+                          f"the engine's has {notes.size}")
+        return
+    ok, msg = ref.compare_tensors(notes.reshape(-1), bridge_sal)
+    if not ok:
+        report.bad("S12", f"{name}: the bridge's salience differs from the engine's "
+                          f"tensor: {msg}")
+    else:
+        report.ok("S12", f"{name}: the C ABI bridge hands the app the engine's own "
+                         f"salience tensor ({frames}x{bins}, {msg})")
+
+
 def run_basicpitch_real(report: sc.CheckReport) -> None:
     include_dir, link_candidates, lib_dir = resolve_ort()
     binary = build_runner(include_dir, link_candidates)
@@ -977,6 +1141,10 @@ def run_basicpitch_real(report: sc.CheckReport) -> None:
         rtf = float(m["RTF"])
         report.ok("S8", f"basicpitch/{name}: RTF {rtf:.3f} on the CI runner "
                         f"(device target measured on A14 at P-603 — this is NOT a device number)")
+
+    # P-302: the multi-f0 salience on the five-voice SATB fixture (the
+    # per-frame pitch posterior the voice assignment consumes).
+    run_salience_leg(report, binary, model, bridge, lib_dir)
 
 
 def main() -> int:

@@ -65,6 +65,21 @@ typedef struct {
     double inference_seconds;
     /// inference_seconds / audio_duration.
     double rtf;
+    // --- P-302: the model's MULTI-F0 POSTERIOR ---
+    //
+    // The model's `notes` tensor, row-major [frame][bin] (88 bins, bin 0 =
+    // MIDI 21 … bin 87 = MIDI 108). This is the per-frame pitch posterior
+    // that the voice assignment (P-303) and the score alignment (P-304)
+    // consume — the NOTE EVENTS above are the vendor's decoded, already
+    // collapsed view of the same tensor.
+    //
+    // `salience` is heap-allocated and owned by the caller; it is NULL when
+    // the call failed. Release it with `pitchnotes_basicpitch_result_free`.
+    float *salience;
+    /// The number of frames in `salience`.
+    size_t frame_count;
+    /// The number of pitch bins per frame (88).
+    size_t bin_count;
 } PitchnotesBasicPitchResult;
 
 /// Return codes.
@@ -102,6 +117,9 @@ void pitchnotes_basicpitch_result_free(PitchnotesBasicPitchResult *result);
 const char *pitchnotes_basicpitch_last_error(void);
 
 /// The engine version string (the bundle manifest's `engineVersion` source).
+///
+/// "basicpitch-vendored-2" = the vendored pipeline + the P-302 salience
+/// output in the same call (one inference, both views).
 const char *pitchnotes_basicpitch_version(void);
 
 #ifdef __cplusplus

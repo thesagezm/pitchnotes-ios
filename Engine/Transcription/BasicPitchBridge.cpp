@@ -38,7 +38,7 @@ extern "C" {
 
 const char *pitchnotes_basicpitch_last_error(void) { return g_last_error.c_str(); }
 
-const char *pitchnotes_basicpitch_version(void) { return "basicpitch-vendored-1"; }
+const char *pitchnotes_basicpitch_version(void) { return "basicpitch-vendored-2"; }
 
 void pitchnotes_basicpitch_result_free(PitchnotesBasicPitchResult *result) {
     if (result == nullptr) {
@@ -47,6 +47,10 @@ void pitchnotes_basicpitch_result_free(PitchnotesBasicPitchResult *result) {
     std::free(result->notes);
     result->notes = nullptr;
     result->count = 0;
+    std::free(result->salience);
+    result->salience = nullptr;
+    result->frame_count = 0;
+    result->bin_count = 0;
     result->inference_seconds = 0.0;
     result->rtf = 0.0;
 }
@@ -153,6 +157,25 @@ int32_t pitchnotes_basicpitch_transcribe(const float *mono_audio,
         }
         out->count = timed.size();
     }
+
+    // --- P-302: the multi-f0 posterior (the model's `notes` tensor) --------
+    //
+    // The SAME tensor the release trim reads above, handed to the app in the
+    // row-major [frame][bin] layout the Swift core consumes (EngineCore's
+    // `PitchSalienceTable(flat:frameCount:)`). One inference, both views: the
+    // app never re-runs the model to get the posterior.
+    const std::size_t salience_count =
+        static_cast<std::size_t>(time_frames) * static_cast<std::size_t>(freq_bins);
+    out->salience = static_cast<float *>(std::malloc(salience_count * sizeof(float)));
+    if (out->salience == nullptr) {
+        pitchnotes_basicpitch_result_free(out);
+        return fail(PITCHNOTES_BASIC_PITCH_ERR_OUT_OF_MEMORY,
+                    "cannot allocate the salience tensor");
+    }
+    std::memcpy(out->salience, note_energy.data(),
+                salience_count * sizeof(float));
+    out->frame_count = static_cast<size_t>(time_frames);
+    out->bin_count = static_cast<size_t>(freq_bins);
 
     const double audio_seconds =
         static_cast<double>(sample_count) /

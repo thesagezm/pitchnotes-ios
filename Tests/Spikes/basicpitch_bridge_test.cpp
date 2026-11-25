@@ -94,7 +94,7 @@ std::vector<float> read_wav_mono_22050(const char *path) {
 int main(int argc, char **argv) {
     if (argc < 3) {
         std::fprintf(stderr, "usage: basicpitch_bridge_test <model-onnx> "
-                             "<input-wav-22050-mono>\n");
+                             "<input-wav-22050-mono> [salience-out.f32]\n");
         return 2;
     }
     const std::vector<float> samples = read_wav_mono_22050(argv[2]);
@@ -115,6 +115,22 @@ int main(int argc, char **argv) {
     }
     std::printf("BRIDGE_NOTES\t%zu\n", result.count);
     std::printf("BRIDGE_RTF\t%.4f\n", result.rtf);
+
+    // --- P-302: the salience the bridge hands the app --------------------
+    //
+    // Dumped in the SAME row-major [frame][bin] layout the runner's
+    // notes.f32 uses, so the harness can prove the C ABI's salience path
+    // carries the SAME tensor the engine produced (not a re-derived one).
+    std::printf("BRIDGE_SALIENCE\t%zu\t%zu\n", result.frame_count,
+                result.bin_count);
+    if (argc >= 4 && result.salience != nullptr) {
+        std::ofstream f(argv[3], std::ios::binary);
+        if (!f) die("cannot write the salience dump");
+        f.write(reinterpret_cast<const char *>(result.salience),
+                static_cast<std::streamsize>(result.frame_count * result.bin_count *
+                                             sizeof(float)));
+    }
+
     pitchnotes_basicpitch_result_free(&result);
     return 0;
 }
