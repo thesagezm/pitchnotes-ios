@@ -401,6 +401,98 @@ identical), which is exactly why the cross-implementation parity exists.
   them. **The M3 code path and sideloading are unaffected.** These numbers
   describe the ENGINE's timing behaviour, not a shippable-for-sale model.
 
+### 5.2 P-305 — the SwiftF0 ↔ basic-pitch cross-check (the disagreement metric)
+
+**WHAT THIS IS:** two **independent** estimators of the same audio, compared
+against each other, so the engine can say how much they agree. SwiftF0
+(lars76/swift-f0, MIT) is a **monophonic** neural pitch tracker — "what single
+pitch is loudest here". basic-pitch (sevagh/basicpitch.cpp) is a **polyphonic**
+transcriber — "which notes are sounding". The note track the app grades against
+is basic-pitch's; if an independent estimator sees a different picture of the
+same audio, that difference is exactly the doubt the user should see. The
+metric is therefore **REPORTED, never used to filter, gate or hide a note**
+(C-12 / AGENTS §11).
+
+**THE METHOD (one definition, two implementations):**
+
+1. Each model runs over the **same source audio at its own native rate**
+   (SwiftF0 16 kHz, basic-pitch 22.05 kHz; the resampler is a deterministic
+   windowed-sinc, anti-aliased on the downsample — so the numbers measure the
+   two engines, not the resampler).
+2. SwiftF0's frames are **segmented into notes** (a pitch change starts a
+   note; an unvoiced gap ≤ 50 ms does not; a note < 50 ms is a blip).
+3. The note sets are matched **one-to-one, greedily by overlap**: same MIDI and
+   ≥ 50 % overlap of the shorter note.
+4. The headline number is the **disagreement rate = 1 − F1** of the match
+   (recall over the SwiftF0 notes, precision over the basic-pitch notes).
+
+**THE FIXTURES + THE MEASURED NUMBERS** (the committed artifact:
+`Tests/Spikes/Fixtures/crosscheck_swiftf0_vs_basicpitch.json`; the dump script:
+`python3 -I Tests/Spikes/crosscheck_dump.py`):
+
+| Case | Fixture | SwiftF0 notes | basic-pitch notes | Matched | Onset Δ (median) | Offset Δ (median) | Pitch mismatches | **Agreement F1** | **Disagreement** |
+|---|---|---|---|---|---|---|---|---|---|
+| (a) monophonic, 5 distinct notes | `bp_mono_22050.wav` | 5 | 5 | 5 | 7.5 ms | 46.5 ms | 0 | **1.000** | **0.000** |
+| (b) monophonic + ±15 ¢ vibrato | `synthetic_voice_16k.wav` | 5 | 9 | 5 | 8.5 ms | 18.0 ms | 3 | **0.714** | **0.286** |
+| (c) five voices at once (SATB) | `satb5_22050.wav` | 2 | 7 | 1 | 4.4 ms | 3842.6 ms | 6 | **0.222** | **0.778** |
+
+**READ THE THREE ROWS AS THREE DIFFERENT STATEMENTS — this is the whole point
+of publishing them separately:**
+
+- **(a) The baseline is sound.** On monophonic audio the two engines agree
+  **completely** (F1 = 1.000): the same five notes, the same MIDI, onsets
+  within 7.5 ms. The offset difference (46.5 ms median) is the two engines'
+  *release* semantics — SwiftF0's segment ends at its last voiced frame, while
+  basic-pitch holds the note slightly longer — not a pitch disagreement.
+- **(b) The disagreement is the TRANSCODER's artefact, and the metric says
+  which one.** Every one of the five real notes is found by **both** engines
+  (**recall = 1.000**), but basic-pitch emits **nine**: the five real notes,
+  **three OCTAVE artefacts** (midi 76 and 78 — the octave images of C3/D3, the
+  same artefact P-302 measured on the salience tensor) and **one note split in
+  two** by the vibrato. The precision drops to 0.556; the three octave events
+  are counted as **pitch mismatches**, separately from the plain extra note,
+  because "the engines disagree about the pitch" is a different failure from
+  "the engines disagree about whether there was a note".
+- **(c) THE HONEST LIMIT OF THE CROSS-CHECK ITSELF.** A **monophonic** tracker
+  fundamentally cannot see five simultaneous voices: SwiftF0 locks onto the
+  baritone (midi 55) in two short fragments (mean confidence 0.64 — low, and
+  honestly so) while basic-pitch sees all five voices plus two octave images of
+  C4. **The 0.778 disagreement here is NOT a statement about the note track's
+  quality and NOT a part-assignment number** — it is the statement that a
+  monophonic-vs-polyphonic comparison cannot referee a five-part mix. The
+  cross-check is a **monophonic-audio** instrument; the polyphonic case is
+  included precisely so that its limit is on the record.
+
+**THE TWO IMPLEMENTATIONS AGREE (the cross-implementation gate):** the metric
+is implemented twice — in Swift (`EngineCore`'s `SwiftF0NoteSegmenter` +
+`TranscriptionCrossCheck`, portable, Foundation-only) and in Python (the dump
+script's mirror). The artifact stores the Python-computed values, and
+`CrossCheckArtifactTests` recomputes them **in Swift** from the same committed
+frames/notes and asserts **number-for-number** agreement — so the two sides
+cannot drift apart silently. The Swift test also pins the three measured rows,
+so a change in the metric's *meaning* is a visible, deliberate change.
+
+**REPRODUCE:**
+
+```bash
+python3 -I Tests/Spikes/crosscheck_dump.py          # rewrite the artifact (real models)
+docker run --rm -v "$PWD":/src -w /src/Engine swift:6.0 swift test --filter CrossCheckArtifactTests
+```
+
+**HONEST LIMITS:**
+
+- **The artifact is a SNAPSHOT, not a byte-stable build product.** It was
+  produced with the numpy `onnxruntime` 1.32.0 wheel on a Linux dev box;
+  another ORT build may shift the raw frames' last digits (the METRIC is
+  stable — the notes do not change — but the frame values can).
+- **THE basic-pitch WEIGHTS BEHIND THESE NUMBERS ARE TIER C (D-46)** —
+  study-only for commercial distribution; the vendored CODE is Apache-2.0/MIT
+  and unaffected. SwiftF0's model is MIT (Tier A).
+- **These are DEV-BOX NUMBERS, never device claims** (§8's budgets are A14
+  numbers — P-603).
+- **The metric measures AGREEMENT, not TRUTH.** A high agreement means two
+  estimators tell the same story; it does not make either of them right.
+
 ## 6. Device report (M6: P-603 — CoreML EP, quantized models, battery)
 
 *Empty — fills at M6 (human-assisted A14 run).*
@@ -424,4 +516,6 @@ identical), which is exactly why the cross-implementation parity exists.
 | v1.8 | 2026-11-23 | **P-209 — the streaming writer — the Swift-side O(song) term is GONE (no numbers change in §4).** The separation stage no longer holds the song: the driver blends into a pending buffer bounded by ONE window and writes each window's blended stems to disk as they are finalised, and the staged mix is read window-by-window from disk. The streamed output is asserted **BIT-IDENTICAL** to the old accumulate path (Linux test, same fixture + mock SegmentEngine) and cancel/failure aborts the sinks (no partial stem file). **The §4 / §4.1 / §4.2 numbers are UNCHANGED** — they measure the C++ MIRROR harness (which still accumulates in RAM); the Swift-side saving is a CODE change, and the A14 device peak-RSS number remains **P-603's job** (the decode stage still holds the decoded song once — the decoder's own buffer). |
 | v1.9 | 2026-11-25 | **P-301 — §5.1 added: the basic-pitch note track on the two synthetic fixtures, RAW decode vs ENGINE OUTPUT side by side.** The raw decode's offsets are late by +28.8…+55.1 ms (mono) and +18.7…+100.0 ms (poly) — **3 notes over the 50 ms budget**; with the release trim (0.60 × the note's own median sustain energy, cut at the START of the LAST dip) **all 21 truth notes pass**, worst onset 11.6 ms (= one model frame) and worst offset **39.3 ms**. RTF 0.022–0.033 and peak RSS 67–78 MB are **dev-box numbers** (Linux, ORT 1.32.0 wheel, model load included) — **never device claims**; the A14 numbers are P-603's job. The tensor parity vs the independent Python reference measured **0.000e+00** on every tensor, and the corruption proof shows the gate is non-vacuous. The drift finding (the vendored frame grid drifts −188 samples/chunk ≈ 5.2 ms per second of audio; the naive mapping is ~1.25 s late on a 4-minute song) and the honest limits (3 spurious midi 31 sub-octave events at amplitude 0.36–0.40; the confidence is the note strength, clamped and never rescaled) are recorded in ENGINE.md §1.5. |
 | v1.10 | 2026-11-25 | **X-219/X-220 (D-46):** §5.1 gains the honest-limit bullet — the `nmp.onnx` weights behind these numbers are **TIER C** per D-46 (NC training data ⇒ study-only for commercial/App Store distribution; the vendored code is Apache-2.0/MIT and unaffected; the M3 code path and sideloading are unaffected). No measured number changed — only the provenance claim. |
+| v1.11 | 2026-11-25 | **P-305 — §5.2 added: the SwiftF0 ↔ basic-pitch cross-check (the disagreement metric), measured on the real models.** The headline metric is `disagreement = 1 − F1` over a one-to-one, overlap-matched note comparison. Three rows, three different statements: (a) monophonic `bp_mono_22050` — the two engines agree **COMPLETELY** (F1 **1.000**, 5/5 notes, onset Δ 7.5 ms); (b) monophonic + vibrato `synthetic_voice_16k` — recall **1.000** (both engines find all 5 real notes) but basic-pitch adds **3 octave artefacts** (midi 76/78) and **1 vibrato split** ⇒ precision 0.556, F1 **0.714**; (c) five-voice `satb5_22050` — F1 **0.222**, and the honest reading is that a **MONOPHONIC tracker cannot referee a five-part mix** (SwiftF0 locks onto the baritone in two fragments, confidence 0.64; basic-pitch sees all five voices + 2 octave images) ⇒ the cross-check is a MONOPHONIC-audio instrument, and its limit is on the record. The metric is implemented TWICE (Swift `EngineCore` + a Python mirror) and the Swift test asserts **number-for-number** agreement with the committed artifact, so the two sides cannot drift silently. The metric is REPORTED, never a filter (C-12). |
+
 

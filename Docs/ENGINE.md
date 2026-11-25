@@ -389,6 +389,66 @@ the engine output exactly, so the spike measures what the app ships.
   commercial-safe path is X-301 synthetic SATB + CC-BY corpora + PD hymn
   scores, or a differently-trained model. Never described as clean.
 
+### 1.6 M3 note tracking — the v1.1 metadata + the cross-check (P-305)
+
+**THE v1.1 NOTE TRACK (CONTRACTS C-10.0 / C-10.1 / C-10.2, D-41).** The
+engine now writes the metadata that makes a note track honest about HOW SURE
+it is. Every field is **OPTIONAL** and the **ABSENCE RULE IS BINDING**: a
+consumer that meets a note file without a field behaves exactly as it did
+before v1.1; a v0.0 note file stays valid forever (C-2.3) and is validated
+under V7–V10 only.
+
+| Field | Where | Written by | Meaning | Absent ⇒ |
+|---|---|---|---|---|
+| `unison` | per note | `NoteTrackV11Builder` (D-41 §3) | this note shares its MIDI (±25 ¢) with a note of another part in the same phrase | treated as `false` |
+| `salience` | per note | P-302's posterior (OPTIONAL) | how strongly the multi-f0 posterior supported the note | the consumer behaves exactly as before v1.1 (C-12) |
+| `assignmentBand` | per note | D-41 §1's thresholds | `CONFIRMED` (c ≥ 0.80) / `PROVISIONAL` (0.50 ≤ c < 0.80) / `UNASSIGNED` (c < 0.50) | derived from `confidence` |
+| `engineVersion` | per track | the engine (C-10.2) | the producer of THIS track (additional to the manifest's) | `"unknown"` (never invented) |
+| `partPresence` | per track | D-41 §2 | present per 4.0 s phrase (bar-aligned when P-304 supplies a bar map): present iff ≥ 1 note AND mean confidence ≥ 0.60 | the consumer dims/hides nothing |
+| `assignmentSummary` | per track | the bands | the CONFIRMED / PROVISIONAL / UNASSIGNED split | computed from the notes |
+
+**ONE SEMANTIC, NEVER TWO (the D-33 pattern).** The thresholds, the phrase
+grid, the presence bar and the unison rule live in **one** place
+(`EngineCore`'s `NoteTrackV11Builder` + `NoteTrackMetadata`), so the app and
+the engine cannot drift. Jess's roll derives the same values locally today —
+which is CORRECT under the absence rule — and the swap is ONE place
+(`NoteTrackMetadata.band(for:)` / `.isUnison(_:)` / `.summary(for:)` /
+`.presence(for:phraseIndex:)`).
+
+**THE VALIDATORS (V16/V17/V18, C-10.1), era-scoped to v1.1:**
+
+- **V16** — the per-note v1.1 fields: `salience` in [0,1], `assignmentBand` one
+  of the three exact spellings. `assignmentBand` is stored as the **RAW
+  STRING** on purpose: a file carrying a fourth spelling must be REPORTED as a
+  violation rather than crash the decoder, so the consumer can show the
+  problem instead of losing the track.
+- **V17** — `partPresence[]` consistency: ascending `phraseIndex`,
+  `start_s < end_s`, `meanConfidence` in [0,1], `noteCount ≥ 0`, and
+  `present == (noteCount ≥ 1 && meanConfidence ≥ 0.60)`. A `present == false`
+  entry is **never** an error.
+- **V18** — band/presence coherence: a note's band MUST agree with its
+  confidence. **A mismatch is a CONTRACT VIOLATION that is REPORTED, never
+  silently repaired** (the engine fixes it, the consumer reports it).
+
+**THE CROSS-CHECK (the disagreement metric).** Two INDEPENDENT estimators are
+compared over the same audio: SwiftF0 (a MONOPHONIC neural tracker) is
+segmented into notes and matched one-to-one against basic-pitch's note events
+(same MIDI, ≥ 50 % overlap). The headline is **`disagreement = 1 − F1`**. The
+measured numbers and their honest reading are in BENCHMARKS §5.2 — the short
+version: on monophonic audio the two engines agree **completely** (F1 1.000),
+the disagreement on vibrato is the **transcriber's octave artefacts**, and on a
+five-voice mix the cross-check **cannot referee it** (a monophonic tracker
+cannot see five voices) — which is on the record on purpose. **The metric is
+REPORTED, never used to filter, gate or hide a note** (C-12 / AGENTS §11).
+
+**THE ARTIFACT + THE TWO IMPLEMENTATIONS.** The cross-check is implemented
+twice — in Swift (portable, Foundation-only) and in Python (the dump script) —
+and the committed artifact
+(`Tests/Spikes/Fixtures/crosscheck_swiftf0_vs_basicpitch.json`) carries the
+Python-computed values, which the Swift test asserts **number for number**. The
+benchmark harness (P-306) reads the same artifact, so no benchmark run needs a
+model download.
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -479,4 +539,4 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.6 | 2026-11-23 | P-209 (streaming separation — the P-202 follow-up): §1.3 gains the **streaming separation** note — the separation stage no longer holds the song in memory (`AudioWindowSource` reads the staged mix window-by-window from disk; `StemStreamSink` writes each window's blended stems to the stem file as they are finalised; the driver's retained buffer is bounded by ONE window and the streamed output is BIT-IDENTICAL to the old accumulate path). C-8 kept: cancel/failure aborts the sinks (no partial stem file) and the progress stays monotonic. The A14 device peak-RSS number remains P-603's job. |
 | v1.7 | 2026-11-25 | **P-301 — the M3 note-tracking stack (§1.5 added):** the vendored basicpitch.cpp pipeline under the ONE ORT (D-39), the TWO shared rules (the chunk-aware frame → seconds mapping — the vendored frame grid drifts −188 samples/chunk ≈ 5.2 ms per second of audio, so the naive mapping is ~1.25 s late on a 4-minute song — and the RELATIVE release trim that cuts the LAST dip at 0.60 × the note's own median sustain energy), the C ABI bridge the app's Swift side calls (amplitude → confidence stays in NoteTrackBuilder, clamped and never rescaled), the vendor LINK bug P-301 surfaced (a global vs `basic_pitch::`-qualified definition — FIXED by Leto's PATCH 6 + 7 on main @bc68e0b, proven by a LINK test), and the honest limits (sub-octave bleed: 3 spurious midi 31 events at amplitude 0.36–0.40, below the 0.5 band; the CI RTF/RSS are RUNNER numbers, never device claims). The trim constant's provenance: ~1 200 candidate rules swept against ALL 21 truth notes; the shipped rule is at the family's floor (39.3 ms worst offset) and the 50 ms budget was NOT loosened to fit it. |
 | v1.8 | 2026-11-25 | **X-219 + X-220 (D-46 + the macOS link fix):** the basic-pitch WEIGHTS are re-classified **TIER C** per D-46 (the code is Apache-2.0/MIT and ship-safe; the weights inherit NC training data ⇒ STUDY-ONLY for commercial/App Store distribution, and no human sign-off can promote them — the M3 code path and sideloading are unaffected) — §1.5 gains the honest-limit bullet, the model table's basicpitch row carries the verdict, and `Models/manifest.json` + the spike's own provenance strings now say Tier C (the bytes, URL, sha256 and size are unchanged). **X-220:** the real spike now extracts the ORT pod WITH its symlinks (Python's `zipfile.extractall` flattens a symlink into a regular file holding the target AS TEXT, which left the framework's 'binary' 28 bytes and made ld fail with `unknown file type`) and links through an ORDERED strategy list — the shipped `-F <slice> -framework onnxruntime` form first — reporting which strategy linked. |
-
+| v1.9 | 2026-11-25 | **P-305 — §1.6 added: the v1.1 NoteTrack metadata (C-10.0/C-10.1/C-10.2, D-41) + the SwiftF0↔basic-pitch cross-check.** The v1.1 metadata (per-note `unison`/`salience`/`assignmentBand`, per-track `engineVersion`/`partPresence`/`assignmentSummary`) is ADDITIVE and OPTIONAL — **the absence rule is binding**: absent ⇒ behave exactly as before v1.1, and a v0.0 note file stays valid forever (validated under V7–V10 only). **ONE SEMANTIC, NEVER TWO:** the D-41 thresholds (0.80/0.50), the 4.0 s phrase grid, the 0.60 presence bar and the ±25 ¢ unison rule live in ONE place (`NoteTrackV11Builder` + `NoteTrackMetadata`), so Jess's app-side derivation and the engine cannot drift (the D-33 pattern). The V16/V17/V18 validators are era-scoped to v1.1 and REPORT a band/presence mismatch as a CONTRACT VIOLATION rather than repairing it silently; `assignmentBand` is stored as the RAW STRING so a fourth spelling is reported instead of crashing the decoder. The cross-check compares two INDEPENDENT estimators (SwiftF0 = monophonic tracker, segmented; basic-pitch = polyphonic transcriber) and reports **`disagreement = 1 − F1`** — measured (BENCHMARKS §5.2): monophonic **F1 1.000** (full agreement), monophonic+vibrato **F1 0.714** (the transcriber's 3 octave artefacts + 1 vibrato split), five-voice **F1 0.222** (a MONOPHONIC tracker cannot referee a five-part mix — the cross-check's own limit, on the record on purpose). The metric is implemented twice (Swift + a Python mirror) and the Swift test asserts number-for-number agreement with the committed artifact. **The metric is REPORTED, never a filter** (C-12 / AGENTS §11). |
