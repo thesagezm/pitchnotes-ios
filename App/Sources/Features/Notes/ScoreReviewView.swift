@@ -322,7 +322,7 @@ final class ScoreReviewModel: ObservableObject {
     /// property that takes parameters (the parser reads `(for part: Part)` as
     /// a second declaration — "consecutive declarations on a line").
     func detectedCount(for part: Part) -> Int {
-        model.detected[part]?.notes.count ?? 0
+        detected[part]?.notes.count ?? 0
     }
 }
 
