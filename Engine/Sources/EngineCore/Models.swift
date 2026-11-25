@@ -8,6 +8,12 @@ import Foundation
 
 /// One note in a `NoteTrack` (C-2.3). JSON: `{ "start_s", "end_s", "midi",
 /// "cents_ref", "confidence" }`.
+///
+/// v1.1 (C-10.0) ADDS three OPTIONAL keys — `unison`, `salience`,
+/// `assignmentBand` — which are OMITTED from the JSON when absent (the
+/// synthesized `Codable` conformance encodes an `Optional` with
+/// `encodeIfPresent`). The absence rule is binding: a consumer that meets a
+/// note WITHOUT them behaves exactly as it did before v1.1.
 public struct Note: Codable, Equatable, Sendable {
     /// Seconds from song start.
     public var start_s: Double
@@ -19,31 +25,84 @@ public struct Note: Codable, Equatable, Sendable {
     /// [-50, +50] (+ = sharper).
     public var cents_ref: Int
     /// V9: [0, 1].
+    ///
+    /// C-10.0 does NOT redefine this field: in v1.1 it carries the ASSIGNMENT
+    /// confidence (D-41 §1). The v1.1 addition is the `assignmentBand` BESIDE
+    /// it, never a change of meaning.
     public var confidence: Double
+    /// v1.1 OPTIONAL (C-10.0, D-41 §3): this note shares its MIDI pitch
+    /// (within ±25 cents) with a note of another part in the same phrase.
+    /// ABSENT ⇒ treat as `false`.
+    public var unison: Bool?
+    /// v1.1 OPTIONAL (C-10.0, P-302, C-12): how strongly the multi-f0
+    /// posterior supported this note, [0, 1].
+    ///
+    /// This is the MODEL'S POSTERIOR STRENGTH, NOT a calibrated probability.
+    /// ABSENT ⇒ the consumer behaves EXACTLY as it did before v1.1: no
+    /// salience-based filtering, weighting, rendering or grading change.
+    public var salience: Double?
+    /// v1.1 OPTIONAL (C-10.0, D-41 §1): the assignment band — one of the three
+    /// exact strings `"CONFIRMED"`, `"PROVISIONAL"`, `"UNASSIGNED"`.
+    ///
+    /// It is stored as the RAW STRING on purpose: a file carrying a fourth
+    /// spelling must be REPORTED as a V16 violation rather than crash the
+    /// decoder, so the consumer can show the problem instead of losing the
+    /// track. Use `NoteTrackMetadata.band(for:)` for the typed value (it
+    /// falls back to the confidence-derived band when the string is invalid).
+    public var assignmentBand: String?
 
-    public init(start_s: Double, end_s: Double, midi: Int, cents_ref: Int = 0, confidence: Double) {
+    public init(start_s: Double, end_s: Double, midi: Int, cents_ref: Int = 0, confidence: Double,
+                unison: Bool? = nil, salience: Double? = nil, assignmentBand: String? = nil) {
         self.start_s = start_s
         self.end_s = end_s
         self.midi = midi
         self.cents_ref = cents_ref
         self.confidence = confidence
+        self.unison = unison
+        self.salience = salience
+        self.assignmentBand = assignmentBand
     }
 }
 
 /// `notes/<PART>.json` (C-2.3). JSON: `{ "contractVersion", "part", "notes": [...] }`.
 /// V-rules: V7 start<end per note; V8 sorted by start_s and NON-overlapping within
 /// a part; V9 ranges; V10 `part` matches filename PART.
+///
+/// v1.1 (C-10.0) ADDS three OPTIONAL keys — `engineVersion`, `partPresence`,
+/// `assignmentSummary` — omitted when absent.
 public struct NoteTrack: Codable, Equatable, Sendable {
     public var contractVersion: String
     public var part: Part
     public var notes: [Note]
+    /// v1.1 OPTIONAL (C-10.0, C-10.2): the engine that produced THIS track.
+    /// ADDITIONAL to the manifest's `engineVersion` (C-2.1) — the manifest's
+    /// is the bundle's producer, this one is the producer of this track.
+    /// ABSENT ⇒ treat as `"unknown"`.
+    public var engineVersion: String?
+    /// v1.1 OPTIONAL (C-10.0, D-41 §2): the part-presence per phrase.
+    /// ABSENT ⇒ the consumer MUST NOT dim or hide anything.
+    public var partPresence: [PartPresence]?
+    /// v1.1 OPTIONAL (C-10.0, D-41 §1): the CONFIRMED / PROVISIONAL /
+    /// UNASSIGNED split for this part.
+    public var assignmentSummary: AssignmentSummary?
 
+    /// The v0.0-era note-file version (C-2.3). The M2 mock engine writes
+    /// this; it stays valid forever (C-2.3, C-10.0's absence rule).
     public static let currentContractVersion = "v0.0"
 
-    public init(contractVersion: String = NoteTrack.currentContractVersion, part: Part, notes: [Note]) {
+    /// The v1.1 note-file version (C-10.0) — what P-305's writer emits.
+    public static let contractVersionV11 = "v1.1"
+
+    public init(contractVersion: String = NoteTrack.currentContractVersion, part: Part, notes: [Note],
+                engineVersion: String? = nil,
+                partPresence: [PartPresence]? = nil,
+                assignmentSummary: AssignmentSummary? = nil) {
         self.contractVersion = contractVersion
         self.part = part
         self.notes = notes
+        self.engineVersion = engineVersion
+        self.partPresence = partPresence
+        self.assignmentSummary = assignmentSummary
     }
 }
 

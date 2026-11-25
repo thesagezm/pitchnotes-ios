@@ -120,10 +120,40 @@ public enum BundleValidator {
         return ValidationResult(violations: v)
     }
 
-    // MARK: - V7–V10: NoteTrack
+    // MARK: - V7–V10: NoteTrack (+ V16–V18, era-scoped to v1.1)
+
+    /// The note-file contract era. `nil` = unparseable version string.
+    ///
+    /// Known majors: 0 (v0.x — the v0.0 note file, V7–V10 ONLY) and 1 (v1.x —
+    /// v1.1 adds V16–V18). Anything else is an unknown MAJOR, which C-10.0
+    /// says a consumer MUST reject.
+    static func noteEra(_ contractVersion: String) -> Int? {
+        guard contractVersion.hasPrefix("v") else { return nil }
+        let parts = contractVersion.dropFirst().split(separator: ".", maxSplits: 1)
+        guard parts.count == 2, let major = Int(parts[0]), Int(parts[1]) != nil else { return nil }
+        return major
+    }
 
     public static func validate(noteTrack: NoteTrack) -> ValidationResult {
         var v: [ContractViolation] = []
+
+        // The era gate (C-10.0): "A consumer MUST accept "v0.0", "v1.0" and
+        // "v1.1"; it MUST reject an unknown MAJOR."
+        //
+        // NOTE (P-305): the contract names no V-rule for the era gate itself,
+        // so it is reported under V16 — the rule family that owns the v1.1
+        // note-file semantics. Leto may rename it in a future additive
+        // contract revision; the BEHAVIOUR (reject the unknown major) is
+        // C-10.0's, not this implementation's.
+        let era = noteEra(noteTrack.contractVersion)
+        if era == nil {
+            v.append(ContractViolation("V16", "note file contractVersion \"\(noteTrack.contractVersion)\" is not a parseable \"v<major>.<minor>\" version (supported: v0.0, v1.0, v1.1)"))
+            return ValidationResult(violations: v)
+        }
+        if era != 0 && era != 1 {
+            v.append(ContractViolation("V16", "note file contractVersion \"\(noteTrack.contractVersion)\" has an unknown major (supported: v0.0, v1.0, v1.1)"))
+            return ValidationResult(violations: v)
+        }
 
         // V7 + V8 + V9.
         var previousEnd: Double = -.infinity
@@ -147,7 +177,75 @@ public enum BundleValidator {
             }
         }
 
+        // V16–V18 apply to the v1.1 era ONLY. A v0.0/v1.0 note file is
+        // validated under V7–V10 ONLY and MUST keep being accepted (C-10.1).
+        if era == 1 {
+            v.append(contentsOf: validateV11Fields(noteTrack))
+        }
+
         return ValidationResult(violations: v)
+    }
+
+    /// V16 + V17 + V18 — the v1.1 note-file rules (C-10.1).
+    ///
+    /// - V16: the per-note v1.1 fields — `salience` in [0,1] and
+    ///   `assignmentBand` one of the three exact spellings. (`unison` is a
+    ///   bool by type, and `confidence` is REQUIRED per note in v1.1 — a
+    ///   note file without it cannot decode at all, which is a rejection, not
+    ///   a silent default.)
+    /// - V17: `partPresence[]` consistency — ascending `phraseIndex`,
+    ///   `start_s < end_s`, `meanConfidence` in [0,1], `noteCount >= 0`, and
+    ///   `present == (noteCount >= 1 && meanConfidence >= 0.60)`. A
+    ///   `present == false` entry is NEVER an error.
+    /// - V18: band/presence coherence — a note's `assignmentBand` MUST agree
+    ///   with its `confidence` under D-41's thresholds. A mismatch is a
+    ///   CONTRACT VIOLATION that is REPORTED, never silently repaired.
+    static func validateV11Fields(_ track: NoteTrack) -> [ContractViolation] {
+        var v: [ContractViolation] = []
+
+        for (i, note) in track.notes.enumerated() {
+            if let salience = note.salience, (salience < 0 || salience > 1) {
+                v.append(ContractViolation("V16", "note \(i): salience must be in [0,1] (got \(salience))"))
+            }
+            if let raw = note.assignmentBand {
+                if AssignmentBand(rawValue: raw) == nil {
+                    v.append(ContractViolation("V16", "note \(i): assignmentBand \"\(raw)\" is not one of CONFIRMED / PROVISIONAL / UNASSIGNED"))
+                } else {
+                    // V18 — coherence with the confidence (D-41 §1).
+                    let expected = AssignmentBand.band(forConfidence: note.confidence)
+                    let actual = AssignmentBand(rawValue: raw)!
+                    if expected != actual {
+                        v.append(ContractViolation("V18", "note \(i): assignmentBand \(actual.rawValue) disagrees with confidence \(note.confidence) (D-41 §1 implies \(expected.rawValue)); a mismatch is a contract violation, not something to repair silently"))
+                    }
+                }
+            }
+        }
+
+        if let presence = track.partPresence {
+            var previousIndex = -1
+            for (i, entry) in presence.enumerated() {
+                if entry.phraseIndex <= previousIndex {
+                    v.append(ContractViolation("V17", "partPresence[\(i)]: phraseIndex (\(entry.phraseIndex)) must be strictly ascending (previous \(previousIndex))"))
+                }
+                previousIndex = entry.phraseIndex
+                if !(entry.start_s < entry.end_s) {
+                    v.append(ContractViolation("V17", "partPresence[\(i)]: start_s (\(entry.start_s)) must be < end_s (\(entry.end_s))"))
+                }
+                if entry.meanConfidence < 0 || entry.meanConfidence > 1 {
+                    v.append(ContractViolation("V17", "partPresence[\(i)]: meanConfidence must be in [0,1] (got \(entry.meanConfidence))"))
+                }
+                if entry.noteCount < 0 {
+                    v.append(ContractViolation("V17", "partPresence[\(i)]: noteCount must be >= 0 (got \(entry.noteCount))"))
+                }
+                let expectedPresent = entry.noteCount >= 1
+                    && entry.meanConfidence >= PartPresence.presenceThreshold
+                if entry.present != expectedPresent {
+                    v.append(ContractViolation("V17", "partPresence[\(i)]: present (\(entry.present)) disagrees with noteCount (\(entry.noteCount)) and meanConfidence (\(entry.meanConfidence)) — D-41 §2 implies \(expectedPresent)"))
+                }
+            }
+        }
+
+        return v
     }
 
     // MARK: - V11–V13: PitchFrames
