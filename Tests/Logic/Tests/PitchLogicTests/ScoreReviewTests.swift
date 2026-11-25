@@ -250,22 +250,25 @@ final class ScoreReviewTests: XCTestCase {
 
     // MARK: - The manual nudge
 
-    func testANudgeMovesTheScoreNote() {
+    func testANudgeMovesTheScoreNote() throws {
         var review = self.review()
         review.nudge(scoreIndex: 0, by: 0.25)
-        let nudged = review.alignedNotes.first { $0.scoreIndex == 0 }
-        XCTAssertEqual(nudged?.alignedStart_s, 3.25, accuracy: 1e-9)
-        XCTAssertEqual(nudged?.alignedEnd_s, 4.25, accuracy: 1e-9)
+        // `accuracy:` needs a non-optional Double — optional chaining would
+        // yield `Double?`, which the accuracy overload cannot take.
+        let nudged = try XCTUnwrap(review.alignedNotes.first { $0.scoreIndex == 0 })
+        XCTAssertEqual(nudged.alignedStart_s, 3.25, accuracy: 1e-9)
+        XCTAssertEqual(nudged.alignedEnd_s, 4.25, accuracy: 1e-9)
         XCTAssertEqual(review.nudge(for: 0), 0.25, accuracy: 1e-9)
     }
 
-    func testTheNudgesCanBeUndone() {
+    func testTheNudgesCanBeUndone() throws {
         var review = self.review()
         review.nudge(scoreIndex: 0, by: 0.25)
         review.nudge(scoreIndex: 1, by: -0.1)
         review.resetNudges()
         XCTAssertTrue(review.nudges.isEmpty)
-        XCTAssertEqual(review.alignedNotes.first?.alignedStart_s, 3.0, accuracy: 1e-9)
+        let first = try XCTUnwrap(review.alignedNotes.first)
+        XCTAssertEqual(first.alignedStart_s, 3.0, accuracy: 1e-9)
     }
 
     func testTheNudgesMoveTheScoreInformedTrack() {
