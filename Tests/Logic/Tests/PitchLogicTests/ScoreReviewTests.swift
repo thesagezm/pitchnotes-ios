@@ -386,7 +386,7 @@ final class ScoreReviewTests: XCTestCase {
     // MARK: - The DEMO fixture
 
     func testTheDemoAlignmentImprovesTheAgreement() {
-        let demo = MockScore.demoReview()
+        var demo = MockScore.demoReview()
         XCTAssertGreaterThan(demo.agreementAfter.ratio, demo.agreementBefore.ratio)
         XCTAssertTrue(demo.confidenceSufficient)
         // The DEMO alignment says it was NOT applied by an aligner — accepting

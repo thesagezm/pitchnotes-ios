@@ -317,7 +317,11 @@ final class ScoreReviewModel: ObservableObject {
     }
 
     /// The detected notes per part (the "what the engine heard" column).
-    var detectedCount(for part: Part) -> Int {
+    ///
+    /// A FUNCTION, not a computed property: Swift cannot declare a computed
+    /// property that takes parameters (the parser reads `(for part: Part)` as
+    /// a second declaration — "consecutive declarations on a line").
+    func detectedCount(for part: Part) -> Int {
         model.detected[part]?.notes.count ?? 0
     }
 }

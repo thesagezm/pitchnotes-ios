@@ -369,7 +369,7 @@ public struct ScoreReview: Equatable, Sendable {
     public var nudges: [Int: Double]
 
     public init(score: ScoreNoteList, alignmentResult: ScoreAlignmentResult,
-                detected: [Part: NoteTrack], hasOverlay: Bool,
+                detected: [Part: NoteTrack], hasOverlay: Bool = false,
                 accepted: Bool = false, nudges: [Int: Double] = [:]) {
         self.score = score
         self.alignmentResult = alignmentResult
