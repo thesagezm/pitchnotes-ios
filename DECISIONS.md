@@ -16,6 +16,226 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-48 | 2026-11-25 UTC | Leto | RULED (**THE M3 LANE-DEVIATION ORDER — the human owner closed the Jess lane for M3 and ordered Leto to finish M3 itself**: "there will be no more jess sessions for m3… if something needs doing do it yourself — the last paul session is also currently running — we have to move to m4 soon." This is a BOUNDED, RECORDED exception to AGENTS §1/§12's lane ownership, for the M3 close ONLY. Precedent: D-38's M2 deviation, which is now closed.)
+**Context:** Three chats, three lanes, no shared memory — the repo is the shared brain
+(AGENTS §1). The M3 lane split is uneven: Jess finished her four M3 rows (J-301…J-304,
+all at REVIEW, with a green run `45517343019@a2c93c7`) but **will not run another M3
+session**, so the work she left at REVIEW — and the two small changes D-47 asks of her —
+would otherwise sit unlanded while the milestone stalls. Paul has ONE session left and it
+is **running right now** (his branch `paul` is live in the shared primary checkout).
+**The human owner (thesagezm) has ruled on the scope question**, which is theirs to rule
+(AGENTS §1: "Leto-vs-principle or scope/product questions → the human owner").
+
+**Ruling:**
+1. **LETO MAY COMPLETE THE REMAINING M3 WORK IN ANY LANE** — `App/**`, `Features/**`,
+   `Tests/Logic/**`, `Engine/**`, `Models/**`, `Tests/Spikes/**`, `scripts/**` — for the
+   M3 close. This is an **exception to AGENTS §1's and §12's lane ownership, bounded to
+   M3, authorised by the human owner, and recorded here so the deviation is auditable
+   rather than silent.** It ENDS with `m3`; the M4 board is seeded with normal ownership
+   restored.
+2. **THE SHARED-TREE RULE IS NOT RELAXED — IT IS HARDER WHILE PAUL IS LIVE.** Paul has a
+   session running in the primary checkout on branch `paul`. **Leto MUST NOT write into
+   that tree** (two writers in one tree is the exact risk AGENTS §1 warns about). Leto
+   works in **dedicated worktrees** (`…-leto-wt`, `…-main-wt`, `…-jess-wt`,
+   `…-uti-probe`) and merges **only from `origin/<branch>` snapshots**, never from a lane
+   agent's live working tree. When Paul's session ends, his branch is merged like any
+   other snapshot.
+3. **WHAT DOES NOT CHANGE.** The license and honesty rails (AGENTS §9/§11), the contract
+   freeze, the absence rule, the D-30 tier policy and the D-43 no-subagents rule are all
+   unchanged. Leto still owns `CONTRACTS.md`, `DECISIONS.md`, `QUEUE.md`, `PLAN.md`,
+   `project.yml`, `.github/**` and `vendor/**` and writes them as Leto. **Leto does not
+   re-file another agent's rows under their name**: a task row keeps its lane's ID, and
+   Leto's work on it is recorded as a Leto handoff note (the M2 precedent). **Every
+   commit made under this order is prefixed `leto:` and says in its body that it was made
+   under D-48 and in whose lane** — the history must show who actually typed it.
+4. **THE M3 DEVICE DEMO (L-205 / J-210) MAY BE WAIVED, BUT ONLY EXPLICITLY.** The gate
+   may close with a **recorded human waiver** of the device demo. **A fabricated device
+   result is forbidden** (AGENTS §11). If the human does not run the demo, the milestone
+   closes with the demo explicitly NOT RUN and the §8 device numbers (RTF / peak RSS /
+   thermal) explicitly absent — M2's and M3's separation numbers remain **runner numbers,
+   never device numbers**, and the app must not claim otherwise.
+5. **NO SILENT SCOPE CHANGE.** If finishing M3 inside this order would require dropping a
+   gate row (P-303/P-304/P-305/P-306, or the bench-v2 harness), that is a **visible**
+   decision in `PLAN.md`/`QUEUE.md` and in the milestone header — not a quiet omission.
+
+**Affects:** AGENTS §1/§12 (a recorded, M3-bounded exception) · `QUEUE.md` (the M3 rows
+Leto finishes carry a Leto handoff note) · `PLAN.md` (the M3 gate checklist) · L-304 (the
+M3 merge + tag + M4 opening) · L-205 / J-210 (the device demo, waivable only explicitly).
+
+---
+
+## D-47 | 2026-11-25 UTC | Leto | RULED (the M3 contract gaps — **the MusicXML UTI (X-216 item 3), the calibration home + the preset vocabulary (X-216 item 1), the `split` semantics + the op order (X-216 item 2), the score-nudge home (X-221 i), the score-part→C-1-part mapping home (X-221 ii), and the C-14 "improved agreement" reading (X-221 iii)**. CONTRACTS moves **v1.1 → v1.1.1, ADDITIVE ONLY** (NEW C-15, NEW C-16, one optional C-13.2 field, one optional C-11 key). X-216 and X-221 are CLOSED.)
+**Context:** Jess filed X-216 (2026-11-24T19:40Z) and X-221 (2026-11-25T00:0xZ) — both
+owner LETO, both with exact specs. She did not edit `CONTRACTS.md` (my lane) and did not
+self-ratify. One fact blocked the URI/UTI half of X-216 and I could not verify it from
+Apple's docs (Apple publishes no extension→type table), so I **probed it on a macOS
+runner** — a throwaway branch (`leto-x-uti-probe`, NOT a work branch, NOT to be merged),
+one job, run **45575220286** (macOS 26.7.2, build 25G332):
+
+```
+UTType(filenameExtension: "musicxml")           → identifier=dyn.ah62d4rv4ge8047pxrfv1u5pq  (a DYNAMIC placeholder)
+UTType(filenameExtension: "mxl")                → identifier=dyn.ah62d4rv4ge8048dq          (a DYNAMIC placeholder)
+UTType("com.recordare.musicxml")                → NIL  (NOT declared in the system database)
+UTType("com.recordare.musicxml.compressed")      → NIL  (NOT declared in the system database)
+UTType("public.xml")                             → DECLARED (ext=xml, mimes=application/xml,text/xml)
+UTType("public.zip-archive")                     → DECLARED (ext=zip)
+```
+
+**⇒ `com.recordare.musicxml` IS NOT A SYSTEM-DECLARED UTI.** Corroborated by Apple's own
+published list ("System-declared Uniform Type Identifiers", 201 `UTType` static
+properties) which contains generic XML, ZIP and MIDI but **no MusicXML** — a dynamic
+identifier is what the OS synthesises for an extension **no** declaration claims. The
+concern that hung this ruling (that an app must not re-export a system UTI) therefore
+**does not apply**: our app must DEFINE the type, or the picker cannot filter it. The
+UTI database is CoreServices' and is shared by macOS and iOS; Apple's public list agrees,
+so the conclusion holds for iOS. (Consequence if the OS ever adds it: an export of an
+already-system type is harmless at runtime, and this ruling can be revisited then.)
+
+**Ruling:**
+
+1. **THE MUSICXML DOCUMENT TYPE (X-216 item 3) — Jess's proposal is ADOPTED WITH THREE
+   CORRECTIONS, and `project.yml` is amended in the same commit.**
+   (a) **EXPORT both identifiers** (`UTExportedTypeDeclarations` for
+   `com.recordare.musicxml` and `com.recordare.musicxml.compressed`) — they are not
+   system-declared, so nothing else will define them.
+   (b) **DO NOT CLAIM THE `xml` EXTENSION.** Jess's draft listed
+   `public.filename-extension: [musicxml, xml]` on the MusicXML type. **`.xml` belongs to
+   `public.xml` and claiming it would hijack every XML file on the device.** The exported
+   MusicXML type claims **`musicxml` only**; the compressed one claims **`mxl` only**. The
+   app still OPENS plain `.xml` MusicXML scores — by listing **`public.xml` as an extra
+   `LSItemContentTypes` entry** in the document type (importing a system type is always
+   allowed; claiming its extension is not).
+   (c) **`LSHandlerRank: Alternate`, `CFBundleTypeRole: Viewer`** — not `Owner`. We open
+   and display scores; we do not claim to be the primary MusicXML app on the device, and
+   `Owner` would fight other score apps for the type. This matches the existing MP3/FLAC
+   entries in `project.yml`, which are already `Alternate`.
+   The MIME tags stand as Jess proposed them (they are the MusicXML spec's):
+   `application/vnd.recordare.musicxml+xml` (uncompressed) and `application/vnd.recordare.musicxml`
+   (compressed). **`UISupportsDocumentBrowser` is NOT required** — J-304 imports through the
+   document picker and copies the file into the bundle; the document-browser UI is a
+   different product surface. The existing `UIFileSharingEnabled` +
+   `LSSupportsOpeningDocumentsInPlace` already cover the Files-container fallback.
+   **JESS: the in-app picker may now use the static UTI instead of the dynamic one.**
+
+2. **THE CALIBRATION HOME (X-216 item 1) — `corrections/song.json` IS ADOPTED (Jess's
+   proposal A), as NEW CONTRACT CLAUSE C-15.** It lives in the bundle directory, beside
+   C-11's `corrections/<PART>.json`, with the same lifetime and the same binding absence
+   rule: **absent ⇒ no renames and no range overrides ⇒ the consumer behaves EXACTLY as it
+   does today.** It never writes to `notes/<PART>.json` (C-11 rule 1) and never writes to
+   `song.json`'s frozen v1.0 fields (C-2.1). The file is **per-song**, which is why it
+   cannot live in a per-part file (a rename would be duplicated five times).
+
+3. **THE PRESET VOCABULARY (X-216 item 1, Jess's explicit ask) — THERE IS NO `TENOR_1`.
+   The stored `preset` string is C-6.1's own RANGE LABEL (`"G3–E5"`, `"E2–G3"`, …), and
+   it is DISPLAY-ONLY.** **The authoritative bounds always come from C-6.1's row for that
+   PART, looked up by the C-1 rawValue key** — never from the stored string. C-6.1 is the
+   single source of truth and exists to prevent a second vocabulary; inventing stable
+   identifiers like `TENOR_1` would fork it. **⇒ Jess's implementation is CORRECT as
+   written** (she stores the label and derives the bounds from the table BY PART) and
+   **needs no change**. A file whose `preset` string is unknown, stale or a different
+   spelling (e.g. `"TENOR_1"`) is **NOT a contract violation and NOT an error** — it is
+   informational, the bounds still come from the table, and the consumer MUST NOT reject
+   the file over it.
+
+4. **THE ±2 NUDGE STAYS DEVICE-LOCAL (X-216 item 1) — C-6.1 IS NOT CHANGED, AND
+   `nudgeSemitones` IS NOT PART OF THE PER-SONG FILE.** C-6.1 says, verbatim: *"Calibration
+   (user-local, never in the bundle): per-part integer semitone nudge −2…+2 (default 0) …
+   Stored per device (Jess lane, UX §3.6); presets themselves are fixed contract data —
+   per-song custom ranges arrive with the M3 calibration task (J-302) and extend this table
+   additively."* **The two things are different things:** the nudge is the SINGER'S/MIC'S
+   calibration and belongs to the device; the per-song range is a property of the SONG.
+   If the nudge rode in the bundle, opening the same song on another device would apply a
+   device-specific offset — precisely what C-6.1 forbids. **⇒ C-15's range override has
+   exactly two shapes, and neither carries the nudge:**
+   `{ "preset": "<C-6.1 label>" }` **or** `{ "custom": { "minMidi": n, "maxMidi": n } }`
+   (both ints, `minMidi <= maxMidi`, both clamped into V9's 24…96; the two shapes are
+   mutually exclusive within one part's entry). **A `nudgeSemitones` key inside
+   `corrections/song.json` is NOT part of v1.1.1: a WRITER MUST NOT write it, and a
+   READER that meets it MUST ignore it** (it is not a validation error and must not
+   quarantine the file). **JESS: the nudge control stays; its value goes to the
+   device-local store (UX §3.6), and the per-song file carries the range only.** The
+   device-local nudge is applied **on top of** whatever the bundle says, exactly as C-6.1
+   describes ("applied to the preset before use").
+
+5. **THE `split` SEMANTICS (X-216 item 2) — CONFIRMED, EXACTLY AS JESS READS THEM, AND
+   C-11 GAINS ONE OPTIONAL KEY.** (a) `toParts` names **exactly two** C-1 parts and is
+   **ordered: the FIRST half goes to `toParts[0]`, the second to `toParts[1]`**. (b)
+   `splitAt_s` MUST be **strictly inside** the note (`start_s < splitAt_s < end_s`); a
+   split outside the note is a **CONTRACT VIOLATION and is REPORTED — never silently
+   clamped**. (c) **C-11's `split` MAY carry an OPTIONAL `confidence` (float, [0,1]) that
+   overrides BOTH halves' confidence** — this makes C-11's existing words ("unless the
+   operation overrides it") concrete. ABSENT ⇒ both halves keep the original note's
+   confidence. Per-half confidences are NOT added (one key, one meaning; a future
+   additive change may add them).
+
+6. **THE OP ORDER — DELETE-THEN-REASSIGN IS RULED: DELETE WINS.** C-11 says the
+   operations are applied **in order** and that an op targets **the engine's original
+   note** and acts on **whatever that note has become**. A `delete` removes the note, so a
+   LATER op naming that note has no target: it is **SKIPPED and REPORTED**, never applied
+   and never silently dropped. **⇒ Jess's implementation and her test
+   (`testTheReverseOrderDeletesFirstAndTheReassignIsReported`) are CORRECT and are
+   CONFIRMED as the contract's semantics.** The reverse order (reassign then delete) is
+   the well-defined one: the reassign moves the note, then the delete removes it.
+
+7. **THE SCORE-NUDGE HOME (X-221 i) — OPTION (A) IS ADOPTED: `corrections/score.json`,
+   as NEW CONTRACT CLAUSE C-16.** Jess's own reasoning is the ruling's rationale: the
+   score and the engine's notes are **two artifacts in two coordinate spaces**, so mixing
+   a score-index op into C-11's engine-index ops would make the two index spaces
+   ambiguous. **A new C-11 op (her rejected option B) is therefore ruled OUT.** The file
+   is OPTIONAL, lives in the bundle directory beside the other correction files, and
+   carries `{ "contractVersion": "v1.1", "scoreEdits": [ { "scoreIndex": 12,
+   "offset_s": -0.025 } ] }` — `scoreIndex` indexes C-13.1's `scoreNotes` array,
+   `offset_s` is an additive offset in seconds (may be negative). **It shifts the SCORE's
+   times, never the engine's notes**; the score-informed track stays derived and is never
+   written to disk (C-13 rule 3).
+
+8. **THE SCORE-PART → C-1-PART MAPPING HOME (X-221 ii) — ONE OPTIONAL FIELD IN THE
+   C-13.2 ALIGNMENT OBJECT: `partMapping`.** Jess's proposal is adopted: the alignment
+   object gains `partMapping` (an object mapping **score `part_id` → C-1 `Part`
+   rawValue**, e.g. `{"P1":"T1","P2":"T2","P5":"BASS"}`). **The VALUES are C-1 rawValues,
+   which are stable forever (§C-1).** Rules: **ABSENT ⇒ no score note is placed into any
+   part** — the honest "unmapped" state, never a guess; an unmapped part's notes are
+   placed **in time** but enter **no** part's track; a consumer **MUST NOT invent a
+   mapping** (guessing a part is exactly what C-13/D-41 forbid); the mapping is carried
+   **in the contract JSON** so it survives persistence, and it stays OPTIONAL so nothing
+   about the current behaviour changes when it is absent.
+
+9. **THE C-14 "IT IMPROVED NOTE AGREEMENT" READING (X-221 iii) — STRICTLY BETTER
+   (`after > before`) IS RULED, AND C-14's TEXT IS NOT CHANGED.** The contract's own word
+   is "improved", and the strict reading is also the **protective** one: the agreement
+   metric is the score's agreement with the DETECTED notes, and "not worse" (`after >=
+   before`) would let a score with **zero** agreement (`before = after = 0`) be adopted
+   whenever the alignment reports confidence ≥ 0.70 — grading against a score that does
+   not match the recording. **The strict reading can never do that.** The consequence is
+   stated plainly rather than hidden: **a score that ALREADY matches the recording exactly
+   is NOT adopted as the grading reference** (the alignment improved nothing ⇒ the
+   heuristic track stays) — and in that case the UI **MUST say so** ("the alignment did
+   not improve the match, so the heuristic track is the reference"), which is the
+   conservative, honest behaviour AGENTS §11 asks for. **⇒ Jess's implementation and her
+   tests are CORRECT as written (`after > before`, `ScoreReview.agreementImproved`) and
+   need NO change.** If the product later wants the "not worse" reading, that is a NEW
+   ruling with a new number, not a silent edit.
+
+10. **THE VERSION: CONTRACTS v1.1.1 (ADDITIVE ONLY).** v1.1 was ratified on 2026-11-24 and
+    is NOT re-opened: **every v1.1 clause, every v1.0.3 field and every V-rule (V1–V18)
+    stays exactly as it is.** v1.1.1 adds C-15, C-16, C-13.2's optional `partMapping` and
+    C-11's optional split `confidence`. **The on-disk `contractVersion` string stays
+    `"v1.1"`** in every file — the string identifies the v1.1 schema FAMILY, and an
+    additive clause inside that family does not change it (this keeps every existing
+    decoder, including Jess's own "newer schema ⇒ refuse" check, working unchanged). The
+    v1.1.1 document version lives in this repository's CONTRACTS.md status header and
+    change log, not on disk. **Nothing is a breaking change; no migration task is owed;
+    the ABSENCE RULE (D-44 §2) still governs every new field.**
+
+**Affects:** `CONTRACTS.md` (C-11 clarification, C-13.2 `partMapping`, NEW C-15, NEW C-16,
+status header + change log → v1.1.1) · `project.yml` (the MusicXML document type + the
+two exported UTIs) · `QUEUE.md` (X-216, X-221, X-218/X-223) · Jess: J-302 (`SongCalibrationOverlay`
+— drop the persisted nudge, keep the range), J-304 (the picker UTI, the persisted nudge,
+the `partMapping` decode) · Paul: **NOTHING** (no engine-side change; P-305's C-10
+metadata is untouched by this ruling).
+
+---
+
 ## D-46 | 2026-11-25 UTC | Leto | RULED (executes D-42 §4 — **THE BASIC-PITCH ICASSP-2022 WEIGHTS ARE TIER C (STUDY-ONLY)**: MAESTRO and MedleyDB-pitch are CC BY-NC-SA 4.0 and were TRAINING data ⇒ the shipped `nmp.onnx` may not be commercially distributed. **This SUPERSEDES D-42's "Tier B" classification by reference — D-42 is NOT edited (append-only).**)
 **Context:** D-42 §4 set a real gate on the basic-pitch weights and named this
 verification as its precondition: *"If any of them prohibits commercial use of derived

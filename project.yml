@@ -149,6 +149,49 @@ targets:
           - CFBundleTypeName: M4A audio
             LSHandlerRank: Alternate
             LSItemContentTypes: [public.mpeg-4-audio]
+          # M3 (D-47 §1): the MusicXML score import (J-304). LSHandlerRank
+          # Alternate — we OPEN and display scores, we are not the device's
+          # primary MusicXML app (Owner would fight other score apps for the
+          # type). `public.xml` is listed as an EXTRA content type because many
+          # MusicXML files use the .xml extension and .xml belongs to the
+          # system (public.xml) — we IMPORT that system type, we never claim
+          # its extension.
+          - CFBundleTypeName: MusicXML Score
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.recordare.musicxml
+              - com.recordare.musicxml.compressed
+              - public.xml
+        # The two MusicXML UTIs are NOT system-declared — PROVED on a macOS
+        # runner (D-47 §1, probe run 45575220286): `UTType("com.recordare.musicxml")`
+        # and `UTType("com.recordare.musicxml.compressed")` are both NIL, while
+        # `UTType(filenameExtension:"musicxml")` returns a DYNAMIC placeholder
+        # (the OS synthesises one for an extension no declaration claims). So
+        # the app must DEFINE the types or the document picker cannot filter
+        # them. (`public.xml` / `public.zip-archive` ARE system-declared, and we
+        # conform to them — we never export them.)
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.recordare.musicxml
+            UTTypeDescription: MusicXML Score
+            UTTypeConformsTo:
+              - public.xml
+              - public.text
+              - public.data
+            UTTypeTagSpecification:
+              # `musicxml` ONLY — the `xml` extension belongs to public.xml and
+              # claiming it would hijack every XML file on the device (D-47 §1b).
+              public.filename-extension: [musicxml]
+              public.mime-type: application/vnd.recordare.musicxml+xml
+          - UTTypeIdentifier: com.recordare.musicxml.compressed
+            UTTypeDescription: Compressed MusicXML Score
+            UTTypeConformsTo:
+              - public.zip-archive
+              - public.data
+            UTTypeTagSpecification:
+              # .mxl IS a ZIP container, not XML — hence public.zip-archive.
+              public.filename-extension: [mxl]
+              public.mime-type: application/vnd.recordare.musicxml
     settings:
       base:
         PRODUCT_NAME: PitchNotes
