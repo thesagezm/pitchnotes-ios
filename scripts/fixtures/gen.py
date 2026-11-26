@@ -449,6 +449,76 @@ def satb5_parts() -> dict[str, list[int]]:
     return parts
 
 
+# --- P-303: the MOVING five-voice fixture ---------------------------------
+#
+# WHY A SECOND FIXTURE: `satb5_22050.wav` is ONE sustained chord. It is the
+# assignment's AC fixture, but a single static chord cannot exercise the
+# engine's TEMPORAL half (the melodic smoothness, the onset/offset costs, the
+# ordering while the voices MOVE). This fixture is the C-F-G-F progression with
+# all five parts MOVING, so the part-aware number is measured on a real
+# assignment problem and not on one frozen chord.
+#
+# THE VOICINGS (every voice inside its C-6.1 range; the parts never cross):
+#   chord 1 (C)   BASS C3(48)  BARITONE G3(55) BARITENOR C4(60) T2 E4(64) T1 G4(67)
+#   chord 2 (F)   BASS F3(53)  BARITONE A3(57) BARITENOR C4(60) T2 F4(65) T1 A4(69)
+#   chord 3 (G)   BASS G2(43)  BARITONE D3(50) BARITENOR G3(55) T2 B3(59) T1 D4(62)
+#   chord 4 (F)   BASS F2(41)  BARITONE F3(53) BARITENOR A3(57) T2 C4(60) T1 F4(65)
+BP_SATB5_PROG_CHORDS = [
+    [("BASS", 48), ("BARITONE", 55), ("BARITENOR", 60), ("T2", 64), ("T1", 67)],
+    [("BASS", 53), ("BARITONE", 57), ("BARITENOR", 60), ("T2", 65), ("T1", 69)],
+    [("BASS", 43), ("BARITONE", 50), ("BARITENOR", 55), ("T2", 59), ("T1", 62)],
+    [("BASS", 41), ("BARITONE", 53), ("BARITENOR", 57), ("T2", 60), ("T1", 65)],
+]
+BP_SATB5_PROG_CHORD_DUR = 2.0
+
+
+def gen_satb5_prog() -> np.ndarray:
+    """8 s FIVE-VOICE SATB PROGRESSION at 22.05 kHz (P-303/P-306).
+
+    Four two-second chords, all five voices moving, equal amplitudes, scaled
+    to a 0.9 peak (NO clipping) plus a seeded noise floor."""
+    total = BP_SATB5_PROG_CHORD_DUR * len(BP_SATB5_PROG_CHORDS)
+    n = int(SR_BP * total)
+    buf = np.zeros(n, dtype=np.float64)
+    length = int(round(BP_SATB5_PROG_CHORD_DUR * SR_BP))
+    for chord_index, chord in enumerate(BP_SATB5_PROG_CHORDS):
+        start = chord_index * BP_SATB5_PROG_CHORD_DUR
+        for _part, midi in chord:
+            piece = tone(midi_hz(float(midi)), length, SR_BP, amp=BP_SATB5_AMP,
+                         harmonics=BP_SATB5_HARMONICS)
+            place(buf, start, SR_BP, piece)
+    rng = np.random.default_rng(0x5A7B6)
+    buf += 0.0015 * rng.standard_normal(n)
+    peak = float(np.max(np.abs(buf)))
+    if peak > 0:
+        buf *= (BP_SATB5_PEAK / peak)
+    return buf
+
+
+def satb5_prog_truth() -> list[dict]:
+    """Synthesis truth for satb5_prog_22050.wav (every voice of every chord)."""
+    notes = []
+    for chord_index, chord in enumerate(BP_SATB5_PROG_CHORDS):
+        start = chord_index * BP_SATB5_PROG_CHORD_DUR
+        end = start + BP_SATB5_PROG_CHORD_DUR
+        for _part, midi in chord:
+            notes.append({"midi": int(midi), "start_s": float(start),
+                          "end_s": float(end)})
+    return notes
+
+
+def satb5_prog_parts() -> dict[str, list[int]]:
+    """Which PART sings which pitch, CHORD BY CHORD (the right answer).
+
+    The i-th pitch of every part is the i-th chord — that is how the
+    part-aware truth is read frame by frame."""
+    parts: dict[str, list[int]] = {}
+    for chord in BP_SATB5_PROG_CHORDS:
+        for part, midi in chord:
+            parts.setdefault(part, []).append(int(midi))
+    return parts
+
+
 def write_truth_json(path: Path, fixture: str, notes: list[dict],
                      extra: dict | None = None) -> None:
     """Write a deterministic truth sidecar (sorted keys, fixed formatting)."""
@@ -478,6 +548,9 @@ FIXTURES = [
     # P-302/P-303/P-306: the five-voice SATB chord — the salience + assignment
     # + part-aware benchmark fixture.
     ("satb5_22050.wav", gen_satb5, SR_BP),
+    # P-303/P-306: the MOVING five-voice progression (the part-aware number
+    # must not be measured on one frozen chord).
+    ("satb5_prog_22050.wav", gen_satb5_prog, SR_BP),
 ]
 
 # Truth sidecars for the P-301 fixtures (JSON, committed next to the WAVs).
