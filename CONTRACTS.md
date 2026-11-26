@@ -4,18 +4,26 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v1.1 — RATIFIED 2026-11-24 UTC by Leto (L-301, D-39/D-40/D-41 — the M3
-> additive delta: C-10 NoteTrack metadata + C-11 correction overlay + C-12 optional
-> salience + C-13 score-note list & alignment metadata + C-14 grading input order;
-> NEW V-rules V16/V17/V18). Additive-only from
+> Status: **v1.1.1 — RATIFIED 2026-11-25 UTC by Leto (D-47 — ADDITIVE ONLY over v1.1;
+> v1.1 is NOT re-opened and every v1.1 clause, every v1.0.3 field and every V-rule
+> V1–V18 stays exactly as it is). v1.1.1 adds: NEW **C-15** (the per-song calibration +
+> display overlay — `corrections/song.json`: part renames + per-song range overrides) ·
+> NEW **C-16** (the score-edit overlay — `corrections/score.json`: score-note time
+> offsets) · C-13.2 gains the OPTIONAL `partMapping` (score `part_id` → C-1 part) ·
+> C-11's `split` gains the OPTIONAL `confidence` override.
+> The on-disk `contractVersion` string stays `"v1.1"` for every file — the string
+> identifies the v1.1 schema FAMILY, and an additive clause inside that family does not
+> change it. Additive-only from
 > here on**; breaking changes require a new version + Leto ruling + a migration
 > task (AGENTS §7). Paul + Jess: ack in QUEUE LOG when you first implement against it.
 > Change log at the bottom. v0.0 (L-006,
-> 2026-11-20); v0.0.1 (D-18.4); v0.1 (L-102, 2026-11-21); v0.1.1 (D-22/D-24);
+> 2026-11-20); v0.0.1 (D-18.4); v0.1 (L-102, 2026-11-21); v0.0.1 (D-22/D-24);
 > **v1.0 (L-203, 2026-11-22 — the M2 freeze); v1.0.1 (L-204, D-34 — C-9);
 > v1.0.2 (L-204, D-35 — rule 5, over-specified, withdrawn by v1.0.3);
 > v1.0.3 (L-204, D-36 — C-9.1 + rule 5 restated);
-> v1.1 (L-301, 2026-11-24 — the M3 additive delta; v1.0.3 semantics UNCHANGED)**.
+> v1.1 (L-301, 2026-11-24 — the M3 additive delta; v1.0.3 semantics UNCHANGED);
+> v1.1.1 (D-47, 2026-11-25 — the M3 contract-gap delta: C-15 + C-16 + the C-13.2
+> `partMapping` + the C-11 split `confidence`; v1.1 semantics UNCHANGED)**.
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -767,6 +775,13 @@ corrections has NO file — absence means "no corrections", never "unknown").
 - `split` — `splitAt_s` (a time strictly inside the note) and `toParts` (2
   parts). The note becomes two notes in the named parts, each keeping the
   original note's `confidence` unless the operation overrides it.
+  **v1.1.1 clarification (D-47 §5):** `toParts` names **exactly two** C-1 parts and is
+  **ORDERED — the first half goes to `toParts[0]`, the second to `toParts[1]`**;
+  `splitAt_s` MUST be **strictly inside** the note (`start_s < splitAt_s < end_s`), and a
+  split outside the note is a **CONTRACT VIOLATION that is REPORTED, never silently
+  clamped**; the operation MAY carry an **OPTIONAL `confidence`** (float, [0,1]) that
+  overrides **both** halves' confidence — ABSENT ⇒ both halves keep the original note's
+  confidence.
 
 **Rules:**
 1. **The overlay is separate and additive; the heuristic track is NEVER mutated
@@ -844,7 +859,8 @@ core) and consumed by P-304's alignment and by J-304's review UI.
     "barMap": [
       { "measure": 1, "start_s": 0.0, "end_s": 2.0 }
     ],
-    "method": "DTW"
+    "method": "DTW",
+    "partMapping": { "P1": "T1", "P2": "T2", "P5": "BASS" }
   }
 }
 ```
@@ -857,6 +873,14 @@ core) and consumed by P-304's alignment and by J-304's review UI.
   that turns D-41 §2's phrases from fixed 4.0 s spans into **bar-aligned**
   spans when a score is present.
 - `method` — free string (e.g. `"DTW"`); ABSENT ⇒ `"unknown"`.
+- `partMapping` (OPTIONAL, **NEW v1.1.1 — D-47 §8**) — the **score `part_id` →
+  C-1 `Part` rawValue** map (e.g. `{"P1":"T1","P2":"T2","P5":"BASS"}`). The keys are
+  the score's own `part_id` values (C-13.1); **the values are C-1 rawValues, which are
+  stable forever (§C-1)**. **ABSENT ⇒ no score note is placed into any part** — the
+  honest "unmapped" state; a score part with no mapping is placed **in time** but enters
+  **no** part's track. **A consumer MUST NOT invent, infer or guess a mapping** (guessing
+  a part is exactly what C-13/D-41 forbid), and the mapping MUST NOT be applied to a
+  `part_id` that is absent from this object.
 
 **Rules:**
 1. **Everything here is OPTIONAL.** Absent ⇒ heuristic-only; the import
@@ -865,6 +889,14 @@ core) and consumed by P-304's alignment and by J-304's review UI.
    separate steps, and only alignment produces C-13.2.
 3. **A score-informed track NEVER replaces the heuristic track on disk.** The
    score-informed result is derived; the engine's own track stays reproducible.
+4. **v1.1.1 (D-47 §9): "it improved note agreement" means STRICTLY BETTER — `after >
+   before`**, where `before` is the RAW score's agreement with the detected notes and
+   `after` is the ALIGNED score's. "Not worse" (`after >= before`) is **NOT** the
+   contract: it would let a score with **zero** agreement (`before = after = 0`) be
+   adopted whenever the alignment reports confidence ≥ 0.70. **A consequence, stated
+   plainly:** a score that ALREADY matches the recording exactly is **not** adopted as the
+   grading reference (the alignment improved nothing ⇒ the heuristic track stays), and in
+   that case the UI **MUST say so**.
 
 ---
 
@@ -901,6 +933,91 @@ not stall for it.
 
 ---
 
+## C-15 · Per-song calibration + display overlay — NEW v1.1.1 (D-47 §2–§4, ADDITIVE)
+
+C-11 covers **NOTE OPERATIONS** against the engine's notes. The user's **part
+RENAMES** and **per-song RANGE OVERRIDES** are not note operations, and they are
+**per-song** (a rename would be duplicated in five per-part files), so they live in
+their own file **beside** C-11's per-part files, in the bundle directory.
+
+```json
+{
+  "contractVersion": "v1.1",
+  "engineVersion": "corrections-0.1.0",
+  "partRenames": { "T1": "Tenor 1", "BARITENOR": "Bari" },
+  "rangeOverrides": {
+    "T1": { "preset": "E2–G3" },
+    "BASS": { "custom": { "minMidi": 40, "maxMidi": 60 } }
+  }
+}
+```
+
+- `contractVersion` — `"v1.1"` (the on-disk string is the v1.1 family; D-47 §10).
+- `engineVersion` (OPTIONAL) — the writer of the overlay; ABSENT ⇒ `"unknown"`, and the
+  consumer MUST NOT refuse the file.
+- `partRenames` (OPTIONAL) — a map from a **C-1 `Part` rawValue** to a display string.
+  **The C-1 raw values NEVER change — a rename is a DISPLAY layer only.**
+- `rangeOverrides` (OPTIONAL) — a map from a **C-1 `Part` rawValue** to exactly ONE of
+  the two range shapes below (the two are **mutually exclusive** within one entry):
+  - `{ "preset": "<C-6.1 range label>" }` — e.g. `"E2–G3"`. **The label is
+    DISPLAY-ONLY and the AUTHORITATIVE BOUNDS COME FROM C-6.1's ROW FOR THAT PART,
+    LOOKED UP BY THE C-1 rawValue KEY** — never from the stored string. **A `preset`
+    string that is unknown, stale or spelled differently (e.g. `"TENOR_1"`) is NOT a
+    contract violation and NOT an error**: the bounds still come from the table and the
+    consumer MUST NOT reject the file over it. **There is no second preset vocabulary**
+    (C-6.1 is the single source of truth).
+  - `{ "custom": { "minMidi": 40, "maxMidi": 60 } }` — both ints, `minMidi <= maxMidi`,
+    both clamped into **V9's 24…96**.
+
+**Rules:**
+1. **THE FILE IS OPTIONAL.** **ABSENT ⇒ no renames and no range overrides ⇒ the consumer
+   behaves EXACTLY as it does today** (the same binding absence rule as C-10/C-11/C-12).
+   An empty `partRenames`/`rangeOverrides` ⇒ the same.
+2. **THE ±2 SEMITONE NUDGE IS NOT HERE.** C-6.1 fixes the per-part nudge (−2…+2) and the
+   mic-profile offset as **device-local, "never in the bundle"**. The per-song file
+   therefore carries the **RANGE** only. **A WRITER MUST NOT write `nudgeSemitones` into
+   this file; a READER that meets it MUST ignore it** (never a validation error, never a
+   reason to quarantine the file). The device-local nudge is applied **on top of** the
+   effective range, exactly as C-6.1 describes ("applied to the preset before use").
+3. **A RANGE IS A FILTER, NOT A GATE** (C-6.1): a note outside the effective range is
+   still shown and still graded, with the honest deviation marked (D-12 honesty rule).
+4. **THIS FILE NEVER MUTATES ANYTHING ELSE.** It MUST NOT touch `notes/<PART>.json`
+   (C-11 rule 1) and MUST NOT touch `song.json`'s frozen v1.0 fields (C-2.1).
+
+---
+
+## C-16 · Score-edit overlay — NEW v1.1.1 (D-47 §7, ADDITIVE)
+
+A manual **time nudge of a SCORE note** has no home in C-11: C-11's ops address the
+**engine's** notes by index, and the score is a **different artifact in a different
+coordinate space**. Mixing the two index spaces into one file would make them
+ambiguous, so the score's edits live in their own file, beside C-11's and C-15's.
+
+```json
+{
+  "contractVersion": "v1.1",
+  "scoreEdits": [ { "scoreIndex": 12, "offset_s": -0.025 } ]
+}
+```
+
+- `contractVersion` — `"v1.1"` (the on-disk string is the v1.1 family; D-47 §10).
+- `scoreEdits[]` — an ordered list of the user's score-note time offsets:
+  - `scoreIndex` — the index of the target note in **C-13.1's `scoreNotes` array**.
+  - `offset_s` — an **additive** offset in seconds (may be negative).
+
+**Rules:**
+1. **THE FILE IS OPTIONAL.** **ABSENT ⇒ no nudges ⇒ the consumer behaves EXACTLY as it
+   does today** (same binding absence rule).
+2. **IT MOVES THE SCORE'S TIMES, NEVER THE ENGINE'S NOTES.** The engine's
+   `notes/<PART>.json` is immutable (C-11 rule 1) and the score-informed track stays
+   **derived** (C-13 rule 3) — a nudge never writes either of them.
+3. **IT IS NOT A C-11 OP.** There is deliberately no `nudge` op in C-11: the engine's
+   note index and the score's note index are different spaces and MUST NOT be mixed.
+4. **A MISSING TARGET IS REPORTED, NEVER CLAMPED** (same posture as C-11's split): a
+   `scoreIndex` that does not exist in the score-note list is skipped and reported.
+
+---
+
 ## Change log
 
 | Version | Date (UTC) | Change | Ruled by |
@@ -915,3 +1032,4 @@ not stall for it.
 | **v1.0.2** | 2026-11-23 | **RATIFIED (L-204, D-35 — CLARIFICATION, no signature changed):** C-9 gains **rule 5 (M2 flow rule)** — because the C-3 flow is `importAudio` → `separate`, the PUBLISH happens inside that flow: by the time `separate` returns, a conforming M2 engine MUST have published a complete bundle (C-2.2 `song.json` marker) and MUST have set `importedBundleID`. C-3 gains an M2 real-engine note (the app-target facade over C-8 + C-9; concrete class/init fixed in DECISIONS D-35 + QUEUE X-211). Found by reading both implementations: Jess's flow requires the published bundle; Paul's C-3 `separate` returned raw stems without publishing ⇒ the real-engine import would have failed the app's own completeness check at the device demo. NO signature changed; no rule re-opened. **SUPERSEDED IN PART by v1.0.3 (D-36): rule 5's call-shape wording is withdrawn (the finding stands), and the facade is not the ratified shape.** | Leto |
 | **v1.0.3** | 2026-11-23 | **RATIFIED (L-204, D-36 — ADDITIVE, no signature changed):** NEW **C-9.1 (the M2 whole-import entry point)** — the M2 bundle-producing engine exposes `importSong(source:title:) -> ImportOutcome`, ONE call that owns decode → separate → assemble → atomic publish (all-or-nothing per C-8); the app drives an engine that has it through that call and an engine that does not (the mock) with the frozen C-3 pair. **C-9 rule 5 is RESTATED shape-agnostically: the contract requires the OUTCOME (the flow ends with a complete published bundle + `importedBundleID` set), not a particular call shape.** Rationale: the manifest needs the decode stage's facts (source hash, duration), so splitting decode from publish forces a second decode/hash and splits C-8's no-residue guarantee across two calls with the app in between. Jess's rewritten binding (probe-v5, build-ipa SUCCESS with the real classes) already implements exactly this and is the ratified shape. NO new Swift protocol required; no EngineAPI signature changed. | Leto |
 | **v1.1** | 2026-11-24 | **RATIFIED (L-301 — the M3 ADDITIVE delta; v1.0.3 semantics UNCHANGED, every v1.0.3 field and validator still valid):** NEW **C-10 (NoteTrack v1.1 metadata)** — per-note `unison` (D-41 §3), `salience` (P-302, OPTIONAL), `assignmentBand` (D-41 §1, three exact strings), per-phrase `partPresence` (D-41 §2, 4.0 s spans or bar-aligned), `assignmentSummary`, and a per-track `engineVersion` (C-10.2 — additional to the manifest's, never replacing it); **NEW V16/V17/V18** (v1.1 note fields; presence consistency; band/presence coherence — **a mismatch is a CONTRACT VIOLATION, not silently repaired**). NEW **C-11 (correction overlay)** — a SEPARATE additive file `corrections/<PART>.json` with ordered `reassign`/`delete`/`split` operations against the engine's immutable `notes[]` indices; **the heuristic track is NEVER mutated in place**, and the overlay wins at grading time (D-41 §4). NEW **C-12 (optional salience)** — absent ⇒ the consumer behaves EXACTLY as it does today; present ⇒ a DISPLAY/ANALYSIS hint, never a silent filter and never a change to what is graded. NEW **C-13 (score-note list + alignment metadata)** — the D-40 §4 list `{midi, start_s, end_s, measure, part_id, voice}` (times at the score's own tempo, BEFORE alignment) + alignment `{confidence, used, barMap, method}`; the score is OPTIONAL end-to-end and the parser NEVER aligns by itself. NEW **C-14 (grading input order)** — correction overlay → else score-informed (alignment confidence ≥ **0.70** AND agreement improved) → else heuristic (and the UI must say "heuristic" + report the CONFIRMED/PROVISIONAL/UNASSIGNED split); UNASSIGNED excluded from grading by default; unison grades per-part; absent parts DIMMED, never hidden. **C-2.3's `confidence` field is NOT redefined** — v1.1 adds `assignmentBand` beside it. **The ABSENCE RULE is binding: every new field is OPTIONAL, and absent ⇒ behave exactly as before v1.1.** | Leto |
+| **v1.1.1** | 2026-11-25 | **RATIFIED (D-47 — ADDITIVE ONLY over v1.1; v1.1 is NOT re-opened, every v1.1 clause, every v1.0.3 field and V1–V18 stay as they are):** NEW **C-15 (per-song calibration + display overlay)** — the file `corrections/song.json` beside C-11's per-part files: OPTIONAL `partRenames` (C-1 rawValue → display string) + OPTIONAL `rangeOverrides` (C-1 rawValue → `{preset}` where the **label is display-only and the bounds come from C-6.1 by part key** — **there is no second preset vocabulary** — or `{custom:{minMidi,maxMidi}}` clamped into 24…96); **the ±2 semitone nudge stays DEVICE-LOCAL (C-6.1 unchanged) and MUST NOT be written into this file (a reader MUST ignore it)**. NEW **C-16 (score-edit overlay)** — the file `corrections/score.json`: `{scoreEdits:[{scoreIndex, offset_s}]}` shifting the **score's** times (never the engine's notes; the score-informed track stays derived); **deliberately NOT a C-11 op** (the engine's and the score's index spaces are different). C-13.2 gains the OPTIONAL `partMapping` (score `part_id` → C-1 rawValue; ABSENT ⇒ no score note enters any part; a consumer MUST NOT guess a mapping) and C-13.2 rule 4 fixes **"improved note agreement" = STRICTLY BETTER (`after > before`)**. C-11's `split` gains the OPTIONAL `confidence` override + the ordered `toParts` / strictly-inside `splitAt_s` clarification. **The on-disk `contractVersion` string stays `"v1.1"`** (the v1.1 family); the absence rule still governs every new field; nothing is breaking and no migration is owed. | Leto |
