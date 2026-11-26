@@ -7,6 +7,11 @@ name: Build IPA
 # M1 gate state (L-101 ACTIVATED): swiftf0/ribbon/silero spikes run the REAL
 # pinned models and are BLOCKING (no continue-on-error); separation/basicpitch
 # remain mock + allow-failure until their real runners land (M2/M3).
+#
+# M3 gate state (L-304, 2026-11-27): separation (M2/L-202) and basicpitch
+# (M3/P-301) run their REAL runners and are BLOCKING; bench-v2 (P-306) is
+# BLOCKING. The ONLY job left allow-failure is pitch-bench v1 (P-106), which is
+# informational by design.
 
 concurrency:
   # One run per branch: a push during an active build cancels the older run
@@ -225,7 +230,7 @@ jobs:
   # REAL pinned models — venv carries numpy+onnxruntime, PITCHNOTES_SPIKE_REAL
   # =required makes the silent mock fallback a HARD failure (no mock at merge
   # time), and continue-on-error is REMOVED (blocking). separation/basicpitch
-  # stay mock + allow-failure until their real runners land (M2/M3).
+  # are now REAL and BLOCKING too (L-202 / L-304).
   # Job NAMES are final — merge gates reference these exact IDs (AGENTS §3/§6).
   # ---------------------------------------------------------------------
   swiftf0-spike:
@@ -323,11 +328,15 @@ jobs:
   # the runner is writable today.
   #
   # UNTIL PAUL LANDS THOSE, THIS JOB IS RED BY DESIGN — it says exactly which
-  # piece is missing and who owns it. `continue-on-error` is REMOVED at the M3
-  # gate (L-304), when P-301 has landed; the QUEUE row carries that flip.
+  # piece is missing and who owns it.
+  #
+  # M3 GATE (L-304, 2026-11-27): P-301 HAS LANDED and the job is GREEN FOR REAL
+  # — run 45904236220@c3f245e, all of its checks pass on `main` with the vendored
+  # basicpitch.cpp runner + the mono/poly fixtures. `continue-on-error` is
+  # REMOVED: this job is BLOCKING from here on. The QUEUE row carries the flip.
   # ---------------------------------------------------------------------
   basicpitch-spike:
-    name: "BasicPitch spike (REAL basic-pitch ONNX via the vendored basicpitch.cpp — P-301 runner; RED until it lands, BLOCKING at the M3 gate)"
+    name: "BasicPitch spike (REAL basic-pitch ONNX via the vendored basicpitch.cpp — P-301 runner; BLOCKING)"
     runs-on: macos-latest
     # 30 min: this job runs the REAL pipeline THREE times — the harness run
     # (which proves Paul's run_spike.py wiring), the direct parity run, and the
@@ -335,7 +344,6 @@ jobs:
     # vendored C++ side). The old 20-min bound was tuned for a job that only
     # compiled; the real path also runs the model.
     timeout-minutes: 30
-    continue-on-error: true
     env:
       PITCHNOTES_SPIKE_REAL: required
     steps:
@@ -531,14 +539,16 @@ jobs:
   # / offset 44.4) to be cited in the report, so the two families can never be
   # silently mixed.
   #
-  # Informational until the M3 gate (L-304 removes continue-on-error), and
-  # RED BY DESIGN until P-306 lands — it names the missing piece.
+  # M3 GATE (L-304, 2026-11-27): P-306 HAS LANDED and the job is GREEN —
+  # run 45906329503@2d6f50e passes on `main`. `continue-on-error` is REMOVED:
+  # this job is BLOCKING from here on. The report it produces must keep the
+  # part-AGNOSTIC and the part-AWARE families SEPARATE and must cite dettato's
+  # Dagstuhl ChoirSet row (onset 55.9 / frame 82.0 / offset 44.4).
   # ---------------------------------------------------------------------
   bench-v2:
-    name: "Bench v2 (P-306 — part-AGNOSTIC + part-AWARE reported separately; RED until P-306 lands, BLOCKING at the M3 gate)"
+    name: "Bench v2 (P-306 — part-AGNOSTIC + part-AWARE reported separately; BLOCKING)"
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
