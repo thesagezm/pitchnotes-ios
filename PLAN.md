@@ -216,7 +216,15 @@ warrant pulling the eval forward.)
 
 ---
 
-## M3 — Per-Voice Note Tracks (the hard R&D milestone) — **OPEN 2026-11-24**
+## M3 — Per-Voice Note Tracks (the hard R&D milestone) — **CLOSED 2026-11-27**
+
+**THE CLOSE (L-304, under D-48):** the gate run **45910600056@b24ce9a** is
+**GREEN** — 9 jobs, 8 blocking, 1 informational (pitch-bench v1) — with
+**`basicpitch-spike` and `bench-v2` BOTH BLOCKING**; **`m3` is TAGGED** at
+`b24ce9a`; **M4 is OPEN** below with its board seeded from the M4 table below.
+**P-304 is WAIVED (D-50) and CARRIED INTO M4; the M2+M3 device demo is EXPLICITLY
+WAIVED (D-51) — it was NOT RUN, so neither M2 nor M3 is device-verified and
+AGENTS §8's device numbers remain UNMEASURED.**
 
 **Open condition:** ~~M2 merged~~ **MET** (M2 closed + `m2` tagged, D-38). **CI jobs:
 `basicpitch-spike` REAL; bench v2; `logic-tests`, `build-ipa`.
@@ -302,9 +310,10 @@ as background prep, never blocks gate. Leto rules D10/D12 early.
 
 ---
 
-## M4 — Learner Mode & Grading
+## M4 — Learner Mode & Grading — **OPEN 2026-11-27** (at the `m3` tag)
 
-**Open condition:** M3 merged. **CI jobs:** scoring `logic-tests` suite expanded; session
+**Open condition:** ~~M3 merged~~ **MET** (M3 closed, the gate run green, `m3` tagged).
+**CI jobs:** scoring `logic-tests` suite expanded; session
 fixture; `build-ipa`. **Contract:** v1.2 (SessionResult, GradingConfig, transposed note-track mapping).
 
 **CARRIED IN FROM M3:** **P-304 — the MusicXML parser + the DTW aligner** (WAIVED for
