@@ -137,6 +137,12 @@ public struct CorrectionStore: Sendable {
                 loaded.calibration = decodeCalibration(data, name: name, problems: &loaded.problems)
                 continue
             }
+            if name == "score.json" {
+                // C-16's file — the SCORE's time nudges. It is read by
+                // `ScoreEditStore`, not by this store, and it is NOT an
+                // unknown part: it must never be quarantined here.
+                continue
+            }
             guard let part = Part(rawValue: String(name.dropLast(".json".count))) else {
                 loaded.problems.append("The correction file '\(name)' does not name a known part; it was ignored (a copy was kept).")
                 quarantine(url: url, as: url.appendingPathExtension("corrupt"))

@@ -416,8 +416,10 @@ final class CorrectionOverlayTests: XCTestCase {
     }
 
     func testThePresetCanBeNudgedWithinTheContractLimit() {
+        // The nudge is DEVICE-LOCAL (C-6.1, C-15 rule 2, D-47 §4): it is not
+        // part of the song's range override, it is applied on top of it.
         let range = PartCalibration.effectiveRange(
-            for: .t1, rangeOverride: .preset(for: .t1, nudgeSemitones: 2))
+            for: .t1, rangeOverride: .preset(for: .t1), deviceNudge: 2)
         XCTAssertEqual(range?.midiLow, 57)
         XCTAssertEqual(range?.midiHigh, 78)
         XCTAssertEqual(range?.nudgeSemitones, 2)
@@ -426,8 +428,19 @@ final class CorrectionOverlayTests: XCTestCase {
 
     func testANudgeBeyondTheContractLimitIsClamped() {
         let range = PartCalibration.effectiveRange(
-            for: .t1, rangeOverride: .preset(for: .t1, nudgeSemitones: 9))
+            for: .t1, rangeOverride: .preset(for: .t1), deviceNudge: 9)
         XCTAssertEqual(range?.nudgeSemitones, 2, "C-6.1 clamps the nudge to ±2")
+    }
+
+    func testACustomRangeIsNotMovedByTheDeviceNudge() {
+        // A custom range IS the range: C-6.1 applies the nudge to the
+        // PRESET "before use", and a custom range replaces the preset.
+        let range = PartCalibration.effectiveRange(
+            for: .bass, rangeOverride: .custom(for: .bass, midiLow: 43, midiHigh: 60),
+            deviceNudge: 2)
+        XCTAssertEqual(range?.midiLow, 43)
+        XCTAssertEqual(range?.midiHigh, 60)
+        XCTAssertEqual(range?.nudgeSemitones, 0)
     }
 
     func testACustomRangeReplacesThePresetForThisSong() {
@@ -479,19 +492,19 @@ final class CorrectionOverlayTests: XCTestCase {
         XCTAssertEqual(ranges[.bass]?.midiLow, 40)
     }
 
-    // MARK: - The calibration overlay (X-216 proposal — Leto rules)
+    // MARK: - The calibration overlay (C-15 — RULED at D-47)
 
     func testTheCalibrationCarriesTheRenamesAndTheRanges() {
         var calibration = SongCalibrationOverlay()
         calibration.partRenames[Part.t1.rawValue] = "Tenor One"
-        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1, nudgeSemitones: 2)
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1)
         calibration.rangeOverrides[Part.bass.rawValue] = .custom(for: .bass, midiLow: 40,
                                                                  midiHigh: 60)
 
         XCTAssertEqual(calibration.displayName(for: .t1), "Tenor One")
         XCTAssertEqual(calibration.displayName(for: .t2), Part.t2.displayName)
         XCTAssertEqual(calibration.partNameMap()[.t1], "Tenor One")
-        XCTAssertEqual(calibration.rangeOverride(for: .t1)?.nudgeSemitones, 2)
+        XCTAssertEqual(calibration.rangeOverride(for: .t1)?.mode, .preset)
         XCTAssertEqual(calibration.rangeOverride(for: .bass)?.mode, .custom)
     }
 
@@ -501,10 +514,10 @@ final class CorrectionOverlayTests: XCTestCase {
         XCTAssertEqual(calibration.displayName(for: .t1), Part.t1.displayName)
     }
 
-    func testTheStoredCalibrationJSONIsExactlyX216sShape() throws {
+    func testTheStoredCalibrationJSONIsExactlyC15sShape() throws {
         var calibration = SongCalibrationOverlay()
         calibration.partRenames[Part.t1.rawValue] = "Tenor One"
-        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1, nudgeSemitones: 2)
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1)
         calibration.rangeOverrides[Part.bass.rawValue] = .custom(for: .bass, midiLow: 40,
                                                                  midiHigh: 60)
 
@@ -521,10 +534,9 @@ final class CorrectionOverlayTests: XCTestCase {
         let overrides = try XCTUnwrap(json["rangeOverrides"] as? [String: [String: Any]])
         XCTAssertEqual(Set(overrides.keys), ["T1", "BASS"])
 
-        // A preset override: {"preset": "...", "nudgeSemitones": N}.
+        // A preset override: {"preset": "..."} — the LABEL ONLY.
         let t1 = try XCTUnwrap(overrides["T1"])
-        XCTAssertEqual(Set(t1.keys), ["preset", "nudgeSemitones"])
-        XCTAssertEqual(t1["nudgeSemitones"] as? Int, 2)
+        XCTAssertEqual(Set(t1.keys), ["preset"])
         XCTAssertEqual(t1["preset"] as? String, PartRangePresets.preset(for: .t1)?.presetName)
 
         // A custom override: {"custom": {"minMidi": N, "maxMidi": N}}.
@@ -536,10 +548,67 @@ final class CorrectionOverlayTests: XCTestCase {
         XCTAssertEqual(custom["maxMidi"] as? Int, 60)
     }
 
+    func testTheWriterNeverWritesTheNudgeIntoTheSongFile() throws {
+        // C-15 rule 2 / D-47 §4: the ±2 nudge is DEVICE-LOCAL. The per-song
+        // file carries the RANGE only.
+        var calibration = SongCalibrationOverlay()
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1)
+
+        let data = try JSONEncoder().encode(calibration)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let overrides = try XCTUnwrap(json["rangeOverrides"] as? [String: [String: Any]])
+        let t1 = try XCTUnwrap(overrides["T1"])
+
+        XCTAssertNil(t1["nudgeSemitones"],
+                     "C-15 rule 2: a writer MUST NOT write nudgeSemitones into corrections/song.json")
+    }
+
+    func testAStoredNudgeIsIgnoredAndNeverQuarantinesTheFile() throws {
+        // C-15 rule 2 / D-47 §4: a reader that meets `nudgeSemitones` MUST
+        // ignore it — never a validation error, never a reason to quarantine
+        // the file. (An older build wrote it; the file must still load.)
+        let json = """
+        {
+          "contractVersion": "v1.1",
+          "partRenames": { "T1": "Tenor One" },
+          "rangeOverrides": {
+            "T1": { "preset": "G3–E5", "nudgeSemitones": 2 },
+            "BASS": { "custom": { "minMidi": 40, "maxMidi": 60 } }
+          }
+        }
+        """
+        let data = Data(json.utf8)
+        let decoded = try JSONDecoder().decode(SongCalibrationOverlay.self, from: data)
+
+        XCTAssertEqual(decoded.displayName(for: .t1), "Tenor One")
+        // The bounds come from C-6.1's row for T1 — the label is display-only.
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.midiLow, 55)
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.midiHigh, 76)
+        XCTAssertEqual(decoded.rangeOverride(for: .bass)?.midiLow, 40)
+    }
+
+    func testAnUnknownPresetLabelIsNotAnErrorAndTheBoundsComeFromTheTable() throws {
+        // C-15 rule 2 / D-47 §3: the label is display-only; a stale or
+        // unknown label (e.g. "TENOR_1") is NOT a contract violation and
+        // MUST NOT reject the file.
+        let json = """
+        {
+          "contractVersion": "v1.1",
+          "rangeOverrides": { "T1": { "preset": "TENOR_1" } }
+        }
+        """
+        let decoded = try JSONDecoder().decode(SongCalibrationOverlay.self,
+                                                from: Data(json.utf8))
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.midiLow, 55)
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.midiHigh, 76)
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.presetName, "TENOR_1",
+                       "the label is kept for display, verbatim")
+    }
+
     func testTheStoredCalibrationJSONRoundTrips() throws {
         var calibration = SongCalibrationOverlay()
         calibration.partRenames[Part.t1.rawValue] = "Tenor One"
-        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1, nudgeSemitones: 2)
+        calibration.rangeOverrides[Part.t1.rawValue] = .preset(for: .t1)
         calibration.rangeOverrides[Part.bass.rawValue] = .custom(for: .bass, midiLow: 40,
                                                                  midiHigh: 60)
 
@@ -548,8 +617,49 @@ final class CorrectionOverlayTests: XCTestCase {
 
         XCTAssertEqual(decoded, calibration)
         XCTAssertEqual(decoded.displayName(for: .t1), "Tenor One")
-        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.nudgeSemitones, 2)
+        XCTAssertEqual(decoded.rangeOverride(for: .t1)?.mode, .preset)
         XCTAssertEqual(decoded.rangeOverride(for: .bass)?.midiLow, 40)
         XCTAssertEqual(decoded.rangeOverride(for: .bass)?.midiHigh, 60)
+    }
+
+    // MARK: - The device-local calibration (C-6.1, UX §3.6, C-15 rule 2)
+
+    func testTheDeviceCalibrationStoresAndClampsTheNudge() {
+        let suiteName = "DeviceCalibrationTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var calibration = DeviceCalibration()
+        calibration.setNudge(2, for: .t1)
+        calibration.setNudge(9, for: .bass)
+        calibration.setNudge(-9, for: .t2)
+        calibration.save(to: defaults)
+
+        let loaded = DeviceCalibration.load(from: defaults)
+        XCTAssertEqual(loaded.nudge(for: .t1), 2)
+        XCTAssertEqual(loaded.nudge(for: .bass), 2, "C-6.1 clamps the nudge to ±2")
+        XCTAssertEqual(loaded.nudge(for: .t2), -2, "C-6.1 clamps the nudge to ±2")
+        XCTAssertEqual(loaded.nudge(for: .baritone), 0, "an unset part has no nudge")
+    }
+
+    func testTheDeviceCalibrationIsEmptyWhenNothingWasEverSet() {
+        let suiteName = "DeviceCalibrationTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let loaded = DeviceCalibration.load(from: defaults)
+        XCTAssertEqual(loaded, DeviceCalibration())
+        XCTAssertEqual(loaded.nudge(for: .t1), 0)
+    }
+
+    func testTheDeviceNudgeShiftsTheEffectiveRange() {
+        var calibration = DeviceCalibration()
+        calibration.setNudge(1, for: .t1)
+
+        let ranges = PartCalibration.effectiveRanges(calibration: nil,
+                                                     parts: [.t1],
+                                                     deviceNudges: calibration.nudges)
+        XCTAssertEqual(ranges[.t1]?.midiLow, 56)
+        XCTAssertEqual(ranges[.t1]?.midiHigh, 77)
     }
 }

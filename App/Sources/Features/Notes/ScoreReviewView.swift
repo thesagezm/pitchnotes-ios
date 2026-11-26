@@ -22,13 +22,13 @@ import EngineCore
 //   · THE PARSER MAY NOT BE IN THIS BUILD. P-304 has not landed, so the app
 //     ships `UnavailableScoreImportService`: the score file is saved with the
 //     song, and the screen says plainly that nothing was parsed;
-//   · A MANUAL NUDGE IS NOT SAVED YET. C-11's op set is exactly
-//     reassign / delete / split — there is no time-shift op, and the overlay
-//     addresses the engine's notes, not the score's — so the nudge works in
-//     this session (visible, undoable) and is NOT pretended to be persisted;
-//   · THE SCORE'S PART MAPPING is not in C-13.2's JSON, so it travels with
-//     the alignment result (an X-task asks Leto where the contract should
-//     carry it).
+//   · THE SCORE'S PART MAPPING comes from the alignment's own JSON
+//     (C-13.2 v1.1.1, D-47 §8). When the alignment carries no mapping, NO
+//     score note is placed into any part — the app never guesses one.
+//
+// THE SCORE'S NUDGE IS SAVED (C-16, D-47 §7): the nudges live in
+// `corrections/score.json`, beside C-11's and C-15's files. They move the
+// SCORE's times, never the engine's notes.
 //
 // THE DEMO ENTRY is clearly synthetic (MockScore) — it exists so the review
 // can be seen and tested before the parser lands, and it never claims to be a
@@ -93,6 +93,12 @@ final class ScoreReviewModel: ObservableObject {
     private let service: ScoreImportService
     /// True for the synthetic demo (the UI labels it).
     let isMock: Bool
+    /// The user's score-note time nudges (C-16). They are persisted in
+    /// `corrections/score.json` — the SCORE's own file, never a C-11 op.
+    @Published private(set) var scoreEdits: [Int: Double] = [:]
+    /// An honest line about the score's nudges (a file we could not read is
+    /// REPORTED, never silently treated as "no nudges").
+    @Published private(set) var scoreEditMessage: String?
 
     /// - Parameters:
     ///   - rawTracks: the engine's note tracks (never mutated).
@@ -149,6 +155,19 @@ final class ScoreReviewModel: ObservableObject {
             overlayMessage = reason
                 + " The detected notes are shown, but the score comparison is not authoritative."
         }
+
+        // The SCORE's own nudges (C-16): `corrections/score.json`, beside
+        // C-11's and C-15's files. They are the score's times, never the
+        // engine's notes.
+        let scoreStore = ScoreEditStore(bundleDirectory: bundleDirectory)
+        let loadedEdits = await Task.detached(priority: .userInitiated) {
+            scoreStore.load()
+        }.value
+        scoreEdits = loadedEdits.nudges
+        scoreEditMessage = loadedEdits.problems.isEmpty
+            ? nil
+            : loadedEdits.problems.joined(separator: "\n")
+
         rebuildReview()
     }
 
@@ -162,7 +181,9 @@ final class ScoreReviewModel: ObservableObject {
                              detected: detected,
                              hasOverlay: hasOverlay,
                              accepted: previous?.accepted ?? false,
-                             nudges: previous?.nudges ?? [:])
+                             // The saved nudges (C-16) seed the review; a live
+                             // session's nudges win until they are cleared.
+                             nudges: previous?.nudges ?? scoreEdits)
     }
 
     // MARK: - The demo
@@ -282,10 +303,45 @@ final class ScoreReviewModel: ObservableObject {
 
     func nudge(scoreIndex: Int, by seconds: Double) {
         review?.nudge(scoreIndex: scoreIndex, by: seconds)
+        scoreEdits = review?.nudges ?? [:]
+        persistScoreEdits()
     }
 
     func resetNudges() {
         review?.resetNudges()
+        scoreEdits = [:]
+        persistScoreEdits()
+    }
+
+    /// Writes the score's nudges to `corrections/score.json` (C-16).
+    ///
+    /// The nudges move the SCORE's times. The engine's `notes/<PART>.json` is
+    /// never touched (C-16 rule 2) and the score-informed track stays
+    /// derived (C-13 rule 3).
+    private func persistScoreEdits() {
+        guard let bundleDirectory else { return }
+        // C-16 rule 4: a MISSING TARGET IS REPORTED, NEVER CLAMPED. An edit
+        // that addresses a note the score does not have is skipped and the
+        // user is told — it never moves a note that is not there.
+        let scoreNoteCount = score?.scoreNotes.count ?? 0
+        let missing = ScoreEditOverlay.missingTargets(in: scoreEdits,
+                                                       scoreNoteCount: scoreNoteCount)
+        if !missing.isEmpty {
+            scoreEditMessage = "The nudge for score note(s) \(missing.map(String.init).joined(separator: ", ")) "
+                + "was skipped — this score has \(scoreNoteCount) notes, so there is nothing there to move."
+        }
+        let store = ScoreEditStore(bundleDirectory: bundleDirectory)
+        let nudges = scoreEdits
+        Task {
+            do {
+                try await Task.detached(priority: .utility) {
+                    try store.save(nudges: nudges)
+                }.value
+            } catch {
+                scoreEditMessage = "Your score nudge could not be saved (\(error.localizedDescription)). "
+                    + "It still applies on this screen, but it will be gone when the app closes."
+            }
+        }
     }
 
     // MARK: - Derived
@@ -384,9 +440,12 @@ struct ScoreReviewView: View {
         }
     }
 
-    /// MusicXML files are XML documents. The dedicated UTI declaration is
-    /// X-216-PENDING (Leto owns `project.yml`), so the picker accepts XML
-    /// documents and the open-in-place path stays out until it lands.
+    /// MusicXML files.
+    ///
+    /// The app EXPORTS `com.recordare.musicxml` (D-47 §1 — it is NOT a
+    /// system-declared UTI, so the app must define it), so the picker can use
+    /// the STATIC identifier. Plain `.xml` scores are opened through
+    /// `public.xml`, which the app imports rather than claims (D-47 §1(b)).
     static let supportedTypes: [UTType] = [UTType("com.recordare.musicxml") ?? .xml, .xml]
 
     // MARK: - The corrections (C-14 rule 1)
@@ -621,9 +680,14 @@ struct ScoreReviewView: View {
                     .font(Token.Fonts.caption)
                     .foregroundStyle(Color.pnTextSecondary)
             }
-            Text("A nudge moves the score note in this session. It is NOT saved yet: the correction overlay has no time-shift operation yet (an X-task asks for one), so the nudge is gone when the app closes.")
+            Text("A nudge moves the SCORE note, not the engine's notes. It is saved with this song (corrections/score.json), so it is there next time you open it.")
                 .font(Token.Fonts.caption)
                 .foregroundStyle(Color.pnTextSecondary)
+            if let message = model.scoreEditMessage {
+                Text(message)
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.octaveWarn)
+            }
         }
     }
 

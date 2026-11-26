@@ -323,24 +323,30 @@ public struct PartCorrectionOverlay: Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - The per-song calibration overlay (X-216 proposal — PENDING Leto)
+// MARK: - The per-song calibration overlay (C-15 — RULED at D-47)
 
 // THE RENAME + THE RANGE OVERRIDE HAVE NO HOME IN C-11 (it covers note
-// operations only, one file per corrected part). X-216 proposes a sibling
-// file `corrections/song.json` inside the same bundle directory, with the
-// EXACT JSON below. LETO HAS THE FINAL SAY — if the ruling names a different
-// home, ONLY THIS TYPE AND `CorrectionStore`'s two path helpers change.
+// operations only, one file per corrected part). C-15 (D-47 §2) gives them a
+// sibling file `corrections/song.json` inside the same bundle directory,
+// with the EXACT JSON below.
 //
 //   { "contractVersion": "v1.1", "engineVersion": "corrections-0.1.0",
 //     "partRenames": { "T1": "Tenor 1" },
 //     "rangeOverrides": {
-//       "T1": { "preset": "TENOR_1", "nudgeSemitones": 2 },
+//       "T1": { "preset": "G3–E5" },
 //       "BASS": { "custom": { "minMidi": 40, "maxMidi": 60 } } } }
 //
 // THE ABSENCE RULE (the same binding rule as C-10): absent file ⇒ no
 // renames and no range overrides ⇒ the consumer behaves EXACTLY as it does
 // today. The C-6.1 contract table is NEVER mutated — an override extends it
 // additively.
+//
+// TWO THINGS THIS FILE DOES NOT CARRY (C-15 rule 2):
+//   · the ±2 semitone nudge — it is DEVICE-LOCAL (C-6.1, UX §3.6) and lives
+//     in `DeviceCalibration`; a writer MUST NOT write it here and a reader
+//     MUST ignore it;
+//   · a second preset vocabulary — the stored label is DISPLAY-ONLY and the
+//     bounds always come from C-6.1's row for that part (D-47 §3).
 
 /// The per-song calibration: the user's part renames and range overrides.
 public struct SongCalibrationOverlay: Codable, Equatable, Sendable {

@@ -14,17 +14,17 @@ import EngineCore
 // lands, ONE adapter maps EngineCore's parser + aligner onto this protocol and
 // nothing else in the app changes.
 //
-// THE HONEST LIMITS (both are filed as X-tasks, neither is self-ratified):
-//   · C-11's op set is EXACTLY `reassign` / `delete` / `split` — there is NO
-//     time-shift op, and the overlay addresses the ENGINE's notes, not the
-//     score's — so a manual NUDGE has no persisted home yet. The nudge works
-//     in-session (in memory, visible, undoable) and is NOT pretended to be
-//     saved;
-//   · C-13.2's alignment JSON has NO score-part → C-1-part mapping, even
-//     though C-13.1 says the mapping is "the alignment's business" — so a
-//     consumer that reads only the contract JSON cannot rebuild a per-part
-//     score track. The mapping therefore travels with the alignment RESULT
-//     (`ScoreAlignmentResult.partMapping`), not inside the JSON.
+// THE TWO GAPS D-47 CLOSED (both were filed as X-tasks):
+//   · THE SCORE'S NUDGE NOW HAS A HOME (C-16, D-47 §7): the file
+//     `corrections/score.json` beside C-11's and C-15's, carrying
+//     `{scoreEdits:[{scoreIndex, offset_s}]}`. It moves the SCORE's times,
+//     never the engine's notes, and it is deliberately NOT a C-11 op (the
+//     engine's and the score's index spaces are different). See
+//     `ScoreEditOverlay` / `ScoreEditStore`;
+//   · THE SCORE-PART → C-1-PART MAPPING NOW TRAVELS IN THE CONTRACT JSON
+//     (C-13.2 v1.1.1, D-47 §8): the alignment object's optional
+//     `partMapping`. ABSENT ⇒ no score note enters any part, and a consumer
+//     MUST NOT guess a mapping.
 //
 // WHAT C-14 FIXES (the order, verbatim):
 //   1. the correction overlay, if present — AUTHORITATIVE;
@@ -109,8 +109,11 @@ public struct BarMapEntry: Codable, Equatable, Sendable {
 /// The alignment metadata (C-13.2).
 ///
 /// JSON (inside the file's `alignment` object): `{ "confidence", "used",
-/// "barMap", "method" }`. `method` is OPTIONAL — absent ⇒ `"unknown"`.
-public struct ScoreAlignment: Codable, Equatable, Sendable {
+/// "barMap", "method", "partMapping" }`. `method` is OPTIONAL — absent ⇒
+/// `"unknown"`. `partMapping` is OPTIONAL — absent ⇒ NO score note is placed
+/// into any part (C-13.2 v1.1.1, D-47 §8).
+public struct ScoreAlignment: Equatable, Sendable {
+
     public var confidence: Double
     /// Whether this alignment was actually applied to the graded track. A
     /// consumer MUST NOT assume `used == true` — it is READ.
@@ -118,12 +121,21 @@ public struct ScoreAlignment: Codable, Equatable, Sendable {
     public var barMap: [BarMapEntry]
     /// Free string (e.g. `"DTW"`). Absent ⇒ `"unknown"`.
     public var method: String?
+    /// The score's `part_id` → the C-1 part it was aligned to (C-13.2 v1.1.1).
+    ///
+    /// **OPTIONAL.** ABSENT ⇒ **no score note is placed into any part** — the
+    /// honest "unmapped" state; a consumer MUST NOT guess a mapping (D-47 §8).
+    /// The keys are the score's own `part_id` values; the values are C-1
+    /// rawValues, which are stable forever (§C-1).
+    public var partMapping: [String: Part]?
 
-    public init(confidence: Double, used: Bool, barMap: [BarMapEntry], method: String? = nil) {
+    public init(confidence: Double, used: Bool, barMap: [BarMapEntry],
+                method: String? = nil, partMapping: [String: Part]? = nil) {
         self.confidence = confidence
         self.used = used
         self.barMap = barMap
         self.method = method
+        self.partMapping = partMapping
     }
 
     /// The method name, or `"unknown"` when the field was absent (C-13.2).
@@ -138,6 +150,45 @@ public struct ScoreAlignment: Codable, Equatable, Sendable {
     /// to make its phrases bar-aligned (D-41 §2).
     public var barStarts: [Double] {
         barMap.sorted { $0.measure < $1.measure }.map(\.start_s)
+    }
+
+    // MARK: - Codable (the mapping's values are C-1 rawValues)
+
+    private enum CodingKeys: String, CodingKey {
+        case confidence, used, barMap, method, partMapping
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        confidence = try container.decode(Double.self, forKey: .confidence)
+        used = try container.decode(Bool.self, forKey: .used)
+        barMap = try container.decodeIfPresent([BarMapEntry].self, forKey: .barMap) ?? []
+        method = try container.decodeIfPresent(String.self, forKey: .method)
+        // The mapping is OPTIONAL: absent ⇒ nil ⇒ no score note enters any
+        // part (C-13.2 rule, D-47 §8).
+        if let raw = try container.decodeIfPresent([String: String].self, forKey: .partMapping) {
+            var mapping: [String: Part] = [:]
+            for (partID, rawValue) in raw {
+                // A value that is not a C-1 rawValue is IGNORED, never a
+                // reason to reject the whole alignment (the same posture as
+                // C-15's display-only preset label).
+                if let part = Part(rawValue: rawValue) {
+                    mapping[partID] = part
+                }
+            }
+            partMapping = mapping
+        } else {
+            partMapping = nil
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(confidence, forKey: .confidence)
+        try container.encode(used, forKey: .used)
+        try container.encode(barMap, forKey: .barMap)
+        try container.encodeIfPresent(method, forKey: .method)
+        try container.encodeIfPresent(partMapping?.mapValues(\.rawValue), forKey: .partMapping)
     }
 }
 
@@ -156,21 +207,34 @@ public struct ScoreAlignmentFile: Codable, Equatable, Sendable {
     }
 }
 
-/// The alignment RESULT: C-13.2's metadata PLUS the score-part → C-1-part
-/// mapping.
+/// The alignment RESULT: C-13.2's metadata, and the score-part → C-1-part
+/// mapping THAT IT CARRIES.
 ///
-/// C-13.1 says the mapping from `part_id` to a C-1 part "is the alignment's
-/// business" — but C-13.2's JSON has NO field for it, so it cannot be read
-/// back from the contract file. It therefore travels HERE (an X-task asks
-/// Leto where the contract should carry it).
+/// C-13.2 v1.1.1 (D-47 §8) gave the mapping a home IN THE CONTRACT JSON: the
+/// alignment object's optional `partMapping`. The mapping is therefore READ
+/// from the alignment — it travels with the file and survives persistence.
+/// **ABSENT ⇒ no score note is placed into any part**, and a consumer MUST
+/// NOT invent, infer or guess a mapping.
 public struct ScoreAlignmentResult: Equatable, Sendable {
     public var alignment: ScoreAlignment
-    /// The score's `part_id` → the C-1 part it was aligned to.
+    /// The score's `part_id` → the C-1 part it was aligned to (empty when the
+    /// alignment carries no mapping).
     public var partMapping: [String: Part]
 
+    /// Builds the result from the alignment — the mapping comes FROM the
+    /// alignment's JSON, never from a guess.
+    public init(alignment: ScoreAlignment) {
+        self.alignment = alignment
+        self.partMapping = alignment.partMapping ?? [:]
+    }
+
+    /// Builds the result with an explicit mapping — the seam's escape hatch
+    /// for an aligner that has not written the mapping into the JSON yet.
+    /// The JSON's mapping WINS when it has one (D-47 §8: the mapping is
+    /// carried in the contract JSON).
     public init(alignment: ScoreAlignment, partMapping: [String: Part]) {
         self.alignment = alignment
-        self.partMapping = partMapping
+        self.partMapping = alignment.partMapping ?? partMapping
     }
 }
 

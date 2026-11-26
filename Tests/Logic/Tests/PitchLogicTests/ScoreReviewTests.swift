@@ -416,4 +416,151 @@ final class ScoreReviewTests: XCTestCase {
         XCTAssertEqual(parts, Set(["P1", "P2", "P3", "P4", "P5"]))
         XCTAssertFalse(demo.scoreNotes.isEmpty)
     }
+
+    // MARK: - The part mapping (C-13.2 v1.1.1, D-47 §8)
+
+    func testThePartMappingIsReadFromTheAlignmentJSON() throws {
+        let json = """
+        {
+          "contractVersion": "v1.1",
+          "alignment": {
+            "confidence": 0.82,
+            "used": true,
+            "barMap": [ { "measure": 1, "start_s": 0.0, "end_s": 6.0 } ],
+            "method": "DTW",
+            "partMapping": { "P1": "T1", "P2": "T2", "P5": "BASS" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(ScoreAlignmentFile.self, from: json)
+        XCTAssertEqual(decoded.alignment.partMapping?["P1"], .t1)
+        XCTAssertEqual(decoded.alignment.partMapping?["P2"], .t2)
+        XCTAssertEqual(decoded.alignment.partMapping?["P5"], .bass)
+
+        // The result READS the mapping from the JSON (never a guess).
+        let result = ScoreAlignmentResult(alignment: decoded.alignment)
+        XCTAssertEqual(result.partMapping["P5"], .bass)
+    }
+
+    func testAnAbsentPartMappingMeansNoScoreNoteEntersAnyPart() throws {
+        let json = """
+        {
+          "contractVersion": "v1.1",
+          "alignment": {
+            "confidence": 0.82,
+            "used": true,
+            "barMap": [ { "measure": 1, "start_s": 3.0, "end_s": 6.0 } ],
+            "method": "DTW"
+          }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(ScoreAlignmentFile.self, from: json)
+        XCTAssertNil(decoded.alignment.partMapping,
+                     "ABSENT ⇒ the honest unmapped state (C-13.2 v1.1.1)")
+
+        let review = ScoreReview(score: score(),
+                                 alignmentResult: ScoreAlignmentResult(alignment: decoded.alignment),
+                                 detected: detected())
+        XCTAssertFalse(review.unmappedScoreNotes.isEmpty,
+                       "the notes are placed in time …")
+        XCTAssertTrue(review.scoreInformedTracks.isEmpty,
+                      "… but NO score note enters any part's track")
+    }
+
+    func testAnUnknownPartRawValueInTheMappingIsIgnoredNotFatal() throws {
+        let json = """
+        {
+          "contractVersion": "v1.1",
+          "alignment": {
+            "confidence": 0.82,
+            "used": true,
+            "barMap": [],
+            "method": "DTW",
+            "partMapping": { "P1": "T1", "P9": "NOT_A_PART" }
+          }
+        }
+        """.data(using: .utf8)!
+
+        let decoded = try JSONDecoder().decode(ScoreAlignmentFile.self, from: json)
+        XCTAssertEqual(decoded.alignment.partMapping?["P1"], .t1)
+        XCTAssertNil(decoded.alignment.partMapping?["P9"],
+                     "an unknown rawValue is ignored, never fatal")
+    }
+
+    // MARK: - The score edits (C-16, D-47 §7)
+
+    func testTheScoreEditsAreStoredInTheirOwnFileBesideTheOthers() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("score-edit-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = ScoreEditStore(bundleDirectory: root)
+        XCTAssertEqual(store.scoreOverlayURL().lastPathComponent, "score.json")
+        XCTAssertEqual(store.scoreOverlayURL().deletingLastPathComponent().lastPathComponent,
+                       "corrections")
+
+        try store.save(nudges: [3: -0.025])
+        let loaded = store.load()
+        XCTAssertEqual(loaded.nudges[3], -0.025)
+        XCTAssertTrue(loaded.problems.isEmpty)
+
+        // The file's JSON is exactly C-16's shape.
+        let data = try Data(contentsOf: store.scoreOverlayURL())
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["contractVersion"] as? String, "v1.1")
+        let edits = try XCTUnwrap(json["scoreEdits"] as? [[String: Any]])
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?["scoreIndex"] as? Int, 3)
+        XCTAssertEqual(edits.first?["offset_s"] as? Double, -0.025)
+
+        // Clearing removes the file (absence ⇒ no nudges).
+        try store.clear()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.scoreOverlayURL().path))
+    }
+
+    func testAnAbsentScoreEditFileMeansNoNudges() {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("score-edit-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let loaded = ScoreEditStore(bundleDirectory: root).load()
+        XCTAssertTrue(loaded.nudges.isEmpty)
+        XCTAssertTrue(loaded.problems.isEmpty)
+        XCTAssertFalse(loaded.foundAnyFile)
+    }
+
+    func testAMissingScoreTargetIsReportedNeverClamped() {
+        let missing = ScoreEditOverlay.missingTargets(in: [0: 0.1, 5: 0.2, 12: -0.3],
+                                                      scoreNoteCount: 3)
+        XCTAssertEqual(missing, [5, 12], "C-16 rule 4: reported, never clamped")
+    }
+
+    func testTheScoreEditOverlayRoundTrips() throws {
+        let overlay = ScoreEditOverlay(nudges: [2: 0.01, 7: -0.02])
+        let data = try JSONEncoder().encode(overlay)
+        let decoded = try JSONDecoder().decode(ScoreEditOverlay.self, from: data)
+        XCTAssertEqual(decoded, overlay)
+        XCTAssertEqual(decoded.nudges[2], 0.01)
+        XCTAssertEqual(decoded.nudges[7], -0.02)
+    }
+
+    func testTheCorrectionStoreNeverQuarantinesTheScoreEditFile() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("correction-store-tests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = CorrectionStore(bundleDirectory: root)
+        try FileManager.default.createDirectory(at: store.correctionsDirectory,
+                                                withIntermediateDirectories: true)
+        let scoreURL = store.correctionsDirectory.appendingPathComponent("score.json")
+        try Data("{\"contractVersion\":\"v1.1\",\"scoreEdits\":[]}".utf8).write(to: scoreURL)
+
+        let loaded = store.load()
+        XCTAssertTrue(loaded.problems.isEmpty,
+                      "score.json belongs to C-16 — it is never an unknown part")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: store.correctionsDirectory.appendingPathComponent("score.json.corrupt").path))
+    }
 }

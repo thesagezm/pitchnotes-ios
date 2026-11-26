@@ -60,6 +60,10 @@ final class NoteTracksModel: ObservableObject {
 
     private let rawTracks: [Part: NoteTrack]
     private var store: CorrectionStore?
+    /// The DEVICE-LOCAL calibration (C-6.1, UX §3.6): the per-part ±2
+    /// semitone nudge. It lives on the device and NEVER in the song's file
+    /// (C-15 rule 2, D-47 §4) — the per-song file carries the RANGE only.
+    private var deviceCalibration: DeviceCalibration
     /// The parts in the order the USER appended operations to them. Empty
     /// after a relaunch — then the undo uses the deterministic fallback.
     private var undoStack: [Part] = []
@@ -79,6 +83,7 @@ final class NoteTracksModel: ObservableObject {
         self.rawTracks = rawTracks
         self.overlays = [:]
         self.calibration = nil
+        self.deviceCalibration = DeviceCalibration.load()
         self.effective = CorrectionResolver.resolve(raw: rawTracks, overlays: [:])
 
         if let bundleDirectory {
@@ -116,9 +121,22 @@ final class NoteTracksModel: ObservableObject {
         calibration?.displayName(for: part) ?? part.displayName
     }
 
-    /// The effective per-song ranges (C-6.1 preset + the song's override).
+    /// The effective per-song ranges (the C-6.1 preset, the song's override
+    /// and the DEVICE's nudge — C-6.1 + C-15 rule 2).
     var ranges: [Part: EffectivePartRange] {
-        PartCalibration.effectiveRanges(calibration: calibration, parts: parts)
+        PartCalibration.effectiveRanges(calibration: calibration,
+                                        parts: parts,
+                                        deviceNudges: deviceNudges)
+    }
+
+    /// The device's per-part nudges (the ±2 semitone calibration).
+    var deviceNudges: [Part: Int] {
+        deviceCalibration.nudges
+    }
+
+    /// The device-local nudge for one part (0 when there is none).
+    func deviceNudge(for part: Part) -> Int {
+        deviceCalibration.nudge(for: part)
     }
 
     /// How many notes of each part fall outside its effective range.
@@ -234,6 +252,10 @@ final class NoteTracksModel: ObservableObject {
     }
 
     /// Sets (or clears) a part's per-song range.
+    ///
+    /// THE RANGE ONLY (C-15 rule 2, D-47 §4): the per-song file carries the
+    /// range; the ±2 semitone nudge is device-local and goes to the device
+    /// store (`setDeviceNudge`), never into `corrections/song.json`.
     func setRange(_ rangeOverride: PartRangeOverride?, for part: Part) {
         var overlay = calibration ?? SongCalibrationOverlay()
         if let rangeOverride {
@@ -243,6 +265,15 @@ final class NoteTracksModel: ObservableObject {
         }
         calibration = overlay.isEmpty ? nil : overlay
         persist()
+    }
+
+    /// Sets a part's DEVICE-LOCAL nudge (C-6.1, UX §3.6).
+    ///
+    /// It is stored on this device and applied on top of the effective range.
+    /// It is NOT part of the song's file and does not travel with the song.
+    func setDeviceNudge(_ nudge: Int, for part: Part) {
+        deviceCalibration.setNudge(nudge, for: part)
+        deviceCalibration.save()
     }
 
     /// Clears the part names and the range overrides (back to the contract's
@@ -391,8 +422,11 @@ struct NoteTracksScreen: View {
             if let part = editingRangePart {
                 PartRangeEditorSheet(part: part,
                                      displayName: model.displayName(for: part),
-                                     current: model.rangeOverride(for: part)) { newRange in
+                                     current: model.rangeOverride(for: part),
+                                     currentNudge: model.deviceNudge(for: part)) { newRange in
                     model.setRange(newRange, for: part)
+                } onNudge: { newNudge in
+                    model.setDeviceNudge(newNudge, for: part)
                 }
             }
         }
@@ -616,16 +650,26 @@ struct NoteTracksScreen: View {
 
 // MARK: - The per-song range editor
 
-/// The per-song range editor (J-302): the C-6.1 preset with an optional
-/// nudge, or a custom range for this song.
+/// The per-song range editor (J-302): the C-6.1 preset or a custom range for
+/// this song, plus the device-local nudge.
+///
+/// TWO DIFFERENT THINGS, TWO DIFFERENT HOMES (C-6.1 + C-15 rule 2, D-47 §4):
+///   · the RANGE is the song's — it is saved in `corrections/song.json`;
+///   · the ±2 semitone NUDGE is the DEVICE's (the singer's/mic's calibration)
+///     — it is saved on this device and applied on top of the range. It never
+///     travels with the song and never enters the song's file.
 struct PartRangeEditorSheet: View {
 
     let part: Part
     let displayName: String
     /// The override being edited (nil = the contract preset).
     let current: PartRangeOverride?
+    /// The device-local nudge (0 = none).
+    let currentNudge: Int
     /// Called with the new override (nil = back to the contract preset).
     let onSave: (PartRangeOverride?) -> Void
+    /// Called with the new DEVICE-local nudge.
+    let onNudge: (Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: PartRangeOverride.Mode
@@ -633,15 +677,18 @@ struct PartRangeEditorSheet: View {
     @State private var low: Int
     @State private var high: Int
 
-    init(part: Part, displayName: String, current: PartRangeOverride?,
-         onSave: @escaping (PartRangeOverride?) -> Void) {
+    init(part: Part, displayName: String, current: PartRangeOverride?, currentNudge: Int = 0,
+         onSave: @escaping (PartRangeOverride?) -> Void,
+         onNudge: @escaping (Int) -> Void = { _ in }) {
         self.part = part
         self.displayName = displayName
         self.current = current
+        self.currentNudge = currentNudge
         self.onSave = onSave
+        self.onNudge = onNudge
         let preset = PartRangeOverride.preset(for: part)
         _mode = State(initialValue: current?.mode ?? .preset)
-        _nudge = State(initialValue: current?.nudgeSemitones ?? 0)
+        _nudge = State(initialValue: currentNudge)
         _low = State(initialValue: current?.midiLow ?? preset.midiLow)
         _high = State(initialValue: current?.midiHigh ?? preset.midiHigh)
     }
@@ -670,6 +717,9 @@ struct PartRangeEditorSheet: View {
                         Stepper("Nudge: \(nudge >= 0 ? "+" : "−")\(abs(nudge)) semitone\(abs(nudge) == 1 ? "" : "s")",
                                 value: $nudge, in: -2...2)
                         Text("C-6.1 allows −2…+2 semitones. The nudge shifts the band, it never gates a note.")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                        Text("The nudge is YOUR device's calibration — it is saved on this device, not in the song, so it does not travel with the song (C-6.1).")
                             .font(Token.Fonts.caption)
                             .foregroundStyle(Color.pnTextSecondary)
                     }
@@ -706,10 +756,13 @@ struct PartRangeEditorSheet: View {
                     Button("Save") {
                         switch mode {
                         case .preset:
-                            onSave(.preset(for: part, nudgeSemitones: nudge))
+                            onSave(.preset(for: part))
                         case .custom:
                             onSave(.custom(for: part, midiLow: low, midiHigh: high))
                         }
+                        // The nudge is device-local (C-6.1) — it goes to the
+                        // device store, NEVER into `corrections/song.json`.
+                        onNudge(nudge)
                         dismiss()
                     }
                 }
@@ -724,19 +777,23 @@ struct PartRangeEditorSheet: View {
     private var effectiveLabel: String {
         let rangeOverride: PartRangeOverride
         switch mode {
-        case .preset: rangeOverride = .preset(for: part, nudgeSemitones: nudge)
+        case .preset: rangeOverride = .preset(for: part)
         case .custom: rangeOverride = .custom(for: part, midiLow: low, midiHigh: high)
         }
-        return PartCalibration.effectiveRange(for: part, rangeOverride: rangeOverride)?.label ?? "—"
+        return PartCalibration.effectiveRange(for: part,
+                                              rangeOverride: rangeOverride,
+                                              deviceNudge: nudge)?.label ?? "—"
     }
 
     private var hzLabel: String {
         let rangeOverride: PartRangeOverride
         switch mode {
-        case .preset: rangeOverride = .preset(for: part, nudgeSemitones: nudge)
+        case .preset: rangeOverride = .preset(for: part)
         case .custom: rangeOverride = .custom(for: part, midiLow: low, midiHigh: high)
         }
-        guard let range = PartCalibration.effectiveRange(for: part, rangeOverride: rangeOverride) else {
+        guard let range = PartCalibration.effectiveRange(for: part,
+                                                         rangeOverride: rangeOverride,
+                                                         deviceNudge: nudge) else {
             return "—"
         }
         return String(format: "%.1f–%.1f Hz", range.fmin, range.fmax)

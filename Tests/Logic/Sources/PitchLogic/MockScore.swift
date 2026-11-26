@@ -67,6 +67,9 @@ public enum MockScore {
     /// is the score's own part identifiers → the C-1 parts. `used` is FALSE
     /// because no aligner applied anything — accepting the alignment is the
     /// USER's decision, and the UI says so.
+    ///
+    /// The mapping travels IN the alignment (C-13.2 v1.1.1, D-47 §8): the
+    /// contract JSON is where a consumer reads it from.
     public static func demoAlignment(detected: [Part: NoteTrack] = MockNoteTracks.demoTracks())
         -> ScoreAlignmentResult {
         var barMap: [BarMapEntry] = []
@@ -80,12 +83,13 @@ public enum MockScore {
             start += demoMeasure_s
             measure += 1
         }
-        let alignment = ScoreAlignment(confidence: 0.82, used: false,
-                                       barMap: barMap, method: "DEMO")
         let mapping = demoPartIDs.reduce(into: [String: Part]()) { result, pair in
             result[pair.value] = pair.key
         }
-        return ScoreAlignmentResult(alignment: alignment, partMapping: mapping)
+        let alignment = ScoreAlignment(confidence: 0.82, used: false,
+                                       barMap: barMap, method: "DEMO",
+                                       partMapping: mapping)
+        return ScoreAlignmentResult(alignment: alignment)
     }
 
     /// The whole DEMO review — score + alignment + the demo's detected tracks.
