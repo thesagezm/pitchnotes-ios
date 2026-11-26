@@ -1,0 +1,138 @@
+{
+  "fixture": "satb5_prog_22050.wav",
+  "notes": [
+    {
+      "end_s": 2.0,
+      "midi": 48,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 2.0,
+      "midi": 55,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 2.0,
+      "midi": 60,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 2.0,
+      "midi": 64,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 2.0,
+      "midi": 67,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 53,
+      "start_s": 2.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 57,
+      "start_s": 2.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 60,
+      "start_s": 2.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 65,
+      "start_s": 2.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 69,
+      "start_s": 2.0
+    },
+    {
+      "end_s": 6.0,
+      "midi": 43,
+      "start_s": 4.0
+    },
+    {
+      "end_s": 6.0,
+      "midi": 50,
+      "start_s": 4.0
+    },
+    {
+      "end_s": 6.0,
+      "midi": 55,
+      "start_s": 4.0
+    },
+    {
+      "end_s": 6.0,
+      "midi": 59,
+      "start_s": 4.0
+    },
+    {
+      "end_s": 6.0,
+      "midi": 62,
+      "start_s": 4.0
+    },
+    {
+      "end_s": 8.0,
+      "midi": 41,
+      "start_s": 6.0
+    },
+    {
+      "end_s": 8.0,
+      "midi": 53,
+      "start_s": 6.0
+    },
+    {
+      "end_s": 8.0,
+      "midi": 57,
+      "start_s": 6.0
+    },
+    {
+      "end_s": 8.0,
+      "midi": 60,
+      "start_s": 6.0
+    },
+    {
+      "end_s": 8.0,
+      "midi": 65,
+      "start_s": 6.0
+    }
+  ],
+  "parts": {
+    "BARITENOR": [
+      60,
+      60,
+      55,
+      57
+    ],
+    "BARITONE": [
+      55,
+      57,
+      50,
+      53
+    ],
+    "BASS": [
+      48,
+      53,
+      43,
+      41
+    ],
+    "T1": [
+      67,
+      69,
+      62,
+      65
+    ],
+    "T2": [
+      64,
+      65,
+      59,
+      60
+    ]
+  },
+  "sample_rate": 22050
+}

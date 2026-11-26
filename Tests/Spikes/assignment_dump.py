@@ -530,11 +530,132 @@ CASES = [
     {
         "name": "satb5",
         "fixture": "satb5_22050.wav",
+        "truth_sidecar": "satb5_22050_truth.json",
         "parts": ["BASS", "BARITONE", "BARITENOR", "T2", "T1"],
         "why": "FIVE VOICES AT ONCE — the assignment's AC case (P-303: "
                ">=70% of the frames correctly assigned on this fixture).",
     },
+    {
+        "name": "satb5_prog",
+        "fixture": "satb5_prog_22050.wav",
+        "truth_sidecar": "satb5_prog_22050_truth.json",
+        "parts": ["BASS", "BARITONE", "BARITENOR", "T2", "T1"],
+        "why": "FIVE VOICES THAT MOVE — the C-F-G-F progression with all five "
+               "parts moving. The static chord above cannot exercise the "
+               "engine's TEMPORAL half (the melodic smoothness, the onset and "
+               "offset costs, the ordering while the voices move), so the "
+               "part-aware number must ALSO be measured on a real assignment "
+               "problem and not on one frozen chord.",
+    },
 ]
+
+
+def truth_chords(sidecar: dict) -> list[dict]:
+    """The truth's CHORDS: the time spans and the pitch each part sings.
+
+    The truth sidecar's `parts` map is part → the pitch of each chord IN
+    ORDER (the i-th element of every part is the i-th chord), and its `notes`
+    list carries the chord's time spans. Grouping the notes by their start
+    time gives the chords, so the SAME reader works for the static fixture
+    (one chord) and the moving one (four chords).
+    """
+    notes = sidecar["notes"]
+    starts = sorted({round(float(note["start_s"]), 6) for note in notes})
+    chords = []
+    for index, start in enumerate(starts):
+        in_chord = [note for note in notes
+                    if round(float(note["start_s"]), 6) == start]
+        end = max(float(note["end_s"]) for note in in_chord)
+        pitches = {}
+        for part, part_pitches in sidecar["parts"].items():
+            if index >= len(part_pitches):
+                raise RuntimeError(
+                    f"the truth's part map has no chord {index} for {part}")
+            pitches[part] = int(part_pitches[index])
+        chords.append({"start_s": float(start), "end_s": float(end),
+                       "pitches": pitches})
+    return chords
+
+
+def frame_truth(chords: list[dict], frame_count: int) -> list[dict]:
+    """The per-frame truth: which pitch each part sings in each frame.
+
+    The chords are the time spans; a frame falls in the chord that contains
+    its time (the LAST chord also owns its end time).
+    """
+    truth = []
+    for frame_index in range(frame_count):
+        time = frame_to_seconds(frame_index)
+        chosen = chords[-1]
+        for chord in chords:
+            if chord["start_s"] <= time < chord["end_s"]:
+                chosen = chord
+                break
+        truth.append(dict(chosen["pitches"]))
+    return truth
+
+
+def frame_for_seconds(seconds: float) -> int:
+    """The inverse of `frame_to_seconds` (the mirror of
+    EngineCore's `BasicPitchFrameClock.frame(forSeconds:)`)."""
+    sample = seconds * SAMPLE_RATE
+    chunk = 0
+    while (chunk + 1) * CHUNK_HOP <= sample:
+        chunk += 1
+    sample_in_chunk = sample - chunk * CHUNK_HOP
+    within = int(sample_in_chunk // FRAME_HOP)
+    return chunk * TRIMMED_FRAMES_PER_CHUNK + within
+
+
+def boundary_analysis(chords: list[dict], frames: list[dict], truth: list[dict],
+                      window_frames: int = 4) -> dict:
+    """The assignment's accuracy SPLIT at the chord transitions.
+
+    At a chord change the audio physically carries BOTH chords (the old
+    chord's tail and the new chord's onset), so a frame near the boundary
+    legitimately sees both sets of pitches. Splitting the number says where
+    the engine's errors live — and it is the honest reading, not a way to
+    hide them.
+    """
+    boundaries = [frame_for_seconds(chord["start_s"]) for chord in chords[1:]]
+    transition: set[int] = set()
+    for boundary in boundaries:
+        for delta in range(-window_frames, window_frames + 1):
+            index = boundary + delta
+            if 0 <= index < len(frames):
+                transition.add(index)
+
+    steady_correct = steady_total = 0
+    transition_correct = transition_total = 0
+    for index, frame in enumerate(frames):
+        frame_truth = truth[index]
+        correct = all(frame["pitches"].get(part) == pitch
+                      for part, pitch in frame_truth.items())
+        if index in transition:
+            transition_total += 1
+            if correct:
+                transition_correct += 1
+        else:
+            steady_total += 1
+            if correct:
+                steady_correct += 1
+
+    return {
+        "window_frames": window_frames,
+        "window_ms": round(window_frames * FRAME_HOP / SAMPLE_RATE * 1000.0, 3),
+        "boundary_frames": boundaries,
+        "transition_frames": transition_total,
+        "transition_frames_all_correct": transition_correct,
+        "transition_accuracy": (transition_correct / transition_total
+                                if transition_total else 0.0),
+        "steady_frames": steady_total,
+        "steady_frames_all_correct": steady_correct,
+        "steady_accuracy": (steady_correct / steady_total if steady_total else 0.0),
+        "why": "At a chord change the audio carries BOTH chords, so a frame "
+               "near the boundary legitimately sees both sets of pitches. The "
+               "split says where the engine's errors live; it is NOT a way to "
+               "hide them.",
+    }
 
 
 def build_case(case: dict, model_path: Path) -> dict:
@@ -555,32 +676,36 @@ def build_case(case: dict, model_path: Path) -> dict:
     parts = sorted(case["parts"], key=lambda part: -SORT_ORDER[part])
     frames, notes = assign(candidates, parts)
 
-    truth_sidecar = json.loads((FIXTURES / "satb5_22050_truth.json").read_text())
-    # The truth sidecar maps each part to the pitch it sings (a LIST, because
-    # a part may sing more than one pitch over the song). The fixture holds
-    # one sustained pitch per part, so the frame truth is that pitch.
-    truth_pitches = {part: pitches[0] for part, pitches in truth_sidecar["parts"].items()
-                     if pitches}
+    truth_sidecar = json.loads((FIXTURES / case["truth_sidecar"]).read_text())
+    chords = truth_chords(truth_sidecar)
     frame_count = len(frames)
-    truth = [dict(truth_pitches) for _ in range(frame_count)]
+    truth = frame_truth(chords, frame_count)
     metrics = evaluate(frames, truth)
 
-    # The notes the truth expects (for the note-level comparison).
+    # The notes the truth expects (for the note-level comparison), with the
+    # PART that sings them.
+    part_of_pitch: dict[int, str] = {}
     expected_notes = []
-    for note in truth_sidecar["notes"]:
-        expected_notes.append({"midi": note["midi"], "start_s": note["start_s"],
-                               "end_s": note["end_s"]})
+    for chord in chords:
+        for part, midi in sorted(chord["pitches"].items()):
+            expected_notes.append({"part": part, "midi": int(midi),
+                                   "start_s": round(chord["start_s"], 9),
+                                   "end_s": round(chord["end_s"], 9)})
+            part_of_pitch.setdefault(int(midi), part)
 
     return {
         "name": case["name"],
         "fixture": case["fixture"],
+        "truth_sidecar": case["truth_sidecar"],
         "parts_low_to_high": parts,
         "why": case["why"],
         "frame_count": frame_count,
-        "candidates": [[[midi, round(salience, 6)] for midi, salience in frame]
+        "candidates": [[[midi, round(salience, 9)] for midi, salience in frame]
                        for frame in candidates],
-        "truth": truth_pitches,
-        "truth_repeat": frame_count,
+        "truth_chords": chords,
+        "truth_frames": [[[parts.index(part), pitch]
+                          for part, pitch in sorted(frame_truth.items())]
+                         for frame_truth in truth],
         "assignment": [
             {
                 "frame_index": frame["frame_index"],
@@ -603,7 +728,28 @@ def build_case(case: dict, model_path: Path) -> dict:
         },
         "expected": metrics,
         "expected_notes": expected_notes,
+        "boundary_analysis": boundary_analysis(chords, frames, truth),
     }
+
+
+def render(artifact: dict) -> str:
+    """The artifact's JSON text — pretty, except for the big per-frame arrays.
+
+    The per-frame arrays (the candidates, the assignment, the truth) are one
+    entry per frame, so indenting them costs ~1 MB of committed bytes for
+    nothing. They are written as one compact line each; everything else keeps
+    the readable indentation.
+    """
+    blobs: dict[str, str] = {}
+    for case in artifact["cases"]:
+        for key in ("candidates", "assignment", "truth_frames"):
+            marker = f"@@{case['name']}:{key}@@"
+            blobs[marker] = json.dumps(case[key], separators=(", ", ": "))
+            case[key] = marker
+    text = json.dumps(artifact, indent=2, sort_keys=True)
+    for marker, blob in blobs.items():
+        text = text.replace(f'"{marker}"', blob)
+    return text
 
 
 def main() -> int:
@@ -646,7 +792,7 @@ def main() -> int:
     }
 
     out = Path(args.out)
-    out.write_text(json.dumps(artifact, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    out.write_text(render(artifact) + "\n", encoding="utf-8")
     print(f"wrote {out} ({out.stat().st_size} bytes)")
     for case in cases:
         report = case["expected"]

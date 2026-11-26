@@ -561,6 +561,7 @@ TRUTH_FIXTURES = [
     ("bp_mono_22050_truth.json", "bp_mono_22050.wav", bp_mono_truth),
     ("bp_poly_22050_truth.json", "bp_poly_22050.wav", bp_poly_truth),
     ("satb5_22050_truth.json", "satb5_22050.wav", satb5_truth),
+    ("satb5_prog_22050_truth.json", "satb5_prog_22050.wav", satb5_prog_truth),
 ]
 
 # Extra truth payloads (P-302/P-303/P-306): the PART each voice belongs to.
@@ -568,6 +569,7 @@ TRUTH_FIXTURES = [
 # part-aware metrics have something to be measured against.
 TRUTH_EXTRAS = {
     "satb5_22050_truth.json": satb5_parts,
+    "satb5_prog_22050_truth.json": satb5_prog_parts,
 }
 
 # Encoded format fixtures (P-203): ffmpeg encodes of the canonical mono 44.1k
