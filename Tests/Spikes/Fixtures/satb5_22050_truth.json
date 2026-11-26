@@ -1,0 +1,48 @@
+{
+  "fixture": "satb5_22050.wav",
+  "notes": [
+    {
+      "end_s": 4.0,
+      "midi": 48,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 55,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 60,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 64,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 4.0,
+      "midi": 67,
+      "start_s": 0.0
+    }
+  ],
+  "parts": {
+    "BARITENOR": [
+      60
+    ],
+    "BARITONE": [
+      55
+    ],
+    "BASS": [
+      48
+    ],
+    "T1": [
+      67
+    ],
+    "T2": [
+      64
+    ]
+  },
+  "sample_rate": 22050
+}

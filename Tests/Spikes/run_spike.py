@@ -144,6 +144,11 @@ def run_separation(report: sc.CheckReport) -> None:
 
 
 def run_basicpitch(report: sc.CheckReport) -> None:
+    # The REAL path FIRST (P-301: the vendored basicpitch.cpp under the ONE ORT
+    # — D-39). PITCHNOTES_SPIKE_REAL=required makes a real-path failure a HARD
+    # failure, so the P-002 mock can never be mistaken for a proven run.
+    if _try_real("basicpitch", report) is True:
+        return
     out = mm.mock_basicpitch()
     r2 = sc.CheckReport()
     events = out["note_events"]
@@ -183,7 +188,8 @@ def _try_real(name: str, report: sc.CheckReport) -> bool | None:
     real_runners = {"swiftf0": ("swiftf0_real", "run_real"),
                     "ribbon": ("ribbon_real", "run_ribbon"),
                     "silero-vad": ("silero_real", "run_silero"),
-                    "separation": ("demucs_real", "run_separation_real")}
+                    "separation": ("demucs_real", "run_separation_real"),
+                    "basicpitch": ("basicpitch_real", "run_basicpitch_real")}
     if name not in real_runners:
         return None
     mod_name, fn_name = real_runners[name]

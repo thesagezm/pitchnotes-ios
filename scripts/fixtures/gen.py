@@ -23,6 +23,17 @@ Generates the git-committed fixture set for Tests/Spikes (all SYNTHETIC, all
   mix48k_stereo.wav         2.5 s 48 kHz STEREO variant of the same mixture
                             (P-203 decode: 48k->44.1k resample + channel-preserving
                             staging under D-8)
+  bp_mono_22050.wav         5 s MONOPHONIC at basic-pitch's NATIVE rate (22.05 kHz):
+                            MIDI 48/52/55/52/48, 0.9 s notes, 0.1 s gaps,
+                            5-harmonic voice-ish spectrum, seeded noise floor
+                            (P-301 basicpitch-spike truth)
+  bp_poly_22050.wav         8 s POLYPHONIC at 22.05 kHz: the C-F-G-C progression,
+                            1.9 s chords every 2 s (P-301 basicpitch-spike truth)
+
+Truth sidecars (JSON, committed next to the WAVs — the SYNTHESIS truth, NOT a
+re-measurement; the spike asserts the model's onsets/offsets against them):
+  bp_mono_22050_truth.json  per note {midi, start_s, end_s}
+  bp_poly_22050_truth.json  per note {midi, start_s, end_s}
 
 Encoded format fixtures (P-203 ac "each format fixture imports"): lossy/lossless
 encodes of the canonical mix44k_short.wav via ffmpeg (dev box; files are
@@ -53,6 +64,7 @@ when an encoded fixture file is missing.
 """
 import argparse
 import hashlib
+import json
 import sys
 import wave
 from pathlib import Path
@@ -66,6 +78,9 @@ SHA_FILE = OUT_DIR / "fixtures.sha256"
 SR = 16000
 SR_HIGH = 44100
 SR_48K = 48000
+SR_BP = 22050  # basic-pitch's NATIVE rate (vendor SAMPLE_RATE) — no resampling
+               # is involved in the P-301 spike, so the fixture is the model's
+               # own input rate.
 
 # Contract V11 voiced band edges (CONTRACTS v0.0).
 HZ_MIN = 46.9
@@ -289,6 +304,232 @@ def synthetic_voice_f0(t: np.ndarray) -> np.ndarray:
     return f0
 
 
+# --- basic-pitch (P-301) fixtures at the model's NATIVE rate -----------------
+# The truth tables below ARE the synthesis parameters: the audio is rendered
+# from them and the JSON sidecar is written from them, so the committed truth
+# can never drift from the committed audio (the sidecar is the SYNTHESIS
+# truth, not a re-measurement of the model).
+BP_MONO_NOTES = [(48, 0.0, 0.9), (52, 1.0, 1.9), (55, 2.0, 2.9),
+                 (52, 3.0, 3.9), (48, 4.0, 4.9)]
+BP_MONO_DUR = 5.0
+# Voice-ish spectrum (decaying harmonics) — the same shape as the M1
+# synthetic_voice fixture, so the model sees a plausible voice rather than a
+# bare sine.
+BP_VOICE_HARMONICS = ((1, 1.0), (2, 0.50), (3, 0.30), (4, 0.15), (5, 0.08))
+# Chord tones: slightly fewer harmonics so four simultaneous voices stay clean.
+BP_CHORD_HARMONICS = ((1, 1.0), (2, 0.25), (3, 0.12))
+
+BP_POLY_CHORDS = [(0.0, [48, 52, 55, 60]),   # C: C3 E3 G3 C4
+                  (2.0, [53, 57, 60, 65]),   # F: F3 A3 C4 F4
+                  (4.0, [43, 50, 55, 59]),   # G: G2 D3 G3 B3
+                  (6.0, [48, 52, 55, 60])]   # C again
+BP_POLY_NOTE_DUR = 1.9
+BP_POLY_DUR = 8.0
+
+
+def gen_bp_mono() -> np.ndarray:
+    """5 s MONOPHONIC fixture at 22.05 kHz (basic-pitch's native rate):
+    MIDI 48/52/55/52/48, 0.9 s notes separated by 0.1 s gaps, voice-ish
+    5-harmonic spectrum, seeded noise floor."""
+    n = int(SR_BP * BP_MONO_DUR)
+    buf = np.zeros(n, dtype=np.float64)
+    for midi, start, end in BP_MONO_NOTES:
+        length = int(round((end - start) * SR_BP))
+        piece = tone(midi_hz(float(midi)), length, SR_BP, amp=0.35,
+                     harmonics=BP_VOICE_HARMONICS)
+        place(buf, start, SR_BP, piece)
+    rng = np.random.default_rng(0xB0DE)
+    buf += 0.0015 * rng.standard_normal(n)
+    return buf
+
+
+def gen_bp_poly() -> np.ndarray:
+    """8 s POLYPHONIC fixture at 22.05 kHz: the C-F-G-C progression, four
+    voices per chord, 1.9 s chords starting every 2 s (0.1 s of silence
+    between chords), seeded noise floor."""
+    n = int(SR_BP * BP_POLY_DUR)
+    buf = np.zeros(n, dtype=np.float64)
+    for start, voicing in BP_POLY_CHORDS:
+        for midi in voicing:
+            piece = tone(midi_hz(float(midi)), int(BP_POLY_NOTE_DUR * SR_BP),
+                         SR_BP, amp=0.15, harmonics=BP_CHORD_HARMONICS)
+            place(buf, start, SR_BP, piece)
+    rng = np.random.default_rng(0xB0F7)
+    buf += 0.0015 * rng.standard_normal(n)
+    return buf
+
+
+def bp_mono_truth() -> list[dict]:
+    """Synthesis truth for bp_mono_22050.wav."""
+    return [{"midi": int(m), "start_s": float(s), "end_s": float(e)}
+            for m, s, e in BP_MONO_NOTES]
+
+
+def bp_poly_truth() -> list[dict]:
+    """Synthesis truth for bp_poly_22050.wav (every voice of every chord)."""
+    notes = []
+    for start, voicing in BP_POLY_CHORDS:
+        for midi in voicing:
+            notes.append({"midi": int(midi), "start_s": float(start),
+                          "end_s": float(start + BP_POLY_NOTE_DUR)})
+    return notes
+
+
+# --- P-302/P-303/P-306: the 5-voice SATB fixture ---------------------------
+#
+# ONE sustained C-major chord, four seconds, FIVE voices at EQUAL amplitude.
+#
+# WHY EQUAL AMPLITUDE: the model's per-frame posterior was MEASURED on this
+# exact signal (the real nmp.onnx, 344 frames): every one of the five voices
+# clears the salience floor (0.30 = the vendored pipeline's own
+# FRAME_THRESHOLD) in at least 90% of the frames, and the median frame
+# carries FIVE simultaneous voices — the P-302 AC's "3–5 peaks".
+#
+# WHY THE MIX IS NORMALISED INSTEAD OF CLIPPED: five voices at full scale sum
+# to a peak of ~1.56, and the CLIPPED version was MEASURED to be a different
+# signal: the distortion costs the upper voices their salience (T1/67 fell to
+# a median salience of 0.21 — BELOW the floor, i.e. lost). The mix is
+# therefore scaled to a 0.9 peak — no clipping, the balance preserved.
+#
+# THE ARTIFACTS ARE REAL AND REPORTED: the model's posterior also carries
+# the OCTAVE of two of the voices (72 = the octave of C4, 91 = the octave of
+# the octave of G4). They are NOT suppressed in the salience layer (that
+# would risk deleting a genuine voice an octave below another — T1/T2 are
+# routinely an octave apart in SDA). The VOICE ASSIGNMENT (P-303) resolves
+# them with the C-6.1 range priors and the no-crossing rule; P-306 reports
+# the artifact rate.
+#
+# WHY THESE PITCHES: every voice sits INSIDE its C-6.1 range preset (BASS
+# 40–55, BARITONE 45–62, BARITENOR 48–65, T2 52–69, T1 55–76) and the parts
+# do not cross (BASS < BARITONE < BARITENOR < T2 < T1) — so the assignment
+# engine (P-303) has an unambiguous right answer to be measured against.
+BP_SATB5_VOICES = [
+    ("BASS", 48),        # C3
+    ("BARITONE", 55),    # G3
+    ("BARITENOR", 60),   # C4
+    ("T2", 64),          # E4
+    ("T1", 67),          # G4
+]
+BP_SATB5_DUR = 4.0
+BP_SATB5_AMP = 0.12
+BP_SATB5_PEAK = 0.9
+BP_SATB5_HARMONICS = ((1, 1.0), (2, 0.3), (3, 0.15), (4, 0.08))
+
+
+def gen_satb5() -> np.ndarray:
+    """4 s FIVE-VOICE SATB chord at 22.05 kHz (P-302/P-303/P-306).
+
+    Five equal voices, summed and then scaled to a 0.9 peak (NO clipping —
+    see the note above the constants), plus a seeded noise floor."""
+    n = int(SR_BP * BP_SATB5_DUR)
+    buf = np.zeros(n, dtype=np.float64)
+    for _part, midi in BP_SATB5_VOICES:
+        piece = tone(midi_hz(float(midi)), n, SR_BP, amp=BP_SATB5_AMP,
+                     harmonics=BP_SATB5_HARMONICS)
+        buf += piece
+    rng = np.random.default_rng(0x5A7B5)
+    buf += 0.0015 * rng.standard_normal(n)
+    peak = float(np.max(np.abs(buf)))
+    if peak > 0:
+        buf *= (BP_SATB5_PEAK / peak)
+    return buf
+
+
+def satb5_truth() -> list[dict]:
+    """Synthesis truth for satb5_22050.wav (one note per voice)."""
+    return [{"midi": int(midi), "start_s": 0.0, "end_s": float(BP_SATB5_DUR)}
+            for _part, midi in BP_SATB5_VOICES]
+
+
+def satb5_parts() -> dict[str, list[int]]:
+    """Which PART sings which pitch (the assignment engine's right answer)."""
+    parts: dict[str, list[int]] = {}
+    for part, midi in BP_SATB5_VOICES:
+        parts.setdefault(part, []).append(int(midi))
+    return parts
+
+
+# --- P-303: the MOVING five-voice fixture ---------------------------------
+#
+# WHY A SECOND FIXTURE: `satb5_22050.wav` is ONE sustained chord. It is the
+# assignment's AC fixture, but a single static chord cannot exercise the
+# engine's TEMPORAL half (the melodic smoothness, the onset/offset costs, the
+# ordering while the voices MOVE). This fixture is the C-F-G-F progression with
+# all five parts MOVING, so the part-aware number is measured on a real
+# assignment problem and not on one frozen chord.
+#
+# THE VOICINGS (every voice inside its C-6.1 range; the parts never cross):
+#   chord 1 (C)   BASS C3(48)  BARITONE G3(55) BARITENOR C4(60) T2 E4(64) T1 G4(67)
+#   chord 2 (F)   BASS F3(53)  BARITONE A3(57) BARITENOR C4(60) T2 F4(65) T1 A4(69)
+#   chord 3 (G)   BASS G2(43)  BARITONE D3(50) BARITENOR G3(55) T2 B3(59) T1 D4(62)
+#   chord 4 (F)   BASS F2(41)  BARITONE F3(53) BARITENOR A3(57) T2 C4(60) T1 F4(65)
+BP_SATB5_PROG_CHORDS = [
+    [("BASS", 48), ("BARITONE", 55), ("BARITENOR", 60), ("T2", 64), ("T1", 67)],
+    [("BASS", 53), ("BARITONE", 57), ("BARITENOR", 60), ("T2", 65), ("T1", 69)],
+    [("BASS", 43), ("BARITONE", 50), ("BARITENOR", 55), ("T2", 59), ("T1", 62)],
+    [("BASS", 41), ("BARITONE", 53), ("BARITENOR", 57), ("T2", 60), ("T1", 65)],
+]
+BP_SATB5_PROG_CHORD_DUR = 2.0
+
+
+def gen_satb5_prog() -> np.ndarray:
+    """8 s FIVE-VOICE SATB PROGRESSION at 22.05 kHz (P-303/P-306).
+
+    Four two-second chords, all five voices moving, equal amplitudes, scaled
+    to a 0.9 peak (NO clipping) plus a seeded noise floor."""
+    total = BP_SATB5_PROG_CHORD_DUR * len(BP_SATB5_PROG_CHORDS)
+    n = int(SR_BP * total)
+    buf = np.zeros(n, dtype=np.float64)
+    length = int(round(BP_SATB5_PROG_CHORD_DUR * SR_BP))
+    for chord_index, chord in enumerate(BP_SATB5_PROG_CHORDS):
+        start = chord_index * BP_SATB5_PROG_CHORD_DUR
+        for _part, midi in chord:
+            piece = tone(midi_hz(float(midi)), length, SR_BP, amp=BP_SATB5_AMP,
+                         harmonics=BP_SATB5_HARMONICS)
+            place(buf, start, SR_BP, piece)
+    rng = np.random.default_rng(0x5A7B6)
+    buf += 0.0015 * rng.standard_normal(n)
+    peak = float(np.max(np.abs(buf)))
+    if peak > 0:
+        buf *= (BP_SATB5_PEAK / peak)
+    return buf
+
+
+def satb5_prog_truth() -> list[dict]:
+    """Synthesis truth for satb5_prog_22050.wav (every voice of every chord)."""
+    notes = []
+    for chord_index, chord in enumerate(BP_SATB5_PROG_CHORDS):
+        start = chord_index * BP_SATB5_PROG_CHORD_DUR
+        end = start + BP_SATB5_PROG_CHORD_DUR
+        for _part, midi in chord:
+            notes.append({"midi": int(midi), "start_s": float(start),
+                          "end_s": float(end)})
+    return notes
+
+
+def satb5_prog_parts() -> dict[str, list[int]]:
+    """Which PART sings which pitch, CHORD BY CHORD (the right answer).
+
+    The i-th pitch of every part is the i-th chord — that is how the
+    part-aware truth is read frame by frame."""
+    parts: dict[str, list[int]] = {}
+    for chord in BP_SATB5_PROG_CHORDS:
+        for part, midi in chord:
+            parts.setdefault(part, []).append(int(midi))
+    return parts
+
+
+def write_truth_json(path: Path, fixture: str, notes: list[dict],
+                     extra: dict | None = None) -> None:
+    """Write a deterministic truth sidecar (sorted keys, fixed formatting)."""
+    import json
+
+    payload = {"fixture": fixture, "sample_rate": SR_BP, "notes": notes}
+    if extra:
+        payload["parts"] = extra
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
 FIXTURES = [
     ("sweep_46_2100Hz_16k.wav", gen_sweep, SR),
     ("synthetic_voice_16k.wav", gen_synthetic_voice, SR),
@@ -300,7 +541,36 @@ FIXTURES = [
     ("mix44k_detuned_plus35.wav", gen_mix44k_detuned_plus35, SR_HIGH),
     ("mix44k_detuned_minus35.wav", gen_mix44k_detuned_minus35, SR_HIGH),
     ("mix48k_stereo.wav", gen_mix48k_stereo, SR_48K),  # stereo (L, R)
+    # P-301 basic-pitch fixtures — the model's NATIVE rate (22.05 kHz), so the
+    # spike exercises no resampling.
+    ("bp_mono_22050.wav", gen_bp_mono, SR_BP),
+    ("bp_poly_22050.wav", gen_bp_poly, SR_BP),
+    # P-302/P-303/P-306: the five-voice SATB chord — the salience + assignment
+    # + part-aware benchmark fixture.
+    ("satb5_22050.wav", gen_satb5, SR_BP),
+    # P-303/P-306: the MOVING five-voice progression (the part-aware number
+    # must not be measured on one frozen chord).
+    ("satb5_prog_22050.wav", gen_satb5_prog, SR_BP),
 ]
+
+# Truth sidecars for the P-301 fixtures (JSON, committed next to the WAVs).
+# They are part of the fixture set: the sha rows cover them AND the check
+# loop re-derives their contents from the synthesis tables, so a sidecar that
+# no longer matches the audio it describes FAILS the integrity gate.
+TRUTH_FIXTURES = [
+    ("bp_mono_22050_truth.json", "bp_mono_22050.wav", bp_mono_truth),
+    ("bp_poly_22050_truth.json", "bp_poly_22050.wav", bp_poly_truth),
+    ("satb5_22050_truth.json", "satb5_22050.wav", satb5_truth),
+    ("satb5_prog_22050_truth.json", "satb5_prog_22050.wav", satb5_prog_truth),
+]
+
+# Extra truth payloads (P-302/P-303/P-306): the PART each voice belongs to.
+# The sidecar carries the assignment engine's RIGHT ANSWER, so the
+# part-aware metrics have something to be measured against.
+TRUTH_EXTRAS = {
+    "satb5_22050_truth.json": satb5_parts,
+    "satb5_prog_22050_truth.json": satb5_prog_parts,
+}
 
 # Encoded format fixtures (P-203): ffmpeg encodes of the canonical mono 44.1k
 # mixture, COMMITTED to git. ffmpeg is only invoked when the file is missing
@@ -383,9 +653,18 @@ def regenerate() -> list[tuple[str, str]]:
             write_wav(path, gen(), sr)
         size = path.stat().st_size
         assert size <= 1_000_000, f"{name} is {size} bytes (> 1 MB policy)"
+    # Truth sidecars (P-301) — written from the same synthesis tables the
+    # audio is rendered from, so they cannot drift apart.
+    for name, fixture, truth_fn in TRUTH_FIXTURES:
+        extra_fn = TRUTH_EXTRAS.get(name)
+        write_truth_json(OUT_DIR / name, fixture, truth_fn(),
+                         extra_fn() if extra_fn is not None else None)
     encode_missing()
-    # sha file covers every fixture on disk (WAVs byte-identical, encodes pinned).
-    names = [n for n, _, _, _ in ENCODED_FIXTURES] + [n for n, _, _ in FIXTURES]
+    # sha file covers every fixture on disk (WAVs byte-identical, encodes
+    # pinned, truth sidecars pinned).
+    names = ([n for n, _, _, _ in ENCODED_FIXTURES]
+             + [n for n, _, _ in FIXTURES]
+             + [n for n, _, _ in TRUTH_FIXTURES])
     rows = [(name, sha256(OUT_DIR / name)) for name in names]
     SHA_FILE.write_text("".join(f"{h}  {n}\n" for n, h in rows))
     return rows
@@ -431,6 +710,34 @@ def check() -> bool:
                     ok = False
         if path.stat().st_size > 1_000_000:
             print(f"FAIL: {name} exceeds 1 MB", file=sys.stderr)
+            ok = False
+    # Truth sidecars (P-301): pinned by sha AND re-derived from the synthesis
+    # tables — a sidecar that no longer describes the committed audio fails.
+    for name, fixture, truth_fn in TRUTH_FIXTURES:
+        path = OUT_DIR / name
+        if not path.exists():
+            print(f"FAIL: {name} missing", file=sys.stderr)
+            ok = False
+            continue
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if expected.get(name) != actual:
+            print(f"FAIL: {name} hash drift (committed {expected.get(name)}, actual {actual})", file=sys.stderr)
+            ok = False
+        try:
+            payload = json.loads(path.read_text())
+        except Exception as e:
+            print(f"FAIL: {name} is not valid JSON ({e})", file=sys.stderr)
+            ok = False
+            continue
+        if payload.get("fixture") != fixture:
+            print(f"FAIL: {name} names fixture {payload.get('fixture')!r}, expected {fixture!r}", file=sys.stderr)
+            ok = False
+        if payload.get("notes") != truth_fn():
+            print(f"FAIL: {name} notes differ from the synthesis truth", file=sys.stderr)
+            ok = False
+        extra_fn = TRUTH_EXTRAS.get(name)
+        if extra_fn is not None and payload.get("parts") != extra_fn():
+            print(f"FAIL: {name} parts differ from the synthesis truth", file=sys.stderr)
             ok = False
     return ok
 
