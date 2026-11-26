@@ -1,0 +1,616 @@
+{
+  "generated_by": "Tests/Spikes/bench_v2.py (P-306)",
+  "honesty": "Every number in this report comes from the REAL models on SYNTHETIC fixtures whose truth is known by construction. None of them is a measurement of real acapella music, and none of them is a promise of perfect 5-way separation (AGENTS \u00a711). The committed artifacts were produced by the real models in the spike runs; this job recomputes the METRICS from them.",
+  "methodology": "The part-AGNOSTIC family counts PITCHES and note EVENTS (the part is never consulted); the part-AWARE family counts the PART assignment (only where the truth names one). The two are reported SEPARATELY and are never blended (PLAN P-306 / AGENTS \u00a711). The frame metric matches the candidate pitch SET per frame at the generator's own salience threshold; the event metric matches same-MIDI notes with the onset within 50 ms (one-to-one, greedy); the offset metric additionally requires the offset within 50 ms. The metrics are recomputed HERE from the committed artifacts \u2014 the CI job downloads no weights. The part-aware metrics are recomputed INDEPENDENTLY and checked against the artifact's own expected block, so the Swift engine, the Python mirror and this harness cannot silently disagree.",
+  "part_agnostic": {
+    "cross_model_agreement": {
+      "bp_mono": {
+        "agreement_f1": 1.0,
+        "disagreement_rate": 0.0,
+        "fixture": "bp_mono_22050.wav",
+        "hypothesis_precision": 1.0,
+        "median_offset_delta_ms": 46.476000000000184,
+        "median_onset_delta_ms": 7.474000000000203,
+        "pitch_mismatches": 0,
+        "reference_recall": 1.0
+      },
+      "satb5": {
+        "agreement_f1": 0.22222222222222224,
+        "disagreement_rate": 0.7777777777777778,
+        "fixture": "satb5_22050.wav",
+        "hypothesis_precision": 0.14285714285714285,
+        "median_offset_delta_ms": 3842.612,
+        "median_onset_delta_ms": 4.39,
+        "pitch_mismatches": 6,
+        "reference_recall": 0.5
+      },
+      "synthetic_voice": {
+        "agreement_f1": 0.7142857142857143,
+        "disagreement_rate": 0.2857142857142857,
+        "fixture": "synthetic_voice_16k.wav",
+        "hypothesis_precision": 0.5555555555555556,
+        "median_offset_delta_ms": 18.032000000000046,
+        "median_onset_delta_ms": 8.453999999999962,
+        "pitch_mismatches": 3,
+        "reference_recall": 1.0
+      }
+    },
+    "external_reference": {
+      "family": "part-agnostic",
+      "frame_f1": 82.0,
+      "note": "the published EXTERNAL part-agnostic baseline our part-agnostic numbers are read against. It is NOT our result and it is NOT part-aware \u2014 the two families are never mixed.",
+      "offset_f1": 44.4,
+      "onset_f1": 55.9,
+      "source": "dettato \u00b7 the Dagstuhl ChoirSet row (RESEARCH Addendum A.1)"
+    },
+    "multif0_frame": {
+      "satb5": {
+        "f1": 0.91465,
+        "false_negative": 0,
+        "false_positive": 321,
+        "fixture": "satb5_22050.wav",
+        "frames": 344,
+        "matching": "per frame, the SET of pitches (a pitch is hit iff it is in the truth set); the part is never consulted",
+        "precision": 0.842724,
+        "recall": 1.0,
+        "salience_threshold": 0.3,
+        "true_positive": 1720,
+        "voiced_frames": 344
+      },
+      "satb5_prog": {
+        "f1": 0.927265,
+        "false_negative": 17,
+        "false_positive": 520,
+        "fixture": "satb5_prog_22050.wav",
+        "frames": 688,
+        "matching": "per frame, the SET of pitches (a pitch is hit iff it is in the truth set); the part is never consulted",
+        "precision": 0.868121,
+        "recall": 0.995058,
+        "salience_threshold": 0.3,
+        "true_positive": 3423,
+        "voiced_frames": 688
+      }
+    },
+    "note_events": {
+      "satb5": {
+        "fixture": "satb5_22050.wav",
+        "hypotheses": 5,
+        "hypothesis_source": "the assignment engine's note events (the part is dropped before matching)",
+        "matching": "same MIDI + onset within the tolerance; one-to-one, greedy",
+        "offset": {
+          "f1": 1.0,
+          "false_negative": 0,
+          "false_positive": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positive": 5
+        },
+        "onset": {
+          "f1": 1.0,
+          "false_negative": 0,
+          "false_positive": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "true_positive": 5
+        },
+        "reference": 5,
+        "tolerance_ms": 50
+      },
+      "satb5_prog": {
+        "fixture": "satb5_prog_22050.wav",
+        "hypotheses": 19,
+        "hypothesis_source": "the assignment engine's note events (the part is dropped before matching)",
+        "matching": "same MIDI + onset within the tolerance; one-to-one, greedy",
+        "offset": {
+          "f1": 0.947368,
+          "false_negative": 1,
+          "false_positive": 1,
+          "precision": 0.947368,
+          "recall": 0.947368,
+          "true_positive": 18
+        },
+        "onset": {
+          "f1": 0.974359,
+          "false_negative": 1,
+          "false_positive": 0,
+          "precision": 1.0,
+          "recall": 0.95,
+          "true_positive": 19
+        },
+        "reference": 20,
+        "tolerance_ms": 50
+      }
+    },
+    "provenance": {
+      "artifacts": [
+        "Tests/Spikes/Fixtures/assignment_satb5.json (P-303)",
+        "Tests/Spikes/Fixtures/crosscheck_swiftf0_vs_basicpitch.json (P-305)"
+      ],
+      "measured_by": "the real models, in the spike runs; the CI job recomputes the METRICS from the committed artifacts (it downloads no weights)",
+      "model": {
+        "license": "Apache-2.0 (CODE) / WEIGHTS TIER C per D-46 \u2014 study-only for commercial distribution; never committed",
+        "role": "the multi-f0 posterior (P-302's salience table)",
+        "sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
+      }
+    },
+    "what_it_measures": "Did the system find the right PITCH and the right note EVENTS? The part is never consulted in this family. These numbers are measured on SYNTHETIC fixtures whose truth is known by construction."
+  },
+  "part_aware": {
+    "cases": {
+      "satb5": {
+        "boundary_split": {
+          "boundary_frames": [],
+          "steady_accuracy": 1.0,
+          "steady_frames": 344,
+          "steady_frames_all_correct": 344,
+          "transition_accuracy": 0.0,
+          "transition_frames": 0,
+          "transition_frames_all_correct": 0,
+          "why": "At a chord change the audio carries BOTH chords, so a frame near the boundary legitimately sees both sets of pitches. The split says where the engine's errors live; it is NOT a way to hide them.",
+          "window_frames": 4,
+          "window_ms": 46.44
+        },
+        "drift": [],
+        "fixture": "satb5_22050.wav",
+        "frame_accuracy": 1.0,
+        "frames": 344,
+        "frames_all_parts_correct": 344,
+        "frames_any_part_correct": 344,
+        "macro_part_accuracy": 1.0,
+        "macro_part_f1": 1.0,
+        "matches_the_artifact_expected_block": true,
+        "note_level": {
+          "BARITENOR": {
+            "correct_notes": 1,
+            "expected_notes": 1,
+            "notes": [
+              {
+                "confidence": 0.729384104,
+                "correct": true,
+                "end_s": 3.976780045,
+                "expected_end_s": 4.0,
+                "expected_midi": 60,
+                "expected_start_s": 0.0,
+                "got_midi": 60,
+                "start_s": 0.0
+              }
+            ]
+          },
+          "BARITONE": {
+            "correct_notes": 1,
+            "expected_notes": 1,
+            "notes": [
+              {
+                "confidence": 0.769083054,
+                "correct": true,
+                "end_s": 3.976780045,
+                "expected_end_s": 4.0,
+                "expected_midi": 55,
+                "expected_start_s": 0.0,
+                "got_midi": 55,
+                "start_s": 0.0
+              }
+            ]
+          },
+          "BASS": {
+            "correct_notes": 1,
+            "expected_notes": 1,
+            "notes": [
+              {
+                "confidence": 0.88544303,
+                "correct": true,
+                "end_s": 3.976780045,
+                "expected_end_s": 4.0,
+                "expected_midi": 48,
+                "expected_start_s": 0.0,
+                "got_midi": 48,
+                "start_s": 0.0
+              }
+            ]
+          },
+          "T1": {
+            "correct_notes": 1,
+            "expected_notes": 1,
+            "notes": [
+              {
+                "confidence": 0.776523922,
+                "correct": true,
+                "end_s": 3.976780045,
+                "expected_end_s": 4.0,
+                "expected_midi": 67,
+                "expected_start_s": 0.0,
+                "got_midi": 67,
+                "start_s": 0.0
+              }
+            ]
+          },
+          "T2": {
+            "correct_notes": 1,
+            "expected_notes": 1,
+            "notes": [
+              {
+                "confidence": 0.708645384,
+                "correct": true,
+                "end_s": 3.976780045,
+                "expected_end_s": 4.0,
+                "expected_midi": 64,
+                "expected_start_s": 0.0,
+                "got_midi": 64,
+                "start_s": 0.0
+              }
+            ]
+          }
+        },
+        "parts_low_to_high": [
+          "BASS",
+          "BARITONE",
+          "BARITENOR",
+          "T2",
+          "T1"
+        ],
+        "per_part_accuracy": {
+          "BARITENOR": 1.0,
+          "BARITONE": 1.0,
+          "BASS": 1.0,
+          "T1": 1.0,
+          "T2": 1.0
+        },
+        "per_part_frame_f1": {
+          "BARITENOR": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "BARITONE": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "BASS": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "T1": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "T2": {
+            "f1": 1.0,
+            "precision": 1.0,
+            "recall": 1.0
+          }
+        }
+      },
+      "satb5_prog": {
+        "boundary_split": {
+          "boundary_frames": [
+            173,
+            346,
+            519
+          ],
+          "steady_accuracy": 1.0,
+          "steady_frames": 661,
+          "steady_frames_all_correct": 661,
+          "transition_accuracy": 0.4074074074074074,
+          "transition_frames": 27,
+          "transition_frames_all_correct": 11,
+          "why": "At a chord change the audio carries BOTH chords, so a frame near the boundary legitimately sees both sets of pitches. The split says where the engine's errors live; it is NOT a way to hide them.",
+          "window_frames": 4,
+          "window_ms": 46.44
+        },
+        "drift": [],
+        "fixture": "satb5_prog_22050.wav",
+        "frame_accuracy": 0.976744,
+        "frames": 688,
+        "frames_all_parts_correct": 672,
+        "frames_any_part_correct": 686,
+        "macro_part_accuracy": 0.988953,
+        "macro_part_f1": 0.989385,
+        "matches_the_artifact_expected_block": true,
+        "note_level": {
+          "BARITENOR": {
+            "correct_notes": 3,
+            "expected_notes": 4,
+            "notes": [
+              {
+                "confidence": 0.700967496,
+                "correct": true,
+                "end_s": 3.988390023,
+                "expected_end_s": 2.0,
+                "expected_midi": 60,
+                "expected_start_s": 0.0,
+                "got_midi": 60,
+                "start_s": 0.0
+              },
+              {
+                "confidence": null,
+                "correct": false,
+                "end_s": null,
+                "expected_end_s": 4.0,
+                "expected_midi": 60,
+                "expected_start_s": 2.0,
+                "got_midi": null,
+                "start_s": null
+              },
+              {
+                "confidence": 0.703313011,
+                "correct": true,
+                "end_s": 5.988390023,
+                "expected_end_s": 6.0,
+                "expected_midi": 55,
+                "expected_start_s": 4.0,
+                "got_midi": 55,
+                "start_s": 4.023219955
+              },
+              {
+                "confidence": 0.678236862,
+                "correct": true,
+                "end_s": 7.953560091,
+                "expected_end_s": 8.0,
+                "expected_midi": 57,
+                "expected_start_s": 6.0,
+                "got_midi": 57,
+                "start_s": 6.034829932
+              }
+            ]
+          },
+          "BARITONE": {
+            "correct_notes": 4,
+            "expected_notes": 4,
+            "notes": [
+              {
+                "confidence": 0.767287504,
+                "correct": true,
+                "end_s": 1.988390023,
+                "expected_end_s": 2.0,
+                "expected_midi": 55,
+                "expected_start_s": 0.0,
+                "got_midi": 55,
+                "start_s": 0.0
+              },
+              {
+                "confidence": 0.903662669,
+                "correct": true,
+                "end_s": 3.953560091,
+                "expected_end_s": 4.0,
+                "expected_midi": 57,
+                "expected_start_s": 2.0,
+                "got_midi": 57,
+                "start_s": 2.023219955
+              },
+              {
+                "confidence": 0.754227971,
+                "correct": true,
+                "end_s": 6.0,
+                "expected_end_s": 6.0,
+                "expected_midi": 50,
+                "expected_start_s": 4.0,
+                "got_midi": 50,
+                "start_s": 4.023219955
+              },
+              {
+                "confidence": 0.754515153,
+                "correct": true,
+                "end_s": 7.953560091,
+                "expected_end_s": 8.0,
+                "expected_midi": 53,
+                "expected_start_s": 6.0,
+                "got_midi": 53,
+                "start_s": 6.0
+              }
+            ]
+          },
+          "BASS": {
+            "correct_notes": 4,
+            "expected_notes": 4,
+            "notes": [
+              {
+                "confidence": 0.877566741,
+                "correct": true,
+                "end_s": 2.023219955,
+                "expected_end_s": 2.0,
+                "expected_midi": 48,
+                "expected_start_s": 0.0,
+                "got_midi": 48,
+                "start_s": 0.0
+              },
+              {
+                "confidence": 0.907302006,
+                "correct": true,
+                "end_s": 3.965170068,
+                "expected_end_s": 4.0,
+                "expected_midi": 53,
+                "expected_start_s": 2.0,
+                "got_midi": 53,
+                "start_s": 2.023219955
+              },
+              {
+                "confidence": 0.992517803,
+                "correct": true,
+                "end_s": 5.976780045,
+                "expected_end_s": 6.0,
+                "expected_midi": 43,
+                "expected_start_s": 4.0,
+                "got_midi": 43,
+                "start_s": 4.023219955
+              },
+              {
+                "confidence": 0.999572099,
+                "correct": true,
+                "end_s": 7.953560091,
+                "expected_end_s": 8.0,
+                "expected_midi": 41,
+                "expected_start_s": 6.0,
+                "got_midi": 41,
+                "start_s": 5.988390023
+              }
+            ]
+          },
+          "T1": {
+            "correct_notes": 4,
+            "expected_notes": 4,
+            "notes": [
+              {
+                "confidence": 0.781888126,
+                "correct": true,
+                "end_s": 1.965170068,
+                "expected_end_s": 2.0,
+                "expected_midi": 67,
+                "expected_start_s": 0.0,
+                "got_midi": 67,
+                "start_s": 0.0
+              },
+              {
+                "confidence": 0.712395893,
+                "correct": true,
+                "end_s": 4.011609977,
+                "expected_end_s": 4.0,
+                "expected_midi": 69,
+                "expected_start_s": 2.0,
+                "got_midi": 69,
+                "start_s": 1.965170068
+              },
+              {
+                "confidence": 0.738749462,
+                "correct": true,
+                "end_s": 5.976780045,
+                "expected_end_s": 6.0,
+                "expected_midi": 62,
+                "expected_start_s": 4.0,
+                "got_midi": 62,
+                "start_s": 4.023219955
+              },
+              {
+                "confidence": 0.594505103,
+                "correct": true,
+                "end_s": 7.953560091,
+                "expected_end_s": 8.0,
+                "expected_midi": 65,
+                "expected_start_s": 6.0,
+                "got_midi": 65,
+                "start_s": 5.976780045
+              }
+            ]
+          },
+          "T2": {
+            "correct_notes": 4,
+            "expected_notes": 4,
+            "notes": [
+              {
+                "confidence": 0.708926548,
+                "correct": true,
+                "end_s": 1.976780045,
+                "expected_end_s": 2.0,
+                "expected_midi": 64,
+                "expected_start_s": 0.0,
+                "got_midi": 64,
+                "start_s": 0.0
+              },
+              {
+                "confidence": 0.673986679,
+                "correct": true,
+                "end_s": 4.011609977,
+                "expected_end_s": 4.0,
+                "expected_midi": 65,
+                "expected_start_s": 2.0,
+                "got_midi": 65,
+                "start_s": 1.988390023
+              },
+              {
+                "confidence": 0.684593456,
+                "correct": true,
+                "end_s": 5.965170068,
+                "expected_end_s": 6.0,
+                "expected_midi": 59,
+                "expected_start_s": 4.0,
+                "got_midi": 59,
+                "start_s": 4.023219955
+              },
+              {
+                "confidence": 0.659013106,
+                "correct": true,
+                "end_s": 7.953560091,
+                "expected_end_s": 8.0,
+                "expected_midi": 60,
+                "expected_start_s": 6.0,
+                "got_midi": 60,
+                "start_s": 6.034829932
+              }
+            ]
+          }
+        },
+        "parts_low_to_high": [
+          "BASS",
+          "BARITONE",
+          "BARITENOR",
+          "T2",
+          "T1"
+        ],
+        "per_part_accuracy": {
+          "BARITENOR": 0.991279,
+          "BARITONE": 0.988372,
+          "BASS": 0.988372,
+          "T1": 0.989826,
+          "T2": 0.986919
+        },
+        "per_part_frame_f1": {
+          "BARITENOR": {
+            "f1": 0.991279,
+            "precision": 0.991279,
+            "recall": 0.991279
+          },
+          "BARITONE": {
+            "f1": 0.989811,
+            "precision": 0.991254,
+            "recall": 0.988372
+          },
+          "BASS": {
+            "f1": 0.989091,
+            "precision": 0.989811,
+            "recall": 0.988372
+          },
+          "T1": {
+            "f1": 0.989826,
+            "precision": 0.989826,
+            "recall": 0.989826
+          },
+          "T2": {
+            "f1": 0.986919,
+            "precision": 0.986919,
+            "recall": 0.986919
+          }
+        }
+      }
+    },
+    "headline": {
+      "frozen_chord_macro_part_accuracy": 1.0,
+      "moving_progression_macro_part_accuracy": 0.988953,
+      "moving_progression_steady_accuracy": 1.0,
+      "moving_progression_transition_accuracy": 0.4074074074074074
+    },
+    "honesty": "THIS IS NOT A REAL-ACAPELLA MEASUREMENT. The two fixtures are synthetic five-voice SATB: one FROZEN chord and one MOVING progression, both with the truth known by construction. On the MOVING progression the STEADY frames are ~100% correct while the TRANSITION frames (where the audio carries BOTH chords) are much lower \u2014 BOTH numbers are reported above, and the lower one is the honest one. A perfect score on synthetic input says the assignment ENGINE is correct on clean synthetic voices; it says NOTHING about real acapella separation, which is where the bleed lives (AGENTS \u00a711).",
+    "what_it_measures": "Was the right PART assigned? Only meaningful where the truth names a part. These numbers are SYNTHETIC numbers on fixtures whose truth is known by construction \u2014 they are NOT a measurement of real acapella separation."
+  },
+  "provenance": {
+    "assignment_artifact": "Tests/Spikes/Fixtures/assignment_satb5.json (P-303)",
+    "crosscheck_artifact": "Tests/Spikes/Fixtures/crosscheck_swiftf0_vs_basicpitch.json (P-305)",
+    "model": {
+      "license": "Apache-2.0 (CODE) / WEIGHTS TIER C per D-46 \u2014 study-only for commercial distribution; never committed",
+      "role": "the multi-f0 posterior (P-302's salience table)",
+      "sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
+    },
+    "models": {
+      "basicpitch": {
+        "role": "hypothesis (polyphonic transcriber)",
+        "sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
+      },
+      "swiftf0": {
+        "role": "reference (monophonic tracker)",
+        "sha256": "6385e8c2ebc3872e82c9ff5946228de44cd3be77a750ea53698b7dbfe94b0a22"
+      }
+    }
+  },
+  "schema": "pitchnotes.bench.v2"
+}
