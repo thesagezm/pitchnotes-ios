@@ -112,7 +112,7 @@ public struct BarMapEntry: Codable, Equatable, Sendable {
 /// "barMap", "method", "partMapping" }`. `method` is OPTIONAL — absent ⇒
 /// `"unknown"`. `partMapping` is OPTIONAL — absent ⇒ NO score note is placed
 /// into any part (C-13.2 v1.1.1, D-47 §8).
-public struct ScoreAlignment: Equatable, Sendable {
+public struct ScoreAlignment: Codable, Equatable, Sendable {
 
     public var confidence: Double
     /// Whether this alignment was actually applied to the graded track. A
