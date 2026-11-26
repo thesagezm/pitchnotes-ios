@@ -93,6 +93,20 @@ asking an agent to run a subagent, which Leto records as a decision first.
 ## LOG (append-only, everyone; newest at TOP)
 ```
 
+**THE BOARD CARRIES THE LIVE WORK ONLY — THE CLOSED HISTORY IS ARCHIVED (D-49,
+2026-11-27).** `Docs/QUEUE-ARCHIVE.md` holds the closed milestones' rows, status
+lines, handoff notes and LOG entries **verbatim**. **A closed row is found by
+searching the archive for its task ID** (`P-303`, `J-301`, `X-219`, …) — it is
+never deleted, summarised away or dropped. The live board keeps every row that
+still has open work, with its current status, its evidence (the build URL, the
+run ID, the sha) and its handoff note.
+
+**ROTATING THE BOARD IS LETO'S ACTION** (Leto owns the board's structure, §2)
+and it must be recorded as a `DECISIONS.md` ruling: the closed history moves
+**verbatim** into `Docs/QUEUE-ARCHIVE.md`, `QUEUE.md` is rewritten on the
+structure above, and **no row, status, note or LOG entry may be lost**. A
+rotation is a documentation-only change — it never touches a lane's code.
+
 Task row format (one line per task, keep it short):
 
 ```

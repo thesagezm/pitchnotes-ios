@@ -16,6 +16,48 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-49 | 2026-11-27 UTC | Leto | RULED (**THE BOARD ROTATION — the human owner's request for a FRESH `QUEUE.md`**: *"the old one seems to be filled"*. The old board was **983 lines / 598 KB** and the closed M0/M1/M2 history dominated it. The closed history is archived **VERBATIM** into **`Docs/QUEUE-ARCHIVE.md`**; `QUEUE.md` is rewritten on the AGENTS §2 skeleton and now carries the **LIVE work only**. The rotation happens BEFORE M4 is seeded, so M4 lands on a clean board.)
+**Context:** The board is the repo's only shared brain (AGENTS §1) and it had
+grown past the point where a new chat could read its own section plus the LOG
+without dragging 600 KB of closed M0/M1/M2 history through the context window
+every time. The human owner (thesagezm) asked for a fresh board on 2026-11-26.
+**Leto owns the board's structure** (AGENTS §2: Leto maintains the milestone
+headers and the queue's structure), so the rotation is Leto's call, not a
+lane's. The risk a rotation creates — history that silently disappears — is
+exactly what AGENTS §1 warns about, so the archive is the mitigation and it is
+**verbatim, not summarised**.
+
+**Ruling:**
+1. **THE ARCHIVE IS VERBATIM, IN TWO PARTS.** `Docs/QUEUE-ARCHIVE.md` holds:
+   **Part A** — the old board exactly as it stood on `main` @`c944d79` (the M2/M3
+   milestone headers, the Paul/Jess/Leto sections, the BLOCKED section and the full
+   LOG), byte for byte; **Part B** — the `jess` branch's board delta verbatim
+   (`git diff c502255 origin/jess -- QUEUE.md`), because the merge into `main` did
+   **not** apply Jess's `QUEUE.md` hunk (the board is Leto's; the precedent from
+   merge #18 stands) and that appendix is therefore the only place her board edits
+   survive.
+2. **THE FRESH `QUEUE.md` CARRIES THE LIVE WORK ONLY**, on the AGENTS §2 skeleton:
+   the milestone header, `## Paul` / `## Jess` / `## Leto`, `## BLOCKED /
+   DECISIONS PENDING`, `## LOG` (newest at TOP). **Every row that still has open
+   work is carried over with its current status, its evidence (the build URL, the
+   run ID, the sha) and its handoff note.** The closed M0/M1/M2 rows are NOT
+   re-listed — they are one search away in the archive.
+3. **NO ROW, STATUS, NOTE OR LOG ENTRY IS LOST.** If a closed row is needed, it is
+   found by its task ID in the archive. The archive is history; the fresh board is
+   the work.
+4. **AGENTS §2 IS AMENDED** to name the archive and to say that a rotation is a
+   Leto action that must be recorded in DECISIONS.md.
+5. **THE ROTATION DOES NOT TOUCH ANY LANE'S WORK.** No code, no contract, no CI
+   and no `DECISIONS.md` ruling is changed by the rotation itself; it is a
+   documentation-only commit. (The M3 code moves that accompany it — Jess's
+   compile fix, Paul's fixture — are separate commits, each prefixed `leto:` and
+   each stating that it was made under D-48 and in whose lane.)
+
+**Affects:** `QUEUE.md`, `Docs/QUEUE-ARCHIVE.md` (new), `AGENTS.md` §2. No
+contract version change (CONTRACTS.md is untouched). Task IDs: L-304, L-211.
+
+---
+
 ## D-48 | 2026-11-25 UTC | Leto | RULED (**THE M3 LANE-DEVIATION ORDER — the human owner closed the Jess lane for M3 and ordered Leto to finish M3 itself**: "there will be no more jess sessions for m3… if something needs doing do it yourself — the last paul session is also currently running — we have to move to m4 soon." This is a BOUNDED, RECORDED exception to AGENTS §1/§12's lane ownership, for the M3 close ONLY. Precedent: D-38's M2 deviation, which is now closed.)
 **Context:** Three chats, three lanes, no shared memory — the repo is the shared brain
 (AGENTS §1). The M3 lane split is uneven: Jess finished her four M3 rows (J-301…J-304,
