@@ -976,3 +976,121 @@ Static engraved pages + a moving play line, NOT a scrolling staff:
 - **Symbols:** treat this display as STUDY-ONLY-reimplementation territory —
   render with our own Canvas drawing (no OSMD/Verovio link: LGPL — AGENTS §9).
   data model stays ours: {start_s, midi, duration, voice, page, x, y}.
+
+---
+
+## 12. M4 forward spec — grading consumes the M2 + M3 outputs (Jess, M3 close)
+
+**WHY THIS SECTION EXISTS:** M3 shipped the two inputs M4 grades against —
+the **tuning reference** (M2, D-22, `tuning_cents`) and the **track the
+grader reads** (M3: the correction overlay, the score-informed track, or the
+heuristic track — CONTRACTS v1.1 **C-14**). §5.4 tells the story; this section
+fixes the INPUT ORDER, the HONESTY SURFACE, the C-10 metadata rule and the
+absence rule, so J-401 is implemented without re-deciding any of it.
+
+### 12.1 The grading input order (C-14 — binding, not a preference)
+
+```
+1. THE CORRECTION OVERLAY (C-11)        → the user's corrections WIN, always.
+2. else THE SCORE-INFORMED TRACK (C-13) → only if BOTH:
+      · alignment confidence ≥ 0.70, AND
+      · the alignment IMPROVED the note agreement (strictly better than the
+        raw score's agreement with the detected notes).
+3. else THE HEURISTIC TRACK              → and the UI MUST say "heuristic" and
+        report the CONFIRMED / PROVISIONAL / UNASSIGNED split.
+```
+
+**THE UI OBLIGATIONS (C-14 rule 3 — the UI must say it):**
+
+- **Heuristic case:** the session's reference line reads *"Heuristic — the
+  detected notes, not the score"*, and the band split is visible **before**
+  the first phrase: confirmed / provisional / unassigned counts.
+- **Score-informed case:** the reference line names the score, the alignment
+  confidence, and the before→after agreement — the score is never presented
+  as more reliable than the number says.
+- **Overlay case:** the reference line names the user's corrections; the
+  score is still shown for comparison, but it is **not** what is graded.
+- **UNASSIGNED notes (c < 0.50) are NOT graded by default.** They are
+  visible in the roll, dimmed, and the session says how many were held back.
+  Force-assigning them is a user action (J-302), not a default.
+
+### 12.2 The tuning reference (M2, D-22) joins the grade
+
+`manifest.tuning_cents` (C-2.1, required since v1.0) is the recording's
+offset from A440. **It offsets the REFERENCE, never the audio** (D-22: the
+stored audio stays byte-true).
+
+- The grading reference's pitch is compared against the **tuning-adjusted**
+  reference, so a recording 30 ¢ sharp is not graded as if every note were
+  30 ¢ off.
+- The user's override (Recording / Force A440 / Manual, J-205) wins over the
+  detected estimate; the session shows which one is in force.
+- **Absence:** a v0-era manifest with no `tuning_cents` ⇒ the session says
+  *"tuning reference unknown — grades assume A440"* and grades anyway. It is
+  never a validation error and never blocks a session (the ABSENCE RULE,
+  §12.4).
+
+### 12.3 The session flow (M4) — unchanged in shape, richer in truth
+
+The state machine is §5.4's (READY → COUNT-IN → ACTIVE → PAUSED →
+PHRASE-END → DONE). What M4 adds on top:
+
+- **READY** shows the **reference line** (§12.1) and the band split BEFORE
+  the count-in, so the singer knows what they are being graded against.
+- **ACTIVE** grades against the C-14 track; the live cursor and the
+  reference bars are the same components as the M1 ribbon (§3.9) — the
+  ribbon never re-designs, only its input changes.
+- **PHRASE-END** micro-banner: phrase score + the worst note.
+- **DONE** → the results screen (§6.3).
+
+**LATENCY COMPENSATION (§5.8, J-403):** the compensation offset is applied to
+the **scoring alignment only** — `GradingConfig.latencyOffsetMs` shifts the
+live pitch frames against the reference note times before coverage/hit math.
+The ribbon does **not** shift (visual honesty). The session carries a
+latency badge: calibrated `±N ms` / uncalibrated / manual override. A
+**manual slider always wins** over the loopback measurement, and it is
+persisted per device (never in the bundle).
+
+### 12.4 The heatmap + retry of weak phrases
+
+- **Heatmap:** one cell per reference note, in time order, coloured by
+  hit / deviation band. Tap a cell → Note Detail (§6.1) — the same sheet the
+  M3 piano roll's note sheet uses, so the vocabulary is shared.
+- **Retry weak phrases:** the results screen lists the ≤ 3 weakest phrases;
+  **[Retry weak phrases]** queues ONLY those phrases (score < threshold) and
+  re-runs the session in ACTIVE from the first queued phrase's bar start,
+  with the count-in intact. **[Retry all]** re-runs the whole song.
+- **Retry keeps the reference:** the reference track is re-read through C-14
+  at retry time (a correction made since the first attempt applies).
+
+### 12.5 C-10's OPTIONAL metadata + the ABSENCE RULE (binding)
+
+C-10 adds optional per-note and per-file metadata to `notes/<PART>.json`:
+`unison`, `salience`, `assignmentBand`, per-phrase `partPresence`,
+`assignmentSummary`, per-track `engineVersion`.
+
+- **PREFER the file's metadata when it is present.** When `assignmentBand` is
+  present, the session's band split comes from the file, not from a local
+  re-derivation.
+- **WHEN IT IS ABSENT, behave EXACTLY as before v1.1.** The band is derived
+  from `confidence` at D-41's thresholds (≥ 0.80 confirmed / 0.50–0.80
+  provisional / < 0.50 unassigned). This is the app's current behaviour and
+  it is CORRECT today — the metadata only ever makes the app MORE accurate.
+- **Absence is NEVER an error:** absent metadata never fails a bundle, never
+  fails an import, never fails a session, and never hides a note.
+  `salience` is a DISPLAY/ANALYSIS hint — it never silently filters a note
+  out of grading and never changes WHICH notes are graded.
+- **`confidence` is NOT redefined** (C-2.3) — C-10 adds `assignmentBand`
+  BESIDE it. A file whose `assignmentBand` disagrees with its `confidence`
+  is a CONTRACT VIOLATION and is REPORTED (V18), never silently repaired.
+- **A v0.0/v1.0 note file stays valid forever.**
+
+### 12.6 The engine swap for M4 (the one place)
+
+The grader consumes `[Part: NoteTrack]` — the same type the M3 piano roll
+consumes — so Paul's real note tracks (P-305) swap in with **zero UI change**.
+The C-14 order, the band split, the tuning offset and the heatmap are all
+computed in **pure Swift in `Tests/Logic/Sources/PitchLogic`** (J-401), unit-
+tested in `Tests/Logic/Tests/PitchLogicTests`, with no audio hardware and no
+engine dependency — the same shape as J-302's overlay resolver, J-303's
+codec and J-304's score review.

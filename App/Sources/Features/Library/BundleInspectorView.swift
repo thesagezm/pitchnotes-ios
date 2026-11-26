@@ -17,6 +17,7 @@ struct BundleInspectorView: View {
     var body: some View {
         List {
             mixerEntry
+            noteTracksEntry
             manifestSection
             provenanceSection
             tuningSection
@@ -28,6 +29,104 @@ struct BundleInspectorView: View {
         .background(Color.pnBackground)
         .navigationTitle("Bundle Inspector")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Piano roll entry (J-301)
+
+    /// The per-part piano roll. The REAL entry renders the bundle's own note
+    /// tracks (the same `[Part: NoteTrack]` the mock renders — the mock→real
+    /// swap is zero-UI-change). Until the engine writes note tracks (P-305),
+    /// the real entry says so honestly instead of showing an empty screen,
+    /// and the MOCK demo entry is offered separately and clearly labelled.
+    @ViewBuilder
+    private var noteTracksEntry: some View {
+        Section {
+            if song.hasNoteTracks {
+                NavigationLink {
+                    // J-302: the corrected-first screen — the roll plus the
+                    // user's corrections and the per-song part calibration.
+                    // C-11: the overlay lives INSIDE the bundle directory
+                    // (`corrections/<PART>.json`), so the directory has to
+                    // reach the screen. Nil ⇒ nothing is saved, and the
+                    // screen says so plainly.
+                    NoteTracksScreen(songTitle: song.manifest.title,
+                                     rawTracks: song.noteTracks,
+                                     duration_s: song.manifest.duration_s,
+                                     isMock: false,
+                                     bundleDirectory: song.bundleDirectory)
+                } label: {
+                    Label("Piano roll", systemImage: "music.note.list")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityHint("Per-part note tracks with confidence shading and unison badges")
+            } else {
+                Label("No note tracks in this bundle yet — they arrive with the engine's note tracker.",
+                      systemImage: "clock.badge.questionmark")
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.pnTextSecondary)
+            }
+
+            NavigationLink {
+                // The demo tracks have no bundle — C-11's overlay has no
+                // home, so corrections to them are not saved (and the screen
+                // says so).
+                NoteTracksScreen(songTitle: "Demo",
+                                 rawTracks: MockNoteTracks.demoTracks(),
+                                 duration_s: MockNoteTracks.demoDuration_s,
+                                 isMock: true,
+                                 bundleDirectory: nil)
+            } label: {
+                Label("Piano roll (demo mock tracks)", systemImage: "wand.and.stars")
+            }
+            .accessibilityHint("Synthetic notes that show how the piano roll works")
+
+            // J-303: the UltraStar export. One `.txt` per part, shareable so
+            // the file can be checked in an EXTERNAL UltraStar player. When
+            // the bundle has no real tracks yet, the DEMO tracks are exported
+            // instead — clearly labelled as synthetic, never as a chart of the
+            // song.
+            NavigationLink {
+                UltraStarExportView(tracks: song.hasNoteTracks ? song.noteTracks : MockNoteTracks.demoTracks(),
+                                    songTitle: song.manifest.title,
+                                    isMock: !song.hasNoteTracks)
+            } label: {
+                Label("Export UltraStar (.txt)", systemImage: "square.and.arrow.up")
+            }
+            .accessibilityHint("Writes one UltraStar text file per voice part")
+
+            // J-304: the score import + alignment review. The REAL entry uses
+            // the bundle's own tracks; the screen loads the user's corrections
+            // ITSELF (from `corrections/` inside the bundle directory), so the
+            // C-14 "your corrections win" rule is READ, never guessed. The
+            // DEMO entry is the synthetic score — clearly labelled, and it
+            // never claims to be a parsed score.
+            if song.hasNoteTracks {
+                NavigationLink {
+                    ScoreReviewView(songTitle: song.manifest.title,
+                                    rawTracks: song.noteTracks,
+                                    bundleDirectory: song.bundleDirectory,
+                                    isMock: false)
+                } label: {
+                    Label("Score & alignment", systemImage: "doc.text.magnifyingglass")
+                        .fontWeight(.semibold)
+                }
+                .accessibilityHint("Import a MusicXML score, compare it with the detected notes, accept or reject the alignment")
+            }
+
+            NavigationLink {
+                ScoreReviewView(songTitle: "Demo",
+                                rawTracks: MockNoteTracks.demoTracks(),
+                                bundleDirectory: nil,
+                                isMock: true)
+            } label: {
+                Label("Score & alignment (demo mock tracks)", systemImage: "wand.and.stars")
+            }
+            .accessibilityHint("A synthetic score built from the demo notes — not a parsed MusicXML file")
+        } header: {
+            Text("Note tracks (M3)")
+        } footer: {
+            Text("Assignments are heuristic until you correct them — confidence shading and unison badges show where the engine is unsure.")
+        }
     }
 
     // MARK: - Mixer entry (J-203)

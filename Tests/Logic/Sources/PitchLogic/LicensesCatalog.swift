@@ -63,6 +63,16 @@ public enum LicensesCatalog {
     public static let dettatoNotice =
         "dettatto-derived: upstream Apache-2.0 NOTICE attribution carried in-app (D-21/D-26)"
 
+    /// D-46's exact honest line for the basic-pitch WEIGHTS (Tier C).
+    ///
+    /// The CODE is Apache-2.0/MIT and ship-safe; the ICASSP-2022 WEIGHTS
+    /// (`nmp.onnx`) are TIER C — STUDY-ONLY FOR COMMERCIAL DISTRIBUTION — and
+    /// NO human sign-off can promote them (the constraint is the DATA's
+    /// licence, not our risk appetite). The line NAMES the NC datasets and
+    /// NEVER says "clean".
+    public static let basicPitchWeightsTierCLine =
+        "TIER C (D-46): the ICASSP-2022 weights (nmp.onnx) were trained on MAESTRO (CC BY-NC-SA 4.0), MedleyDB-pitch (CC BY-NC-SA 4.0) and iKala (custom academic-only / no-profit EULA) — 3 of 5 training datasets are non-commercial, so the derived weights are STUDY-ONLY FOR COMMERCIAL DISTRIBUTION. The CODE stays Apache-2.0/MIT and is unaffected. No sign-off can promote the weights — only the data's licence can. The provenance is stated in full; nothing here is certified."
+
     public static let entries: [LicenseEntry] = [
         LicenseEntry(
             name: "ONNX Runtime (mirror thesagezm/onnxruntime-swift-package-manager)",
@@ -97,8 +107,9 @@ public enum LicensesCatalog {
                 + " User-facing copy stays honest: this is NOT certified clean-commercial."),
         LicenseEntry(
             name: "basicpitch.cpp + basic-pitch model",
-            role: "Multi-f0 note transcription (M3)", license: "Apache-2.0",
-            tier: .shipSafe, shipsIn: "M3", note: ""),
+            role: "Multi-f0 note transcription (M3)", license: "Apache-2.0 (code) — weights Tier C",
+            tier: .tierC, shipsIn: "M3 code path / never for commercial distribution (D-46)",
+            note: LicensesCatalog.basicPitchWeightsTierCLine),
         LicenseEntry(
             name: "dettato-derived ports/weights",
             role: "Transcriber + grouping architecture (M3+)", license: "Apache-2.0",

@@ -39,7 +39,10 @@ enum Token {
 
 extension Color {
     /// Dynamic light/dark color from UX §1.1 hex pairs, resolved per trait.
-    private init(hexLight light: UInt32, dark: UInt32) {
+    /// Module-wide (not file-private): J-301's PartPalette needs the SAME
+    /// initializer — a second private copy in another file redeclares the
+    /// same member on the same type.
+    init(hexLight light: UInt32, dark: UInt32) {
         self.init(uiColor: UIColor { trait in
             trait.userInterfaceStyle == .dark ? UIColor(hexDark: dark) : UIColor(hexDark: light)
         })

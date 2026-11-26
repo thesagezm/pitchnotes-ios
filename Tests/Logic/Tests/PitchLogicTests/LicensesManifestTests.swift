@@ -81,4 +81,38 @@ final class LicensesManifestTests: XCTestCase {
         XCTAssertTrue(shipped.contains { $0.tier == .tierB },
                       "the shipped list contains the Tier B entry — we never hide it")
     }
+
+    // MARK: - D-46 (the basic-pitch weights are TIER C)
+
+    func testTheBasicPitchWeightsAreTierCAndNeverCalledClean() {
+        guard let entry = LicensesCatalog.entries.first(where: { $0.name.contains("basic-pitch") }) else {
+            XCTFail("the basic-pitch row is missing from the catalog")
+            return
+        }
+        XCTAssertEqual(entry.tier, .tierC,
+                       "D-46: the ICASSP-2022 weights are TIER C — study-only for commercial distribution")
+        XCTAssertFalse(entry.ships,
+                       "a Tier C entry is not shipped (LicenseEntry.ships ⇔ ship-safe / Tier B)")
+        // The CODE is unaffected — it stays Apache-2.0.
+        XCTAssertTrue(entry.license.contains("Apache-2.0"),
+                      "the code licence is unchanged by D-46")
+        // The NC provenance is NAMED — MAESTRO / MedleyDB-pitch / iKala.
+        XCTAssertTrue(entry.note.contains("MAESTRO"), "MAESTRO must be named")
+        XCTAssertTrue(entry.note.contains("MedleyDB-pitch"), "MedleyDB-pitch must be named")
+        XCTAssertTrue(entry.note.contains("iKala"), "iKala must be named")
+        // NEVER presented as clean.
+        XCTAssertFalse(entry.note.lowercased().contains("clean"),
+                       "the Tier C line must never contain the word 'clean'")
+        XCTAssertTrue(entry.note.contains("STUDY-ONLY FOR COMMERCIAL DISTRIBUTION"),
+                      "the Tier C line must state the study-only consequence")
+    }
+
+    func testEveryTierCEntryIsListedAndNotShipped() {
+        let tierC = LicensesCatalog.entries.filter { $0.tier == .tierC }
+        XCTAssertFalse(tierC.isEmpty, "the Tier C rows exist — the screen says what we do NOT ship")
+        for entry in tierC {
+            XCTAssertFalse(entry.ships, "\(entry.name) must not be shipped")
+            XCTAssertFalse(entry.note.isEmpty, "\(entry.name) must carry its verdict")
+        }
+    }
 }

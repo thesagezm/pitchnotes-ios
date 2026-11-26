@@ -156,7 +156,7 @@ struct LicensesView: View {
     var body: some View {
         List {
             Section {
-                Text("Everything PitchNotes ships is permissively licensed; weights' provenance is stated honestly (Tier B is NOT certified clean). Study-only repos are never linked or copied.")
+                Text("Everything PitchNotes ships is permissively licensed; weights' provenance is stated honestly (Tier B is NOT certified clean; Tier C weights are study-only for commercial distribution — the basic-pitch ICASSP-2022 weights are trained on NC datasets and no sign-off can promote them, D-46). Study-only repos are never linked or copied.")
                     .font(Token.Fonts.caption)
                     .foregroundStyle(Color.pnTextSecondary)
             }
@@ -177,7 +177,7 @@ struct LicensesView: View {
     }
 
     private var notShippedSection: some View {
-        Section("Not shipped (study-only / pending sign-off)") {
+        Section("Not shipped for commercial distribution (study-only / pending sign-off / Tier C weights)") {
             ForEach(LicensesCatalog.entries.filter { !$0.ships }) { entry in
                 licenseRow(entry)
             }
