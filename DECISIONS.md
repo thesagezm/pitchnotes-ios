@@ -16,6 +16,112 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-51 | 2026-11-27 UTC | Leto | RULED (**THE M2+M3 DEVICE DEMO IS EXPLICITLY WAIVED — IT WAS NOT RUN.** The human-owned legs of the M2 and M3 gates (L-205 + J-210) are **NOT RUN**: they need an iPhone 12 Pro Max, the 84 MB `htdemucs` weights and a human, and no such run has happened. D-48 §4 allows the gate to close with a **recorded human waiver** of the device demo and **forbids a fabricated device result** (AGENTS §11). This entry is that waiver — made **visible**, never a silent omission.)
+**Context:** The M2 demo (L-205, carried from M2 by D-38) and the M3 demo (J-210)
+were always planned as **ONE trip** on one device: a real SDA FLAC import → staged
+progress → cancel leaves NO partial bundle → re-import → VOCALS/INSTRUMENTAL → the
+mixer (solo / focus mix / mute / fader glide) → seek + region loop → a detuned
+recording shows the tuning offset AND the ribbon reference adjusts → the 5-part
+roll with confidence shading → correct a note → import a hymn MusicXML → alignment
+improves → export UltraStar `.txt` → **play it in an external UltraStar-family
+player** → storage + delete → airplane mode AFTER the one-time model download.
+**No human has performed this run.** The M3 gate is otherwise complete (the code
+gate is green), and the human owner has ordered the milestone closed now and M4
+opened (D-48). Stalling M3 on a human leg is exactly what D-38's precedent
+(§2's "carried, NOT claimed as done") already established for M2.
+
+**Ruling:**
+1. **THE DEVICE DEMO IS WAIVED — EXPLICITLY, FOR BOTH MILESTONES.** L-205 and
+   J-210 are **NOT RUN** and are **NOT claimed as done**. They **stay open on the
+   board** (they are rows, not history) so the next human who has the device can
+   still run them and log the result; but **neither M2 nor M3 is
+   device-verified**, and neither may ever be described as such.
+2. **AGENTS §8's DEVICE NUMBERS REMAIN UNMEASURED.** The **device RTF**, the
+   **peak RSS** (`Darwin task_info phys_footprint`) and the **thermal state**
+   are the ONLY source of the A14 budgets, and they are **absent**. Therefore
+   **every separation and note-tracking number in `Docs/BENCHMARKS.md` is a
+   RUNNER / DEV-BOX number**, and the device-budget columns stay empty. The
+   rows that depend on a device reading — **J-206** (the separation wall-time →
+   RTF / peak-RSS / thermal readout), **J-207** (the runtime model download +
+   the offline path), **L-205** and **J-210** — **stay OPEN**.
+3. **THE IN-APP COPY MUST NOT IMPLY A DEVICE-VERIFIED QUALITY.** No screen may
+   claim a separation or assignment accuracy that was only measured on runner /
+   dev-box / synthetic fixtures. The honesty rail of AGENTS §11 applies to the
+   UI copy as much as to the docs: **do not promise perfect 5-way separation** —
+   the app is designed for bleed (focus mixes, per-note confidence, note-track
+   grading, score alignment).
+4. **THE M2/M3 SEPARATION NUMBERS REMAIN RUNNER NUMBERS.** §4 and §4.1/§4.2 of
+   `Docs/BENCHMARKS.md` (the htdemucs RTF 36.32 / peak RSS 1805 MB rows) are
+   **Linux dev-box** measurements and are already env-labelled as such; this
+   ruling does not change them, it fixes what they may be **called**.
+5. **NO FABRICATION.** No device RTF, no peak RSS, no thermal reading and no
+   "the demo passed" claim may be written anywhere — not in `Docs/BENCHMARKS.md`,
+   not in `QUEUE.md`, not in the app. If the human runs the demo later, the
+   numbers are logged **on the rows that are still open**, as they are measured.
+
+**Affects:** `PLAN.md` (the M3 milestone header's device-demo waiver block) ·
+`QUEUE.md` (the M3 header, the BLOCKED section, L-205, J-210, J-206, J-207) ·
+`Docs/BENCHMARKS.md` §6 (still empty — the device report is P-603's job at M6) ·
+AGENTS §8 (the device budgets remain UNMEASURED). Task IDs: L-205, J-210, J-206,
+J-207, L-304.
+
+---
+
+## D-50 | 2026-11-27 UTC | Leto | RULED (**P-304 IS WAIVED FOR M3 AND CARRIED INTO M4 — the MusicXML parser + the DTW aligner (the ENGINE side of score alignment) does NOT ship in M3.** D-48 §5 requires that any gate row dropped inside the close-out order be a **VISIBLE** decision in `PLAN.md` / `QUEUE.md` and in the milestone header — not a quiet omission. This entry is that visible decision, so the waiver is a ruling and not a chat note.)
+**Context:** P-304 is *"Score-informed alignment hook: MusicXML import (D10: minimal
+Swift parser for note events), DTW align score→audio salience/note track, snap
+NoteTrack when confidence high; `score.musicxml` in bundle; manual-correction API"*
+— an **L**-sized engine row with an AC of *"synthetic score+audio aligns ≤50 ms;
+alignment improves assignment on synthetic"*. It was one of the M3 gate rows
+(PLAN M3's merge gate: P-301…P-306). Its **consumer** side (J-304 — the score
+import + the alignment review UI) is **already merged and green** on `main`
+(`c944d79`, run 45893306197). D-40 already ruled that the MusicXML parser is
+**optional** for M3 and that score alignment is **optional-not-required for
+grading**; the consumer therefore already had to survive the parser's absence,
+and it ships the honest `ScoreImportError.parserUnavailable` state.
+
+**Ruling:**
+1. **P-304 IS WAIVED FOR M3 AND CARRIED INTO M4 — IT IS NOT DROPPED.** The row
+   **stays OPEN**, moves into the **M4** section of the board, and keeps its
+   original acceptance criteria intact (≤50 ms alignment on synthetic +
+   alignment improves assignment on synthetic).
+2. **THE ENGINE SIDE OF SCORE ALIGNMENT DOES NOT SHIP IN M3.** What ships is
+   Jess's **consumer** side, which **ships the honest `parserUnavailable`
+   state**; the **no-score path is unaffected**, and **nothing claims that
+   score alignment works**.
+3. **WHY.** The M3 window is the human's D-48 close-out. A MusicXML parser + a
+   DTW aligner landed **blind** — no local Swift toolchain, CI-only verification,
+   no human able to look at a rendered alignment — would put an **unverified
+   feature** into the milestone instead of an honest gap. A visible gap that
+   M4 closes is strictly better than a shipped-but-unvalidated aligner. (D-40's
+   "the score is OPTIONAL" ruling already makes this the consistent reading:
+   no-score is a supported, first-class mode.)
+4. **THE M3 CLAIM IS PRECISELY THIS.** M3's claim is **"per-part note tracks +
+   the salience + the correction overlay"** — **NOT** "score alignment works";
+   **NOT** "voice assignment works on real acapella" (the numbers are
+   **synthetic**: macro part accuracy **1.000** on the frozen chord and
+   **0.988953** on the moving progression, whose **STEADY** frames are **1.000**
+   and whose **TRANSITION** frames are **0.4074074074074074** — **both** are
+   reported, and the lower one is the honest one); and **NOT** "perfect 5-way
+   separation" (AGENTS §11 — the app is designed for bleed).
+5. **THE WAIVER IS VISIBLE IN THREE PLACES,** as D-48 §5 requires: the **M3
+   milestone header in `PLAN.md`** (a dedicated waiver block), the **M3 merge
+   gate line and the P-304 row in `PLAN.md`**, and the **board** (the M3
+   milestone header's waiver block, the P-304 row itself, and the BLOCKED
+   section). It is also recorded **here**, so it is a ruling.
+6. **NO CONTRACT CHANGE.** `CONTRACTS.md` is untouched — the bundle's optional
+   `score.musicxml` and the score-alignment metadata were already additive and
+   optional under v1.1.1, and a consumer that reports `parserUnavailable` is
+   exactly the state the contract already allows.
+
+**Affects:** `PLAN.md` (the M3 header's P-304 waiver block, the M3 merge-gate
+line, the P-304 table row, the M4 "carried in" line) · `QUEUE.md` (the M3
+header's waiver block, the P-304 row — which moves to M4, and the BLOCKED
+section) · `DECISIONS.md` (this entry). No contract version change. Task IDs:
+P-304, J-304, L-304.
+
+---
+
 ## D-49 | 2026-11-27 UTC | Leto | RULED (**THE BOARD ROTATION — the human owner's request for a FRESH `QUEUE.md`**: *"the old one seems to be filled"*. The old board was **983 lines / 598 KB** and the closed M0/M1/M2 history dominated it. The closed history is archived **VERBATIM** into **`Docs/QUEUE-ARCHIVE.md`**; `QUEUE.md` is rewritten on the AGENTS §2 skeleton and now carries the **LIVE work only**. The rotation happens BEFORE M4 is seeded, so M4 lands on a clean board.)
 **Context:** The board is the repo's only shared brain (AGENTS §1) and it had
 grown past the point where a new chat could read its own section plus the LOG

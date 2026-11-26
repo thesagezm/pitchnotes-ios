@@ -218,7 +218,7 @@ warrant pulling the eval forward.)
 
 ## M3 — Per-Voice Note Tracks (the hard R&D milestone) — **OPEN 2026-11-24**
 
-**Open condition:** ~~M2 merged~~ **MET** (M2 closed + `m2` tagged, D-38). **CI jobs:**
+**Open condition:** ~~M2 merged~~ **MET** (M2 closed + `m2` tagged, D-38). **CI jobs:
 `basicpitch-spike` REAL; bench v2; `logic-tests`, `build-ipa`.
 **Also carried in:** **L-205** — the M2 device demo (UX §10.2) + the device RTF/RSS/thermal
 numbers, deferred from M2 by D-38. Run it with the M3 demo.
@@ -226,12 +226,52 @@ numbers, deferred from M2 by D-38. Run it with the M3 demo.
 **Honesty:** heuristic assignment + score alignment ship here; fine-tuned per-singer
 separation is post-v1 (X-301/X-302 prep only). Expect bleed; show confidence.
 
+> ### ⚠️ EXPLICIT WAIVER — P-304 (the MusicXML parser + the DTW aligner)
+>
+> **P-304 IS WAIVED FOR M3 AND CARRIED INTO M4.** The engine side of score
+> alignment — the minimal Swift MusicXML parser, the DTW score→audio aligner,
+> and the `score.musicxml` bundle entry — **DOES NOT SHIP IN M3.**
+>
+> - **WHAT STILL SHIPS:** Jess's J-304 **consumer** side (the score import +
+>   the alignment review UI) ships the honest
+>   `ScoreImportError.parserUnavailable` state, so the no-score path is
+>   unaffected. **Nothing claims that score alignment works.**
+> - **WHY:** the M3 window is the human's D-48 close-out; a parser + DTW
+>   aligner landed blind (no local Swift toolchain, CI-only verification)
+>   would put an **unverified feature** into the milestone rather than an
+>   honest gap.
+> - **IT IS NOT DROPPED:** the **P-304 row stays OPEN** on the board and moves
+>   into **M4** (see the M4 section below).
+> - **THE M3 CLAIM IS:** *"per-part note tracks + the salience + the correction
+>   overlay"* — **NOT** "score alignment works" and **NOT** "voice assignment
+>   works on real acapella" (the numbers are synthetic: macro part accuracy
+>   **1.000** on the frozen chord and **0.988953** on the moving progression,
+>   whose **STEADY** frames are **1.000** and whose **TRANSITION** frames are
+>   **0.4074074074074074** — **both** are reported) and **NOT** "perfect 5-way
+>   separation" (AGENTS §11 — the app is designed for bleed).
+> - **THE RULING IS D-50** (DECISIONS.md), recorded so the waiver is a decision,
+>   not a chat note.
+>
+> ### ⚠️ EXPLICIT WAIVER — the device demo (L-205 + J-210): **NOT RUN**
+>
+> The M2 + M3 device demo was **NOT RUN** (it needs an iPhone 12 Pro Max, the
+> 84 MB `htdemucs` weights and a human). It is waived **explicitly** under
+> D-48 §4 — never a silent omission. **Consequences, recorded:** **M2 is NOT
+> device-verified and must never be described as such**; **M3 is NOT
+> device-verified either**; AGENTS §8's device budgets (RTF / peak RSS /
+> thermal) remain **UNMEASURED** — every separation and note-tracking number in
+> `Docs/BENCHMARKS.md` is a **runner / dev-box number**; and the rows that
+> depend on a device reading (J-206, J-207, L-205, J-210) stay **open**. The
+> in-app honesty copy must not imply a device-verified separation quality.
+
+
+
 | ID | Owner | Task & AC | Deps | Size |
 |---|---|---|---|---|
 | P-301 | Paul | Vendor basicpitch.cpp (MIT, sevagh) + ort-builder minimal ORT (trim ops, weights→.c/.h); C++20 bridge; per-stem note events → NoteTrack {start_s,end_s,midi,confidence}; Part range filter; min-duration/hysteresis cleanup. **AC:** `basicpitch-spike` green on mono+poly synthetic fixtures; onset/offset within 50 ms on synthetic; RTF logged; binary size reduced. | P-204, L-008 | L |
 | P-302 | Paul | Multi-f0 salience: basic-pitch polyphonic salience (primary) OR Cuesta-style CNN (license-verify; fallback basic-pitch) → per-frame pitch candidates+salience. **AC:** synthetic SATB fixture shows 3–5 peaks; peak-picking unit test. | P-301 | M |
 | P-303 | Paul | Voice assignment engine: Viterbi/HMM over candidates; costs = range prior + melodic smoothness (≤~240c/frame) + cross-part ordering (bass<baritone<baritenor<T2<T1, no-crossing) + harmonic plausibility; subset handling; unison→low confidence flag. **AC:** synthetic 5-voice assignment ≥70% frames (clean); real acapella logged honestly; per-note confidence; ADOPT grouper-style note-level embedding + distinct-tracks decode heuristics WITH voice priors (C-6.1 range presets, bass-lowest, no-crossing) per D-21.3; optionally fine-tune a small note transformer on clean synthetic SATB (X-301). Never ship NC grouper weights. | P-302, P-105 | L |
-| P-304 | Paul | Score-informed alignment hook: MusicXML import (D10: minimal Swift parser for note events), DTW align score→audio salience/note track, snap NoteTrack when confidence high; `score.musicxml` in bundle; manual-correction API. **AC:** synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic; optional (no score→heuristic only). | P-303, L-303 | L |
+| P-304 | Paul | Score-informed alignment hook: MusicXML import (D10: minimal Swift parser for note events), DTW align score→audio salience/note track, snap NoteTrack when confidence high; `score.musicxml` in bundle; manual-correction API. **AC:** synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic; optional (no score→heuristic only). **→ WAIVED FOR M3 (D-50) — CARRIED INTO M4.** The engine side does NOT ship in M3; Jess's consumer ships the honest `parserUnavailable` state; **nothing claims score alignment works**; the row stays OPEN. | P-303, L-303 | L |
 | P-305 | Paul | NoteTrack v1 metadata: per-note confidence, part-presence per phrase, unison flags, engineVersion; SwiftF0 `segment_notes` cross-check vs basic-pitch; disagreement metric. **AC:** schema v1.1 ratified; cross-check metric logged. | P-301, P-101 | M |
 | P-306 | Paul | Benchmark harness v2: note onset/offset F1, part-aware macro F1 (PawCT-style), multi-f0 P/R/F1 on synthetic + local real fixtures → BENCHMARKS.md honest report. **AC:** report committed; real part-aware F1 stated without overclaim; part-AGNOSTIC and part-AWARE metrics reported separately, citing dettato's Dagstuhl ChoirSet row (onset 55.9 / frame 82.0 / offset 44.4 — RESEARCH Addendum A.1) as the external part-agnostic reference point; targets §0. | P-303, P-304 | M |
 | X-301 | Paul | **STRETCH, non-gating:** Synth SATB data pipeline spec + prototype: hymn MIDI/MusicXML → OpenUtau/DiffSinger/NNSVS (license-checked voicebanks) → 5 stems+mix+church IR (pyroomacoustics/pedalboard) → power-set subsets → training manifest. NC-data ban enforced. **AC:** spec + 1 synthetic song end-to-end on Linux/CI; license verdicts; training deferred post-v1. | P-303, L-007 | XL→split |
@@ -250,7 +290,9 @@ separation is post-v1 (X-301/X-302 prep only). Expect bleed; show confidence.
 
 **Merge Gate M3:** P-301…P-306, J-301…J-304, L-301…L-304 `DONE` (X-301/X-302 stretch
 excluded); basicpitch-spike green; logic-tests green; build-ipa green; BENCHMARKS v2
-honest report; contracts v1.1; D10/D12 ruled.
+honest report; contracts v1.1; D10/D12 ruled. **P-304 IS WAIVED FOR M3 AND CARRIED
+INTO M4** (D-50 — see the waiver block in the M3 header above); the M2+M3 device
+demo (L-205 + J-210) is **NOT RUN** and explicitly waived (D-51).
 **Device Demo M3:** import real SDA song → 5-part piano roll with confidence shading →
 tap a wrong note → drag to correct part → import hymn MusicXML → alignment improves →
 export UltraStar .txt → play in external player. Log honest assignment quality.
@@ -264,6 +306,10 @@ as background prep, never blocks gate. Leto rules D10/D12 early.
 
 **Open condition:** M3 merged. **CI jobs:** scoring `logic-tests` suite expanded; session
 fixture; `build-ipa`. **Contract:** v1.2 (SessionResult, GradingConfig, transposed note-track mapping).
+
+**CARRIED IN FROM M3:** **P-304 — the MusicXML parser + the DTW aligner** (WAIVED for
+M3 by D-50, **not dropped**). It is an **OPEN row in M4** and sits with the score-
+informed work; M4's board carries it with its original acceptance criteria intact.
 
 | ID | Owner | Task & AC | Deps | Size |
 |---|---|---|---|---|
