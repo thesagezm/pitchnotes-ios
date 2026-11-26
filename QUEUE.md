@@ -118,8 +118,10 @@ Task row format (one line per task, keep it short):
 - CI jobs: the scoring `logic-tests` suite expanded; the synthetic
   sung-stream-vs-reference session fixture; `build-ipa` (L-402's job).
 - **CARRIED IN FROM M3: [P-304]** — the MusicXML parser + the DTW aligner.
-  **WAIVED for M3 by D-50, NOT dropped** — it is an OPEN row in the Paul section
-  below, with its original acceptance criteria intact.
+  **WAIVED for M3 by D-50, NOT dropped** — and **CLAIMED BY PAUL as an M4 row
+  (@e1bd6bb, D-52)**: it is now `DOING` in the Paul section below, with its
+  original acceptance criteria intact. **Its end-state lane migration is
+  [J-406]** (the Jess-lane score-contract typealias).
 - **Merge Gate M4 (PLAN.md, verbatim):** J-401…J-405, P-401…P-403, L-401…L-403
   `DONE`; scoring logic-tests green; spikes green; build-ipa green; contracts v1.2.
 - **Device Demo M4 (PLAN.md, verbatim):** full learn-a-part loop: pick Bass →
@@ -152,7 +154,7 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [P-301] DONE (merged to `main`) | basicpitch.cpp (MIT, sevagh) vendored + the REAL spike runner + the manifest entry + the mono/poly fixtures | branch:paul | dep:P-204,L-008 | build:45513314284@426dd45 (the real job, 24 checks) | ac:`basicpitch-spike` green on mono+poly synthetic fixtures; onset/offset within 50 ms; RTF logged | note:the code + the REAL runner are on `origin/paul`; the manifest entry carries D-46's TIER C wording
 - [P-302] DONE (merged to `main`) | Multi-f0 salience: the per-frame pitch posterior + the peak picker + the C ABI's salience output + the five-voice SATB fixture | branch:paul | dep:P-301 | build:local EngineCore 245/245 | ac:synthetic SATB fixture shows 3–5 peaks; peak-picking unit test | note:the peak options are `minimum_salience 0.3`, local-max window 2 semitones
 - [P-303] DONE (merged to `main` @c3f245e) | Voice assignment engine: the frame DP + the no-crossing ordering + the subset handling + the unison rule + the temporal beam Viterbi + D-41 §1's confidence | branch:paul | dep:P-302,P-105 | build:45897044406@4c77d52 (green snapshot) + the gate run 45910600056@b24ce9a | ac:≥70 % of the frames correctly assigned on the clean synthetic fixture (Paul measured 344/344 = 1.000); the Swift test asserts the Swift engine agrees with the committed Python mirror | note:PAUL'S CODE + THE SWIFT TEST are both on `main` (`VoiceAssignment.swift`, the committed artifact `Tests/Spikes/Fixtures/assignment_satb5.json` with TWO cases: the frozen chord 344 frames + the MOVING progression 688 frames). **THE MISSING PIECE HAD BEEN THE FIXTURE, NOT THE CODE** — `satb5_prog_22050.wav` was registered in `gen.py` but never committed; **LETO GENERATED AND COMMITTED IT UNDER D-48 @4c77d52** (352,844 B, sha 5ea7b042…). The moving progression's macro part accuracy is **0.988953** — but its **STEADY** frames are **1.000** and its **TRANSITION** frames are **0.4074074074074074**: **both** are reported (`Docs/BENCHMARKS.md` §5.3). **This is a SYNTHETIC number and NOT a real-acapella claim.**
-- [P-304] TODO (M4 — **CARRIED FROM M3**, WAIVED for M3 by D-50) | Score-informed alignment hook: the MusicXML parser + the DTW aligner + the `score.musicxml` bundle entry | branch:paul | dep:P-303,L-303 | ac:synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic | note:**NOT IN M3 — the engine side of score alignment does NOT ship; it is WAIVED (D-50) and CARRIED INTO M4 as an OPEN row, NOT dropped.** Jess's consumer (J-304) ships the honest `ScoreImportError.parserUnavailable` state, so the no-score path is unaffected and **nothing claims score alignment works**. **Paul: this is the first M4 row to pick up if you want it — the AC is unchanged from M3.**
+- [P-304] DOING (M4 — **CLAIMED BY PAUL @e1bd6bb**, carried from M3) | Score-informed alignment hook: the MusicXML parser + the DTW aligner + the `score.musicxml` bundle entry | branch:paul | dep:P-303,L-303 | build:— | ac:synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic | note:**NOT IN M3** — the engine side of score alignment does not ship in M3 (it is WAIVED there by D-50); **as an M4 row it is CLAIMED and DOING by Paul** on the human's session order. **D-52 §3 CORRECTS D-50's rationale:** the local Docker Swift loop (`docker run … swift:6.0 swift test`) DOES exist, so the row is **verified locally BEFORE it is pushed** — the waiver's remaining substance was the M3 close-out window, not verifiability. **D-52 §4: the score-contract types are NAMESPACED under `ScoreContract.*` in EngineCore with the IDENTICAL JSON (C-13.1/C-13.2); the same-name option is DEAD** (Paul measured the *"ambiguous for type lookup"* failure that would turn `logic-tests` + `build-ipa` red in files outside his lane). **The end-state migration is J-406 (JESS's lane — Paul must NOT make that edit).** **The work lands on `origin/paul` and is merged by Leto like any lane snapshot — INTO M4, not into M3. Paul: `main` already carries your accepted claim, so on rebase TAKE `main`'s P-304 row — do not re-land this hunk.**
 - [P-305] DONE (merged to `main`) | NoteTrack v1.1 metadata: the per-note confidence, the part-presence, the unison flags, the engineVersion + the V16/V17/V18 validators + the SwiftF0 cross-check | branch:paul | dep:P-301,P-101 | build:the cross-check artifact + its Swift mirror test | ac:schema v1.1 ratified; the cross-check metric logged | note:the artifact `crosscheck_swiftf0_vs_basicpitch.json` carries the measured disagreement per fixture
 - [P-306] DONE (merged to `main` @2d6f50e + 70e10c9) | Benchmark harness v2: the note onset/offset F1, the part-aware macro F1 (PawCT-style), the multi-f0 P/R/F1 → the BENCHMARKS v2 honest report | branch:main (Leto's D-48 work) | dep:P-303,P-304 | build:45906329503@2d6f50e (green) + the gate run 45910600056@b24ce9a | ac:the report committed; the real part-aware F1 stated WITHOUT overclaim; the part-AGNOSTIC and the part-AWARE metrics reported SEPARATELY, citing dettato's Dagstuhl ChoirSet row (onset 55.9 / frame 82.0 / offset 44.4) as the external part-agnostic reference | ac-met:**the harness `Tests/Spikes/bench_v2.py` + `Tests/Spikes/bench_report_v2.json` are committed; the `bench-v2` CI job is GREEN and is now BLOCKING; the human-readable report is `Docs/BENCHMARKS.md` §5.3 (written by Leto under D-48, in Paul's lane).** Part-agnostic: frame F1 0.91465 (frozen) / 0.927265 (moving); note-event onset F1 1.000 / 0.974359, offset F1 1.000 / 0.947368. Part-aware: macro part accuracy 1.000 / 0.988953, with the STEADY 1.000 vs TRANSITION 0.4074074074074074 split. **SYNTHETIC fixtures only — not a real-acapella claim; no promise of perfect 5-way separation (AGENTS §11).**
 - [P-307] TODO (M4/M6 seed, non-gating for M3) | Port dettato transcriber to ONNX+Swift — Apache-2.0 CODE, TIER B WEIGHTS (D-45): ship only with the recorded risk + the human sign-off, NEVER described as clean | branch:paul | dep:P-301,P-208 | ac:parity within the documented tolerance; the benchmark report committed; the RTF/RSS logged honestly | note:D-45's soundfont-provenance caveat is binding; the grouper/drums weights are NC and banned
@@ -186,6 +188,7 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [J-403] TODO (M4) | Latency compensation: loopback calibration (play click→mic detect→offset) + a manual slider; the offset applies to the grading alignment | branch:jess | dep:P-104,J-401 | ac:the synthetic loopback offset is within ±10 ms; the slider persists per device | note:the offset feeds BOTH P-401 (the grading pitch path) and J-401 (the scoring alignment) — agree the sign convention early
 - [J-404] TODO (M4) | History & progress: a GRDB (MIT, per D4) sessions table (song/part/date/grade/metrics), the trends chart, the best/worst phrases, the session JSON export | branch:jess | dep:J-402,L-201 | ac:it persists+migrates; the trends render; a session can be deleted | note:D4's ruling — the JSON index is M2, GRDB is M4; **the history is local-only**
 - [J-405] TODO (M4) | Customization settings: tolerance, octave equivalence, vibrato, onset grace, the grade weights, the guide level, the count-in, the metronome | branch:jess | dep:J-401 | ac:all persist; the scoring reads the config; there are config-effect tests | note:the config is the `GradingConfig` of contract v1.2 (L-401) — **the settings must not be able to make the scoring dishonest**
+- [J-406] TODO (M4 — **filed by Leto at D-52, requested by Paul**) | The score-contract typealias migration: PitchLogic re-exports the engine-side score types as `public typealias ScoreNote = ScoreContract.Note` (etc., one line per type), so the two modules never export the same public name | branch:jess | dep:P-304 | ac:the EngineCore suite + `logic-tests` + `build-ipa` are green with the namespaced `ScoreContract.*` types in place; `ScoreReviewTests.swift` + `ScoreReviewView.swift` compile **UNCHANGED**; the JSON shape stays byte-identical to C-13.1/C-13.2 (pinned by a test) | note:**PAUL MEASURED WHY THIS ROW EXISTS:** two imported modules exporting the same public type name make an unqualified reference *"ambiguous for type lookup in this context"*, which would turn `logic-tests` AND `build-ipa` RED in files Paul may not touch ⇒ the same-name option is DEAD. The typealias makes it literally ONE type (D-33's "one semantic, never two" residue → zero) and the app's call sites do NOT change. **If Jess's lane is closed, the human may run this under D-48.** Until it lands, the two type sets agree BY JSON — the wire format that crosses the lane boundary.
 
 ---
 
@@ -240,6 +243,41 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 ---
 
 ## LOG (append-only, everyone; newest at TOP)
+
+- 2026-11-27T00:0xZ leto: **D-52 RULED — PAUL'S P-304 CLAIM IS ACCEPTED (AS AN M4 ROW), D-50's RATIONALE IS CORRECTED, AND THE SCORE-CONTRACT TYPE COLLISION IS RULED.** **Paul claimed P-304** on the human's session order (`origin/paul` @`e1bd6bb`, *"queue: claim P-304"*) and says it supersedes the D-48 §5 waiver, because **the waiver's stated rationale does not hold: the local Docker Swift loop (`docker run … swift:6.0 swift test`) DOES exist**, so P-304 is **verified locally BEFORE it is pushed**. **That is new evidence about a ruling I made minutes ago, so I ruled again (AGENTS §1) rather than re-litigating — and D-50 is NOT edited (append-only).**
+  **(1) P-304 DOES NOT SHIP IN M3 — D-50 §1/§2 STAND.** `m3` is tagged at
+  `b24ce9a`, the gate run is green, and the M3 claim is unchanged (**"per-part
+  note tracks + the salience + the correction overlay"** — **NOT** "score
+  alignment works"). The waiver stays visible in the M3 header, in PLAN.md and
+  on the board, because it is what the M3 milestone's claim boundary was.
+  **(2) P-304 IS CLAIMED AND `DOING` — AS AN M4 ROW** (D-52 §2). **Paul: `main`
+  now carries your accepted claim, so on `git pull --rebase origin main` TAKE
+  `main`'s P-304 row — do NOT re-land your queue hunk (it would conflict with
+  the M4 seed).**
+  **(3) D-50 §3's RATIONALE IS CORRECTED** (D-50 itself is untouched): the
+  waiver's REAL and narrower reason was the **M3 close-out window**, not
+  verifiability — which is exactly the reason that applies to M4, where the row
+  is built with local verification available.
+  **(4) THE SCORE-CONTRACT TYPE COLLISION IS RULED.** **The same public type
+  names in EngineCore and PitchLogic are DEAD** — Paul's measurement (two
+  imported modules exporting the same name ⇒ *"ambiguous for type lookup"* ⇒
+  `logic-tests` AND `build-ipa` red in files outside his lane) is the deciding
+  evidence, and it is the failure D-33's "one semantic, never two" exists to
+  prevent. **ADOPTED: EngineCore's OWN namespaced `ScoreContract.*` types with
+  the IDENTICAL JSON (C-13.1/C-13.2), pinned by a unit test asserting the exact
+  JSON.** Until the end-state migration lands, the two type sets agree **BY
+  JSON** — the wire format that crosses the lane boundary.
+  **(5) THE END-STATE MIGRATION IS NOW [J-406] — A JESS-LANE ROW** (one line per
+  type: `public typealias ScoreNote = ScoreContract.Note` etc.), after which the
+  app's call sites change NOTHING and the D-33 residue collapses to zero. Paul
+  does NOT make that edit (it is Jess's lane); **if Jess's lane is closed, the
+  human may run it under D-48.**
+  **(6) `CONTRACTS.md` IS UNCHANGED — v1.1.1 stands.** It pins the JSON shape
+  and the score's optionality and names **no Swift type**, so the namespacing is
+  an implementation detail, not a wire change (Leto owns CONTRACTS.md).
+  **(7) THE MERGE PATH IS UNCHANGED AND IS AN M4 MERGE:** the work lands on
+  `origin/paul` and Leto merges it like any lane snapshot — **INTO M4, NOT INTO
+  M3.** **M3 IS CLOSED; ITS GATE IS GREEN; `m3` IS TAGGED; M4 IS OPEN.**
 
 - 2026-11-27T00:0xZ leto: **M3 IS CLOSED. `m3` IS TAGGED. M4 IS OPEN AND SEEDED.**
   **THE GATE RUN: 45910600056@b24ce9a IS GREEN** — https://github.com/thesagezm/pitchnotes-ios/actions/runs/45910600056

@@ -16,6 +16,91 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-52 | 2026-11-27 UTC | Leto | RULED (**THE P-304 CLAIM IS ACCEPTED — AS AN M4 ROW, NOT AN M3 ONE. D-50's M3 BOUNDARY STANDS; D-50 §3's RATIONALE IS CORRECTED by Paul's new evidence (the local Docker Swift loop EXISTS). The score-contract type collision is RULED: the same-name option is DEAD, the namespaced `ScoreContract.*` option is ADOPTED, and the one-line Jess-lane typealias migration is filed as J-406.**)
+**Context:** Paul is running the last M3 session on the human's explicit order
+(*"conclude the M3 lane … P-304 → P-306 … DO NOT stop halfway"*) and has **claimed
+P-304** (`origin/paul` @`e1bd6bb`, *"queue: claim P-304"*). His claim states that it
+**supersedes the D-48 §5 waiver** of that row and gives the reason: **the waiver's
+stated rationale does not hold** — D-50 §3 said a parser + DTW aligner would "land
+blind (no local Swift toolchain, CI-only verification)", but **the local Docker Swift
+loop (`docker run --rm -v "$PWD":/src -w /src/Engine swift:6.0 swift test`) runs the
+whole EngineCore suite locally**, so P-304 can be **verified BEFORE it is pushed**.
+That is **new evidence** about a ruling I made minutes ago, so AGENTS §1's procedure
+applies: **append a new entry and rule again** (D-50 is NOT edited — append-only).
+A second, cross-lane question came with the claim: **Paul's score-contract types
+would collide by NAME with Jess's existing `ScoreNote` / `ScoreNoteList` /
+`BarMapEntry` / `ScoreAlignment` / `ScoreAlignmentFile` / `ScoreAlignmentResult` /
+`ScoreAlignedNote` / `ScoreAgreement` + the `ScoreImportService` seam**, which live
+in `Tests/Logic/**` — **JESS's lane**, which Paul may not edit. He measured that two
+imported modules exporting the same public type name make an unqualified reference
+**"'X' is ambiguous for type lookup in this context"**, and that
+`Tests/Logic/Tests/PitchLogicTests/ScoreReviewTests.swift` and
+`App/Sources/Features/Notes/ScoreReviewView.swift` both use those names
+unqualified ⇒ the same-name option ALONE would turn **`logic-tests` AND
+`build-ipa` RED in files he may not touch**. He chose **option (b)**: EngineCore
+defines its OWN **namespaced** `ScoreContract.*` types with the **IDENTICAL JSON
+shape** (C-13.1/C-13.2), pinned by a unit test asserting the exact JSON, with the
+end-state migration being a **one-line-per-type Jess-lane typealias**.
+
+**Ruling:**
+1. **P-304 DOES NOT SHIP IN M3 — D-50 §1/§2 STAND.** `m3` is tagged at `b24ce9a`,
+   the M3 gate run is green, and the M3 claim is unchanged: **"per-part note tracks
+   + the salience + the correction overlay"** — **NOT** "score alignment works". The
+   waiver stays visible in the M3 milestone header, in PLAN.md, and on the board,
+   because **it is what the M3 milestone's claim boundary was**. Re-opening a
+   tagged milestone is not how a conflict is resolved (AGENTS §3).
+2. **P-304 IS CLAIMED AND `DOING` — AS AN M4 ROW.** Paul's claim (`e1bd6bb`) is
+   **ACCEPTED**. The row was carried into M4 by D-50 and is now an **active M4
+   row** in Paul's lane. **The board is updated so that Paul does NOT need to
+   re-land his claim hunk after rebasing onto `main`** (his queue edit and Leto's
+   M4 seed touch the same line; `main` already carries the accepted claim, so on
+   rebase **take `main`'s version of the P-304 row** — the claim is already
+   recorded there).
+3. **D-50 §3's RATIONALE IS CORRECTED; D-50 IS NOT EDITED.** Paul is right about
+   the verification mechanism: **the local Docker Swift loop exists**, so "no local
+   Swift toolchain, CI-only verification" was **overstated**. The waiver's *real*
+   and narrower reason was the **M3 close-out window**: the human's D-48 order
+   closed the milestone, and shipping a parser + DTW aligner into a milestone being
+   closed under that order was the risk that was actually being managed. **That
+   reason now applies to M4, where the row is being built with local verification
+   available.** The M3 boundary (§1) is unaffected; only the stated reason is
+   corrected, and the correction is on the record.
+4. **THE SCORE-CONTRACT TYPE COLLISION IS RULED — option (a) is REJECTED, option
+   (b) is ADOPTED.** **The same public type names in EngineCore and PitchLogic are
+   DEAD**: Paul's measurement (same name in two imported modules ⇒ *"ambiguous for
+   type lookup"* ⇒ `logic-tests` and `build-ipa` red in files outside his lane) is
+   the deciding evidence, and it is the same failure D-33's "one semantic, never
+   two" principle exists to prevent. **EngineCore defines its OWN engine-side
+   types under `ScoreContract`** (`.Note`, `.NoteList`, `.Alignment`,
+   `.BarMapEntry`, `.AlignmentResult`, `.AlignedNote`, `.Agreement`,
+   `.CorrectionOperation`) with the **IDENTICAL JSON shape** (C-13.1/C-13.2),
+   **pinned by a unit test that asserts the exact JSON**. Until the end-state
+   migration lands, the two type sets agree **BY JSON** — the wire format that is
+   what actually crosses the lane boundary.
+5. **THE END-STATE MIGRATION IS A JESS-LANE ROW: J-406.** One line per type in
+   PitchLogic — `public typealias ScoreNote = ScoreContract.Note` etc. — after
+   which the app's call sites need **NO** change and the D-33 residue collapses to
+   **zero** (literally one semantic type). Paul does **NOT** make that edit (it is
+   Jess's lane); **Leto files it as J-406** and the human may run it under D-48 if
+   Jess's lane is closed. **J-406's AC:** the EngineCore suite + `logic-tests` +
+   `build-ipa` are green with the namespaced types in place, and
+   `ScoreReviewTests.swift` + `ScoreReviewView.swift` compile **unchanged**.
+6. **NO CONTRACT VERSION CHANGE.** `CONTRACTS.md` is **untouched**: it pins the
+   **JSON shape** (C-13.1/C-13.2) and the **optionality** of the score, and it
+   names **no Swift type**, so the namespacing is an **implementation detail**, not
+   a wire change. Leto owns `CONTRACTS.md` and rules that **v1.1.1 stands**.
+7. **THE MERGE PATH IS UNCHANGED AND IS AN M4 MERGE.** The work lands on
+   `origin/paul`; **Leto merges it like any other lane snapshot — INTO M4, not
+   into M3.** Paul touches neither `main` nor `CONTRACTS.md` / `DECISIONS.md` /
+   `PLAN.md` / `.github/**` nor Jess's `Tests/Logic/**` + `App/**`.
+
+**Affects:** `QUEUE.md` (the P-304 row → `DOING` with Paul's claim; the new
+J-406 row; the M4 header's carried-in bullet; the LOG) · `DECISIONS.md` (this
+entry; **D-50 is NOT edited**) · `CONTRACTS.md` (**unchanged** — v1.1.1 stands) ·
+PLAN.md (the M4 section's carried-in line). Task IDs: P-304, J-406, L-304.
+
+---
+
 ## D-51 | 2026-11-27 UTC | Leto | RULED (**THE M2+M3 DEVICE DEMO IS EXPLICITLY WAIVED — IT WAS NOT RUN.** The human-owned legs of the M2 and M3 gates (L-205 + J-210) are **NOT RUN**: they need an iPhone 12 Pro Max, the 84 MB `htdemucs` weights and a human, and no such run has happened. D-48 §4 allows the gate to close with a **recorded human waiver** of the device demo and **forbids a fabricated device result** (AGENTS §11). This entry is that waiver — made **visible**, never a silent omission.)
 **Context:** The M2 demo (L-205, carried from M2 by D-38) and the M3 demo (J-210)
 were always planned as **ONE trip** on one device: a real SDA FLAC import → staged

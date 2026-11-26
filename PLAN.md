@@ -317,8 +317,12 @@ as background prep, never blocks gate. Leto rules D10/D12 early.
 fixture; `build-ipa`. **Contract:** v1.2 (SessionResult, GradingConfig, transposed note-track mapping).
 
 **CARRIED IN FROM M3:** **P-304 — the MusicXML parser + the DTW aligner** (WAIVED for
-M3 by D-50, **not dropped**). It is an **OPEN row in M4** and sits with the score-
-informed work; M4's board carries it with its original acceptance criteria intact.
+M3 by D-50, **not dropped**). **CLAIMED BY PAUL as an M4 row (@e1bd6bb, D-52)** —
+it is now `DOING` in the Paul section of the board, with its original acceptance
+criteria intact, and its end-state lane migration is **J-406** (the Jess-lane
+score-contract typealias). **D-52 §4: the engine-side score types are NAMESPACED
+under `ScoreContract.*` with the IDENTICAL JSON (C-13.1/C-13.2); `CONTRACTS.md` is
+unchanged (v1.1.1 stands).**
 
 | ID | Owner | Task & AC | Deps | Size |
 |---|---|---|---|---|
