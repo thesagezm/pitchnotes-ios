@@ -16,6 +16,212 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-53 | 2026-11-27 UTC | Leto | RULED (**THE M4 WEIGHTS POLICY — `nmp.onnx` stays TIER C (D-46: no sign-off path exists), M4 proceeds for SIDeload/research, a COMMERCIAL build must EXCLUDE Tier C weights or name a replacement, and X-401 is OPENED for that replacement path (non-gating for M4, GATING for L-602). No new Tier C weights enter M4.**)
+**Context:** M4 opens with three weight sets in the tree, at three tiers: **SwiftF0
+(Tier A, MIT, no training data)**; **htdemucs (Tier B, D-30 — human sign-off
+OUTSTANDING before commercial)**; **basic-pitch `nmp.onnx` (TIER C, D-46 —
+MAESTRO + MedleyDB-pitch are CC BY-NC-SA 4.0 and iKala is academic-only, all three
+were TRAINING data; NO human sign-off can promote it, because the constraint is the
+DATA's license, not our risk appetite)**. M4's learner-mode path grades against
+basic-pitch-derived note tracks (P-301/P-302/P-303), so the tier question is live at
+the first milestone that could plausibly be mistaken for a distribution milestone.
+**Ruling:**
+1. **M4 MAY PROCEED in full for SIDeload / research builds** (D-3: v1 is
+   sideload-first). The Tier C weights ride in the model manifest, the spikes,
+   and the app's optional download path exactly as they do today. **Nothing in
+   M4 changes the sideload story.**
+2. **A COMMERCIAL (App Store) build MUST EXCLUDE the Tier C weights** — the
+   basic-pitch `nmp.onnx` note-transcription weights — **or name a
+   replacement**. Concretely at L-602 (the App Store memo): either the
+   note-tracking feature ships with a differently-trained model, or it does not
+   ship in the commercial build (feature off, honestly labeled — D-46 §4's
+   wording). **The exclusion is a BUILD-CONFIGURATION concern, not a code
+   concern**: the engine code (basicpitch.cpp, MIT/Apache-2.0) stays shippable;
+   only the WEIGHTS are excluded.
+3. **X-401 IS OPENED (owner: Leto; non-gating for M4, GATING for L-602):** the
+   commercial replacement path for the basic-pitch weights. Three candidates,
+   in the order they will be evaluated: (i) **the dettato transcriber port**
+   (P-307, Apache-2.0 code AND weights — TIER B, D-45: shippable with the
+   recorded risk + the human sign-off); (ii) **a clean retrain on the X-301
+   synthetic SATB path** (D-46 §6; produces Tier A weights by construction);
+   (iii) **exclusion** (the note-tracking feature does not ship commercially).
+   X-401's deliverable is the ruling naming which path ships.
+4. **NO NEW TIER C WEIGHTS IN M4.** Any model/dataset entering the M4 window
+   (grading fixtures, a vibrato model, anything) goes through AGENTS §9's
+   intake ({url, license, purpose, ship/study verdict} + a Leto ruling). The
+   standing AGENTS §9 sentence is unchanged; this entry applies it to M4.
+5. **The Tier B sign-off (htdemucs D-30 + dettato D-45) remains OUTSTANDING and
+   HUMAN-OWNED** — visible in QUEUE's BLOCKED section, surfaced at natural
+   checkpoints (L-403, L-602), never blocking a sideload milestone.
+**Affects:** L-602, X-401 (NEW), P-307, X-301, D-30, D-45, D-46, the M4 gate,
+the J-204 licenses screen (unchanged — already D-46-correct).
+
+## D-54 | 2026-11-27 UTC | Leto | RULED (**THE M4 GRADING CONFIDENCE + HONESTY POLICY — what J-401 does with low-confidence, PROVISIONAL, UNASSIGNED and unison notes; confidence is REPORTED, never a scoring weight; STEADY vs TRANSITION accuracy is reported SEPARATELY on the M3 template; synthetic-only numbers are labelled synthetic.**)
+**Context:** C-14/D-41 fixed which notes enter grading (UNASSIGNED excluded by
+default; unison grades per-part; absent parts dimmed) but left open how the
+SESSION RESULT represents what was excluded, and whether confidence adjusts a
+note's grade weight. The M3 close-out produced the honesty template this policy
+generalizes: the part-aware macro 1.000 (frozen) / 0.988953 (moving) hid the
+STEADY 1.000 vs TRANSITION 0.4074 split until both were reported (BENCHMARKS
+§5.3.2 — "read both numbers, the lower one is the honest one").
+**Ruling:**
+1. **UNASSIGNED notes (confidence < 0.50, C-10's band) are EXCLUDED from
+   grading by default (C-14, unchanged) — and the exclusion is VISIBLE, never
+   silent.** `SessionResult` (v1.2) carries `notAssessable` counts (per part
+   and total), and the UI must show a "not assessable" state — a dimmed count
+   with its reason — wherever a grade is shown. A grade computed from a subset
+   of the phrase must never look like a grade of the whole phrase.
+2. **PROVISIONAL notes (0.50 ≤ c < 0.80) ARE GRADED, at FULL weight.**
+   **Confidence is REPORTED per note (`SessionResult` carries the reference
+   note's band beside each graded note), NEVER used as a scoring weight.** The
+   reason is the same one that keeps salience out of the DTW (C-12/P-304): the
+   assignment confidence is an UNCALIBRATED posterior — multiplying a grade by
+   it would smuggle an uncalibrated filter into a decision path, make grades
+   incomparable across bundles, and double-punish a singer for the ENGINE's
+   uncertainty. If the engine is unsure, that is the engine's honesty to show,
+   not the singer's penalty to carry.
+3. **UNISON notes keep C-14's rule unchanged: grading stays PER-PART** — a
+   unison never merges two singers' frames into one grade and never
+   double-counts one singer. The unison flag is reportable per note but
+   changes NO math in v1.2.
+4. **STEADY vs TRANSITION accuracy is reported SEPARATELY wherever an accuracy
+   number is published** — in `SessionResult` (v1.2's optional split fields)
+   and in every M4 benchmark row. The template is M3's: BOTH numbers always,
+   the lower one quoted first, a macro number alone is NOT an honest report.
+   The transition window for grading is NOTE-level: a graded note is
+   TRANSITION-class when it starts within **50 ms** after the preceding note of
+   the same part ends (the M3 note-event tolerance; legato transitions are the
+   hazard), else STEADY; the first note of a part is STEADY. Where no
+   consecutive-note boundary exists in a part, that part has no transition
+   class and the split says so.
+5. **EVERY M4 ACCURACY NUMBER IS SYNTHETIC UNTIL REAL FIXTURES LAND, and is
+   labelled synthetic where it appears** — same rule as BENCHMARKS §5.3.3. No
+   real-acapella grading accuracy exists in this repo (no real fixture is
+   committed; licensing), so no such claim may be made.
+6. **The grading reference pipeline is UNCHANGED:** correction overlay (C-11)
+   → score-informed (C-14's gate — see D-58 for the v1.2 amendment) → heuristic
+   (C-10), and the UI must still state which reference graded the session.
+**Affects:** J-401, J-402, J-405, CONTRACTS v1.2 (D-58), Docs/BENCHMARKS.md §7
+(M4), AGENTS §11 (restated, not amended).
+
+## D-55 | 2026-11-27 UTC | Leto | RULED (**THE GRDB DEPENDENCY — J-404's session history uses GRDB.swift, pinned `exactVersion 7.6.1` (MIT, verified upstream), wired by LETO in project.yml only; the schema owner is JESS's lane; the static-link story is proven by the build-ipa patch + verify pair.**)
+**Context:** D-4 (M0) ruled "session history = GRDB (MIT) in M4 (J-404)". M4 is
+open; the pin must exist BEFORE Jess adds code against it, and per the lane
+rules Jess must not add dependencies herself (AGENTS §12: `project.yml` is
+Leto's; the new-dependency rule is AGENTS §9's intake + a Leto ruling).
+**Facts verified this session (primary sources, upstream repo):**
+- **License: MIT** (`gh api repos/groue/GRDB.swift/license` → `spdx_id: MIT`).
+- **v7.6.1** (2025-07-23, the newest release whose package manifest declares
+  **swift-tools-version 6.0**). The reason this matters: the repo's local fast
+  loop is the **`swift:6.0` docker image** (Paul's and Jess's documented loop),
+  and v7.7.0+ manifests declare tools **6.1** — a manifest a Swift 6.0
+  toolchain cannot parse. Pinning 7.6.1 keeps BOTH the macOS runner (CI) and
+  the docker loop able to resolve the same version. (Live docker probe:
+  `swift package resolve` + `swift build` + run of a GRDB-dependent executable
+  under `swift:6.0` — passed; `libsqlite3-dev` is present in the image.)
+- **Platforms:** iOS 13+ / macOS 10.15+ — under our iOS 16.0 floor (D-3).
+- **Static linkage:** the `GRDB` product is a plain `.library` (static by
+  default in SPM); the dynamic variant is a SEPARATE product (`GRDB-dynamic`,
+  `type: .dynamic`) that nothing references. The build-ipa patch step strips
+  `type: .dynamic` lines from every checkout manifest — for GRDB that deletes
+  only the unused `GRDB-dynamic` product line, and the verify step (otool -L
+  must show /usr/lib and /System deps only) still guards the outcome. SQLite
+  links the SYSTEM libsqlite3 on Apple platforms (no bundled .framework, no
+  new @rpath surface).
+**Ruling:**
+1. **Pin: `exactVersion: "7.6.1"`** — the XcodeGen spelling in `project.yml`
+   (the OnnxRuntime precedent), `.package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.6.1")`
+   in any SwiftPM manifest (the manifest spelling differs from XcodeGen's —
+   measured, see the probe). **A version bump is a Leto ruling** (D-13
+   precedent), with the docker-loop tools-version consequence re-checked.
+2. **WIRING IS LETO'S:** `project.yml` gains the package entry + the app-target
+   dependency (this session). **JESS adds GRDB to her own PitchLogic
+   `Package.swift` when J-404 starts** (that file is her lane) and must NOT
+   invent a second version pin — one resolved version across the graph, or SPM
+   fails resolution. Jess's local docker loop needs `libsqlite3-dev` (present
+   in `swift:6.0`, verified by the probe).
+3. **Schema owner: JESS's lane** — the sessions table schema, migrations, and
+   the store code are J-404 (Tests/Logic for the pure logic, App/ for the
+   views). **Migration discipline: additive-only** (new columns = new versions;
+   ALTER TABLE ADD COLUMN), mirroring the CONTRACTS absence rule: an old
+   database must open and behave as it did.
+4. **The history is LOCAL-ONLY** (AGENTS §0's offline rail): no network, no
+   sync, no export beyond the J-404 session-JSON export the user triggers.
+5. **D4 stands unchanged** (JSON index = M2 library; GRDB = M4 history; no
+   third persistence layer without a ruling).
+**Affects:** `project.yml` (this session), J-404, D-4, build-ipa's patch/verify
+pair, the docker loop docs.
+
+## D-56 | 2026-11-27 UTC | Leto | RULED (**THE M4 DEVICE-DEMO GATE POLICY — the M4 code gate does NOT require the device trip, but the device leg must be RUN or EXPLICITLY WAIVED at gate time; the human ask is for ONE trip covering the M2+M3+M4 legs together; D-51's no-fabrication rule stands.**)
+**Context:** D-51 waived the M2+M3 device demo explicitly (NOT RUN). AGENTS §8's
+device RTF / peak RSS / thermal are still UNMEASURED; M2 and M3 are NOT
+device-verified. M4's own demo (PLAN.md) adds the learn-a-part loop (pick Bass →
+focus mix → count-in → sing → live hits → grade + heatmap → retry weak phrase →
+history trend → shift key +2 → re-sing → still aligned; log the latency
+compensation result). The dispatch asks: does the M4 gate require the human trip?
+**Ruling:**
+1. **The M4 CODE gate closes on the same evidence class as M3's:** every
+   blocking CI job green on `main` at the gate sha + contracts v1.2 ratified +
+   every gate row DONE or explicitly waived. **The device trip is NOT a code
+   gate blocker.**
+2. **The device leg at gate time must be in exactly one of two states: RUN
+   (logged in the rows, verbatim) or EXPLICITLY WAIVED with the human ask
+   outstanding.** A waiver is visible (D-48 §5/D-51 §5 posture), names the
+   ask, and never claims device verification. **NO DEVICE NUMBER MAY EVER BE
+   FABRICATED** (D-51 §5 — unchanged). §6 of BENCHMARKS stays empty until a
+   human fills it.
+3. **THE HUMAN ASK IS FOR ONE TRIP covering M2+M3+M4 legs together** — the
+   device work is cumulative (import → separation → roll → corrections →
+   scores → NOW the learn-a-part loop), so one iPhone 12 Pro Max session with
+   the 84 MB htdemucs weights walks all three checklists (J-210 + L-205 + the
+   M4 loop) and logs the device RTF / peak RSS / thermal ONCE. Splitting the
+   ask per milestone triples the human cost for no extra evidence.
+4. **J-206, J-207, L-205, J-210 stay OPEN** and gain the M4 loop as their
+   riding checklist at L-403. **Push for the trip** — surface it at natural
+   checkpoints (L-403's close-out, the handoff), never every turn.
+5. **The latency-compensation number (PLAN M4 demo) is device evidence when
+   measured on device, and a runner/dev-box number otherwise — labelled as
+   such wherever it appears.**
+**Affects:** L-403, J-206, J-207, L-205, J-210, Docs/BENCHMARKS.md §6, D-51
+(stands unchanged).
+
+## D-57 | 2026-11-27 UTC | Leto | RULED (**THE M4 SEQUENCING — P-304 is merged INTO M4 (paul→main #23 @f159290, evidence run 46063008723@a65d0f8); J-406 lands EARLY in Jess's M4 sequence (before her first UI row that would touch score types); PAUL takes main's P-304 row on rebase (he already did — the branch was re-pointed per D-52 §2); both lanes are told in LOG.**)
+**Context:** D-52 ruled P-304 an M4 row claimed by Paul. Paul has since LANDED
+it: `origin/paul` @`a65d0f8`, run 46063008723 GREEN (9/9), EngineCore 316/316
+locally, with the measured numbers (bar-map max error 7.0 ms ≤ 50 ms AC;
+alignment confidence 0.990145; score-informed 688/688 vs heuristic 672/688 —
+the score fixes exactly the 16 transition frames; the 60 BPM variant
+demonstrates the TRUE adoption branch). D-50's M3 waiver stands — **P-304 ships
+INTO M4, not M3** (D-52 §1/§2). His session also surfaced a real C-14 contract
+question (the adoption gate refuses a perfectly-corroborating score) — ruled in
+D-58, and the resulting one-predicate code change is filed as P-404.
+**Ruling (the ordering, for both lanes):**
+1. **P-304 IS MERGED INTO M4 NOW** — `leto: merge paul→main #23 @f159290` (the
+   snapshot-merge convention; main had not moved since Paul branched, so the
+   content is exactly run 46063008723's tree).
+2. **J-406 (Jess) LANDS EARLY — before Jess's first M4 UI row that would
+   reference the score types** (J-401's grading consumes the score-informed
+   reference only through C-14, so J-401's pure-Swift core is NOT blocked; the
+   ordering binds UI work). Until J-406 lands, the two type sets agree BY JSON
+   (pinned byte-exact by Paul's tests, with the macOS-vs-Linux double-repr
+   hazard handled at the binary-exact 0.75 value — his a65d0f8 fix). **Jess
+   must NOT re-derive or re-pin the JSON; she consumes.**
+3. **PAUL: `main` carries your accepted claim — on your next rebase TAKE
+   `main`'s P-304 row** (flip it to "DONE (merged to main @f159290)") and do
+   not re-land any queue hunk. His score fixture is NOT yet a bench-v2 input —
+   extending `bench_v2.py` is a one-file change he may claim when he wants it
+   (the file lives in his Tests/Spikes lane; it was authored under D-48 but
+   ownership of the directory is his).
+4. **P-404 (filed by this ruling, M4-gating): the aligner's `used` predicate
+   gains D-58's corroboration branch** — `used = confidence ≥ 0.70 AND
+   (after > before OR after ≥ 0.90)` — with tests pinning BOTH branches and
+   the refusal case (no improvement AND after < 0.90). Until it lands, the
+   shipped predicate (strict improvement only) is the M3-era rule and must not
+   be described as the v1.2 rule.
+5. **No lane may claim another lane's row** (AGENTS §1/§12 — D-48's deviation
+   is ENDED; it is not renewed for M4).
+**Affects:** QUEUE.md (P-404 NEW), D-52, D-58, J-406, P-304, P-404, the LOG.
+
 ## D-52 | 2026-11-27 UTC | Leto | RULED (**THE P-304 CLAIM IS ACCEPTED — AS AN M4 ROW, NOT AN M3 ONE. D-50's M3 BOUNDARY STANDS; D-50 §3's RATIONALE IS CORRECTED by Paul's new evidence (the local Docker Swift loop EXISTS). The score-contract type collision is RULED: the same-name option is DEAD, the namespaced `ScoreContract.*` option is ADOPTED, and the one-line Jess-lane typealias migration is filed as J-406.**)
 **Context:** Paul is running the last M3 session on the human's explicit order
 (*"conclude the M3 lane … P-304 → P-306 … DO NOT stop halfway"*) and has **claimed
