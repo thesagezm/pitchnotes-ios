@@ -16,6 +16,70 @@ Entry format (one `##` block per decision):
 
 ---
 
+## D-58 | 2026-11-27 UTC | Leto | RULED (**CONTRACTS v1.2 RATIFIED — NEW C-17 (the C-14 adoption-gate amendment: the CORROBORATION branch + the pinned `Agreement` metric, answering Paul's measured C-14 finding), NEW C-18 (`SessionResult`), NEW C-19 (`GradingConfig`), NEW C-20 (transposition/tempo mapping + the latency offset + the `tuningCents` preservation). ADDITIVE ONLY over v1.1.1. L-401 DONE.**)
+**Context:** L-401 mandated contract v1.2 for M4 (SessionResult, GradingConfig,
+the transposed NoteTrack mapping). Paul's P-304 session landed the v1.1.1
+adoption rule implemented EXACTLY as written and MEASURED its consequence: the
+committed fixture's raw 96 BPM score already agrees with the detected notes at
+the contract metric (`before = after = 1.000000`), so the strict rule REFUSES a
+score that is measurably better where grading cares (688/688 vs 672/688 frames
+— it fixes exactly the 16 transition frames) with a 7.0 ms bar map. The gate
+needed the corroboration branch and the metric pinned. **RECORDING NOTE (honest,
+2026-11-28): the RATIFICATION happened 2026-11-27 in commit `5b36be8`
+(CONTRACTS.md carries "v1.2 — RATIFIED 2026-11-27 UTC by Leto (D-58)") and
+D-55/D-57 cross-reference this ruling — but this append-only ENTRY was omitted
+(verified at the 2026-11-28 checkpoint: 57 `## D-` headings, the last
+DECISIONS.md commit being `b5946e3`). This block records it late, unbackdated;
+the ruling's substance is unchanged from what was ratified and referenced.**
+**Ruling:**
+1. **C-17 — the C-14 adoption gate (supersedes the v1.1.1 rule-4 consequence BY
+   REFERENCE; D-47 stays on file, unedited).** The metric is PINNED in
+   CONTRACTS.md: same-`midi` integer match, NO octave fold, one-to-one,
+   `tolerance_s` default 0.25 on both-extended overlap, two-sided Dice
+   `(matchedScore + matchedDetected) / (scoreCount + detectedCount)`, 0 when
+   either side is empty. The gate:
+   `used = (confidence >= 0.70) AND (after >= before) AND (after > before OR after >= 0.90)`
+   — the IMPROVEMENT branch (`after > before`, D-47 §9) unchanged and still
+   sufficient alone; the CORROBORATION branch (`after >= 0.90`, NEW — 0.90 is a
+   ruling, not a derivation); **`after >= before` applies to BOTH branches**;
+   the zero-agreement refusal preserved; refusal states its reason in the UI.
+   The frame-level assignment delta (688/688 vs 672/688) stays REPORTED, never
+   a gate input. **D-57 §4's inline predicate is the ABBREVIATION — C-17's text
+   (with `after ≥ before` on both branches) is the authoritative form** (the
+   P-404 row quotes it in full; D-57 is not edited). Paul implements (P-404,
+   M4-gating); Jess reads `used` and MUST NOT re-derive the gate.
+2. **C-18 — `SessionResult` (the grading output; C-5's deferred schema).**
+   Per-note `{centsDeviation, coverage, sustain, hit}` — C-5's field names
+   FROZEN — plus `confidenceBand`/`unison`/`transitional`/`notAssessable{Reason}`
+   + `accuracy{overall, steady, transition}` + `gradingReference.source` + the
+   C-20 environment + `grade ∈ {A,B,C,D,F}` + `config` BY VALUE. LOCAL-ONLY.
+   The D-54 policy fields are pinned here (confidence REPORTED, never a weight;
+   UNASSIGNED excluded VISIBLY with reason "unassigned"; steady vs transition
+   reported SEPARATELY).
+3. **C-19 — `GradingConfig` (the user-tunable grading configuration).** Every
+   tunable is BOUNDED (`toleranceCents [10,50]` clamped-and-reported; `weights`
+   must sum to 1.0, never silently normalized) — the settings must not be able
+   to make the scoring dishonest (AGENTS §11).
+4. **C-20 — transposition & tempo mapping + latency + tuning.** The transform
+   is a VIEW, never a rewrite; the overlay maps IDENTICALLY to the track it
+   corrects; **`tuningCents` is PRESERVED under transposition** (a +32c
+   recording shifted +2 grades against +32c); **the latency sign is PINNED:
+   ≥ 0 = live is LATE, compare live `t` against reference `t − latencyOffset_ms`**;
+   home DEVICE-LOCAL.
+5. **ADDITIVE over v1.1.1:** every pre-existing file's on-disk
+   `contractVersion` string is UNCHANGED (`"v1.1"` — the schema-FAMILY string;
+   the NEW C-18/C-19 files carry `"v1.2"`); the JSON shapes are pinned, NOT the
+   Swift type names (D-52's rule); breaking changes still require a new version
+   + Leto ruling + a migration task.
+6. **ACKS (the L-006 precedent):** if a lane does not ack in its next LOG line,
+   the ratification STANDS and the ack is recorded OUTSTANDING; the milestone
+   does not stall for it. At the 2026-11-28 checkpoint Jess's ack is
+   OUTSTANDING (her lane has not yet acted in M4); Paul's implementation duty
+   is P-404.
+**Affects:** CONTRACTS.md (v1.2 @5b36be8), C-13.2/C-14, C-17/C-18/C-19/C-20,
+L-401 (DONE @5b36be8), L-402/L-403, P-404 (M4-gating), J-401/J-402/J-405/J-406,
+QUEUE.md, Docs/BENCHMARKS.md §7.
+
 ## D-53 | 2026-11-27 UTC | Leto | RULED (**THE M4 WEIGHTS POLICY — `nmp.onnx` stays TIER C (D-46: no sign-off path exists), M4 proceeds for SIDeload/research, a COMMERCIAL build must EXCLUDE Tier C weights or name a replacement, and X-401 is OPENED for that replacement path (non-gating for M4, GATING for L-602). No new Tier C weights enter M4.**)
 **Context:** M4 opens with three weight sets in the tree, at three tiers: **SwiftF0
 (Tier A, MIT, no training data)**; **htdemucs (Tier B, D-30 — human sign-off
