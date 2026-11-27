@@ -37,21 +37,26 @@ import XCTest
 //         real-world accuracy. There is NO real acapella recording in the
 //         repo (licensing) ⇒ the real-world assignment number is NOT
 //         measured and is NOT claimed anywhere.
-//       · THE USED DECISION MEASURES FALSE ON THIS FIXTURE — deliberately so,
-//         and it is NOT a failure. D-47 §9's strict rule (C-13 rule 4) is
-//         used = (confidence ≥ 0.70) AND (after > before), and the raw 96 BPM
-//         score ALREADY fully agrees with the detected notes under the
-//         contract's agreement metric (before = after = 1.000000): every
-//         score note overlaps its detected counterpart once both intervals
-//         are extended by the ±0.25 s tolerance, because the notes are
-//         seconds long. The rule therefore (correctly) refuses to adopt a
-//         score that "already matches" at the metric's tolerance, and the
-//         reason string says so. The frame accuracy (688 vs 672) is where the
-//         alignment's real improvement shows; the agreement gate is the
-//         coarser contract gate. The ADOPTED branch is demonstrated on a
-//         60 BPM variant of the SAME truth (built in this file, not
-//         committed), where before = 0.615385 < after = 1.000000 and the
-//         score IS adopted.
+//       · THE USED DECISION IS NOW THE v1.2 GATE (C-17, D-58 — P-404):
+//         used = (confidence ≥ 0.70) AND (after ≥ before) AND
+//                (after > before OR after ≥ 0.90). The committed 96 BPM
+//         fixture is ADOPTED via the CORROBORATION branch: the raw score
+//         already fully agrees with the detected notes under the contract's
+//         agreement metric (before = after = 1.000000 — every score note
+//         overlaps its detected counterpart once both intervals are extended
+//         by the ±0.25 s tolerance, because the notes are seconds long), the
+//         alignment's confidence is 0.990145 ≥ 0.70, and after ≥ 0.90 ⇒ the
+//         score corroborates the engine's hearing near-unanimously and its
+//         real grading value (exact times, partMapping, the bar map) is not
+//         discarded. D-47 §9's v1.1.1 rule (strict improvement ONLY) had
+//         refused exactly this fixture — that over-refusal is what C-17 was
+//         ruled to fix, with Paul's measured finding as its context. The
+//         frame accuracy (688 vs 672) stays a REPORTED metric, never a gate
+//         input (C-17). The IMPROVEMENT branch is demonstrated on a 60 BPM
+//         variant of the SAME truth (built in this file, not committed),
+//         where before = 0.615385 < after = 1.000000. The refusal kinds are
+//         pinned directly on the gate and end-to-end (the zero-agreement
+//         case stays refused).
 
 final class ScoreAlignmentTests: XCTestCase {
 
@@ -556,21 +561,28 @@ final class ScoreAlignmentTests: XCTestCase {
         XCTAssertEqual(informedHits - heuristicHits, 16,
                        "the score fixes EXACTLY the 16 transition frames")
 
-        // 5. THE AGREEMENT GATE — the honest measured finding (see the file
-        //    header): the RAW score already fully agrees with the detected
-        //    notes under the contract's metric, so before == after and D-47
-        //    §9's strict rule (C-13 rule 4) REFUSES adoption. The rule works
-        //    as designed; the reason string says so.
+        // 5. THE AGREEMENT GATE — the v1.2 rule (C-17, D-58): before == after
+        //    == 1.000000 (the raw score already fully agrees under the
+        //    contract's metric), the confidence is 0.990145 ≥ 0.70, after ≥
+        //    before, and after ≥ 0.90 ⇒ the CORROBORATION branch adopts the
+        //    score. (D-47 §9's v1.1.1 strict rule refused exactly this case —
+        //    the measured over-refusal C-17 was ruled to fix; the frame
+        //    accuracy delta below stays REPORTED, never a gate input.)
         XCTAssertEqual(outcome.agreementBefore?.ratio ?? -1, 1.0, accuracy: 1e-9)
         XCTAssertEqual(outcome.agreementAfter?.ratio ?? -1, 1.0, accuracy: 1e-9)
         XCTAssertEqual(outcome.agreementAfter?.matchedScoreNotes, 20)
         XCTAssertEqual(outcome.agreementAfter?.matchedDetectedNotes, 19,
                        "the heuristic merged the two BARITENOR C4s into one note")
-        XCTAssertFalse(alignment.used,
-                       "the strict rule refuses a score that already agrees at the metric's tolerance")
-        XCTAssertTrue(outcome.reason.contains("NOT adopted"),
+        XCTAssertTrue(alignment.used,
+                      "the corroboration branch (after ≥ 0.90, not degraded, confidence ≥ 0.70) adopts a score that already agrees")
+        XCTAssertEqual(ScoreAligner.decideAdoption(
+            confidence: alignment.confidence,
+            agreementBefore: outcome.agreementBefore?.ratio ?? -1,
+            agreementAfter: outcome.agreementAfter?.ratio ?? -1),
+            .corroboration, "the decision names WHICH branch fired")
+        XCTAssertTrue(outcome.reason.contains("Adopted"),
                       "the reason must say why, got: \(outcome.reason)")
-        XCTAssertTrue(outcome.reason.contains("C-13 rule 4"))
+        XCTAssertTrue(outcome.reason.contains("corroboration branch"))
 
         // 6. THE DERIVED SCORE-INFORMED TRACKS (C-13 rule 3: derived, never
         //    a replacement on disk). Every note carries the ALIGNMENT's
@@ -606,9 +618,10 @@ final class ScoreAlignmentTests: XCTestCase {
         XCTAssertEqual(second, outcome)
     }
 
-    /// THE ADOPTED BRANCH of D-47 §9's strict rule, on the SAME truth at a
-    /// tempo whose raw score does NOT already agree: 60 BPM ⇒ 4.0 s measures,
-    /// a 16 s score vs the 8 s recording. The alignment still lands (the AC),
+    /// THE IMPROVEMENT BRANCH of the v1.2 gate (C-17 — D-47 §9's rule,
+    /// unchanged and still sufficient alone), on the SAME truth at a tempo
+    /// whose raw score does NOT already agree: 60 BPM ⇒ 4.0 s measures, a
+    /// 16 s score vs the 8 s recording. The alignment still lands (the AC),
     /// and the aligned score's agreement is STRICTLY better — so the score IS
     /// adopted as the grading reference.
     func testTheAdoptedBranchOfTheUsedDecision() throws {
@@ -648,8 +661,9 @@ final class ScoreAlignmentTests: XCTestCase {
         XCTAssertEqual(errors[2], 0.0137, accuracy: 1e-4)
         XCTAssertEqual(errors[3], 0.0183, accuracy: 1e-4)
 
-        // THE STRICT RULE'S POSITIVE BRANCH: before 0.615385 (24 of 39 pairs)
-        // → after 1.000000, strictly better ⇒ used.
+        // THE IMPROVEMENT BRANCH: before 0.615385 (24 of 39 pairs) → after
+        // 1.000000, strictly better ⇒ used — via .improvement, not the
+        // corroboration shortcut.
         let before = try XCTUnwrap(outcome.agreementBefore)
         let after = try XCTUnwrap(outcome.agreementAfter)
         XCTAssertEqual(before.ratio, 24.0 / 39.0, accuracy: 1e-9,
@@ -658,8 +672,14 @@ final class ScoreAlignmentTests: XCTestCase {
         XCTAssertGreaterThan(after.ratio, before.ratio)
         XCTAssertTrue(alignment.used,
                       "confidence ≥ 0.70 AND strictly better agreement ⇒ adopted")
+        XCTAssertEqual(ScoreAligner.decideAdoption(
+            confidence: alignment.confidence,
+            agreementBefore: before.ratio,
+            agreementAfter: after.ratio),
+            .improvement, "the 60 BPM variant adopts via the IMPROVEMENT branch")
         XCTAssertTrue(outcome.reason.contains("Adopted"),
                       "the reason must say why, got: \(outcome.reason)")
+        XCTAssertTrue(outcome.reason.contains("improvement branch"))
 
         // The derived tracks exist and the frame accuracy improved (687/688
         // — one boundary frame flips on this variant; the MEASURED number).
@@ -669,6 +689,148 @@ final class ScoreAlignmentTests: XCTestCase {
                                          frameCount: testCase.frame_count)
         XCTAssertEqual(informedHits, 687)
         XCTAssertEqual(heuristicFrameAccuracy(testCase), 672)
+    }
+
+    // MARK: - The v1.2 adoption gate (C-17, D-58 — P-404)
+
+    /// THE GATE'S BOTH ADOPTION BRANCHES, pinned directly on the predicate.
+    /// `used = confidence ≥ 0.70 AND after ≥ before AND
+    ///  (after > before OR after ≥ 0.90)` — the improvement branch alone is
+    /// sufficient; the corroboration branch covers "the score already matches
+    /// near-unanimously"; 0.90 is a RULING, not a derivation (C-17).
+    func testTheV12AdoptionGatePinsBothAdoptionBranches() {
+        // The RULING's numbers are the defaults.
+        let options = ScoreAlignerOptions.default
+        XCTAssertEqual(options.adoptionConfidenceThreshold, 0.70, accuracy: 1e-12)
+        XCTAssertEqual(options.corroborationAgreementThreshold, 0.90, accuracy: 1e-12)
+
+        // IMPROVEMENT: after > before (even far below 0.90) adopts.
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.80,
+                                                   agreementBefore: 0.50,
+                                                   agreementAfter: 0.70),
+                       .improvement)
+        // CORROBORATION: equal-but-unanimous (after == before ≥ 0.90) adopts.
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.80,
+                                                   agreementBefore: 1.0,
+                                                   agreementAfter: 1.0),
+                       .corroboration)
+        // The corroboration boundary is INCLUSIVE: after exactly 0.90.
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.80,
+                                                   agreementBefore: 0.90,
+                                                   agreementAfter: 0.90),
+                       .corroboration)
+        // Improvement still names .improvement when after ALSO ≥ 0.90
+        // (the improvement branch is checked first — the reason says which).
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.80,
+                                                   agreementBefore: 0.95,
+                                                   agreementAfter: 1.0),
+                       .improvement)
+    }
+
+    /// THE GATE'S THREE REFUSAL KINDS, pinned directly (C-17's contractual
+    /// vocabulary: "confidence short of the gate, degraded agreement, or no
+    /// improvement AND corroboration short of 0.90").
+    func testTheV12AdoptionGatePinsEveryRefusalKind() {
+        // LOW CONFIDENCE: even a unanimous, improving alignment is refused
+        // below the 0.70 gate.
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.69,
+                                                   agreementBefore: 0.50,
+                                                   agreementAfter: 1.0),
+                       .lowConfidence)
+        // DEGRADED: after < before is NEVER adopted — even when after is
+        // itself ≥ 0.90 (the both-branches rule).
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.90,
+                                                   agreementBefore: 0.95,
+                                                   agreementAfter: 0.92),
+                       .degraded)
+        // INSUFFICIENT: no improvement AND corroboration short of 0.90.
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.80,
+                                                   agreementBefore: 0.50,
+                                                   agreementAfter: 0.50),
+                       .insufficient)
+        // THE ZERO-AGREEMENT REFUSAL IS PRESERVED (C-17): before = after = 0
+        // passes neither branch — D-47 §9's degenerate case stays refused
+        // even with excellent confidence.
+        XCTAssertEqual(ScoreAligner.decideAdoption(confidence: 0.99,
+                                                   agreementBefore: 0.0,
+                                                   agreementAfter: 0.0),
+                       .insufficient)
+    }
+
+    /// THE ZERO-AGREEMENT REFUSAL, END TO END: a score whose notes share NO
+    /// MIDI pitch with the detected notes is refused even when the alignment
+    /// itself is confident (the audio carries both pitch classes — the model
+    /// heard the score's pitch AND the detection's). before = after = 0 ⇒
+    /// neither branch passes ⇒ the grading reference stays the heuristic
+    /// track, and the reason says so. This is D-47 §9's protective case,
+    /// preserved by C-17.
+    func testTheZeroAgreementRefusalIsPreservedEndToEnd() throws {
+        // The audio carries midi 60 (the score's pitch) AND midi 61 (the
+        // detection's pitch) in every frame — plausible engine bleed — but
+        // the DETECTED notes are all midi 61 while the SCORE notes are all
+        // midi 60. Same-midi matching ⇒ zero matches, before = after = 0.
+        var frames: [[SalienceCandidate]] = []
+        for index in 0..<400 {
+            frames.append([
+                SalienceCandidate(frameIndex: index,
+                                  time: BasicPitchFrameClock.seconds(forFrame: index),
+                                  midi: 60, salience: 0.9),
+                SalienceCandidate(frameIndex: index,
+                                  time: BasicPitchFrameClock.seconds(forFrame: index),
+                                  midi: 61, salience: 0.4),
+            ])
+        }
+        let xml = """
+        <score-partwise version="3.1">
+          <part-list><score-part id="P1"><part-name>Bass</part-name></score-part></part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes><divisions>4</divisions></attributes>
+              <sound tempo="120"/>
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice></note>
+            </measure>
+            <measure number="2">
+              <note><pitch><step>C</step><octave>4</octave></pitch><duration>16</duration><voice>1</voice></note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+        let score = try MusicXMLScoreParser.parse(data: Data(xml.utf8))
+        let detected: [Part: NoteTrack] = [
+            .bass: NoteTrack(part: .bass, notes: [
+                EngineCore.Note(start_s: 0.0, end_s: 2.0, midi: 61, confidence: 0.9),
+                EngineCore.Note(start_s: 2.0, end_s: 4.0, midi: 61, confidence: 0.9),
+            ]),
+        ]
+        let outcome = ScoreAligner.resolve(score: score, candidates: frames,
+                                           detectedTracks: detected,
+                                           audioDuration: 4.6)
+
+        // The alignment itself is CONFIDENT (the score's pitch class is loud
+        // in the audio's chroma) — the refusal is the AGREEMENT's, not the
+        // confidence's.
+        let alignment = try XCTUnwrap(outcome.alignment)
+        XCTAssertGreaterThanOrEqual(alignment.confidence, 0.70,
+                                    "the alignment is confident; what fails is the agreement")
+        XCTAssertEqual(outcome.agreementBefore?.ratio ?? -1, 0.0, accuracy: 1e-12,
+                       "no same-midi match ⇒ zero raw agreement")
+        XCTAssertEqual(outcome.agreementAfter?.ratio ?? -1, 0.0, accuracy: 1e-12,
+                       "no same-midi match ⇒ zero aligned agreement")
+        XCTAssertFalse(alignment.used,
+                       "the zero-agreement refusal is preserved (C-17) — neither branch passes")
+        XCTAssertEqual(ScoreAligner.decideAdoption(
+            confidence: alignment.confidence,
+            agreementBefore: outcome.agreementBefore?.ratio ?? -1,
+            agreementAfter: outcome.agreementAfter?.ratio ?? -1),
+            .insufficient)
+        XCTAssertTrue(outcome.reason.contains("NOT adopted"),
+                      "the reason states the refusal, got: \(outcome.reason)")
+        XCTAssertTrue(outcome.reason.contains("C-17"))
+        // The engine still REPORTS the derived tracks (C-13 rule 3: derived,
+        // never a replacement on disk) — it is `used == false` that keeps
+        // them out of grading (the C-14 consumer's gate, not the engine's).
+        XCTAssertEqual(outcome.scoreInformedTracks[.bass]?.notes.count, 2,
+                       "the derived tracks exist but `used == false` is the consumer's gate")
     }
 
     // MARK: - The placement rule (mirrors Jess's `ScoreReview.align`)
