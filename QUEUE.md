@@ -185,7 +185,7 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [P-308] TODO (seed) | Retune-before-transcribe (D-22): consume `tuning_cents`; retune IN MEMORY only; the stored audio is never mutated | branch:paul | dep:P-207,P-307 | ac:a detuned synthetic (±35c) transcribes at ≈true-pitch quality; the times map back within tolerance
 - [P-309] TODO (seed, license-gated on X-310) | The evidence-repairer-style note repair, ELSE the grouper-decode cleanup heuristics (drop low-confidence notes, fix the boundaries, merge the same-pitch notes within 30 ms) | branch:paul | dep:P-307,X-310 | ac:the repair improves the onset/offset F1 on synthetic; the fallback ships regardless of X-310
 - [P-401] TODO (M4) | Grading-grade pitch path: SwiftF0 accurate stream (176 ms lookahead OK post-hoc) for scoring; NanoPitch for ribbon; time-align both to the bundle timeline; the aligned PitchFrame batch for the session | branch:paul | dep:P-105,J-403 | ac:the alignment offset is stable; grading uses SwiftF0 and the ribbon uses NanoPitch; it consumes J-403's offset | note:the M4 grading path — the ribbon and the scorer must read DIFFERENT estimators (D-22's tuning reference feeds both)
-- [P-402] DOING (M4) | Reference playback sync + key/tempo: sample-accurate stem sync (AVAudioEngine scheduling), seamless loop, AVAudioUnitTimePitch shift **with the NoteTrack transposition/time-scale mapping so grading stays aligned** | branch:paul | dep:P-204,J-203 | ac:the key/tempo shift keeps grading aligned; the loop is seamless; drift <20 ms over 4 min; confirm varispeed pitch compensation = −12·log2(speed) semitones on top of any key change (Muskey-verified, RESEARCH Addendum A.2.8) | note:the M4 long pole on Paul's side — it is independent of J-401, so it can be fired early. **CLAIMED (DOING @55f3c12):** the PORTABLE core is landed — `EngineCore/Playback/PlaybackTransform.swift` (the ONE C-20 implementation: midi'/time/overlay/tuning/latency/ranges, 12 tests pinning every clause) + `VarispeedPitchCompensation` (−12·log2(speed)). NEXT: the Apple-only `Engine/PlaybackKit` package (the MicCapture pattern — per-part AVAudioPlayerNode → per-lane AVAudioUnitTimePitch pitch=+100·n cents / rate=tempoScale, sample-accurate A/B loop, host-time position) with the macOS offline-render measurement of the varispeed compensation + the loop-gap/drift render test; then the X-task for Leto's project.yml + CI wiring (MicCapture precedent).
+- [P-402] DOING (M4) | Reference playback sync + key/tempo: sample-accurate stem sync (AVAudioEngine scheduling), seamless loop, AVAudioUnitTimePitch shift **with the NoteTrack transposition/time-scale mapping so grading stays aligned** | branch:paul | dep:P-204,J-203 | ac:the key/tempo shift keeps grading aligned; the loop is seamless; drift <20 ms over 4 min; confirm varispeed pitch compensation = −12·log2(speed) semitones on top of any key change (Muskey-verified, RESEARCH Addendum A.2.8) | note:the M4 long pole on Paul's side — it is independent of J-401, so it can be fired early. **CLAIMED (DOING @55f3c12):** the PORTABLE core is landed — `EngineCore/Playback/PlaybackTransform.swift` (the ONE C-20 implementation: midi'/time/overlay/tuning/latency/ranges, 12 tests pinning every clause) + `VarispeedPitchCompensation` (−12·log2(speed)). NEXT: the Apple-only `Engine/PlaybackKit` package (the MicCapture pattern — per-part AVAudioPlayerNode → per-lane AVAudioUnitTimePitch pitch=+100·n cents / rate=tempoScale, sample-accurate A/B loop, host-time position) with the macOS offline-render measurement of the varispeed compensation + the loop-gap/drift render test; then the X-task for Leto's project.yml + CI wiring (MicCapture precedent). **LANDED @51f5430 (DOING — awaiting X-402 wiring):** (1) `EngineCore/Playback/PlaybackTransform.swift` — the ONE C-20 implementation (12 tests: every clause incl. the pinned latency sign and refused-not-clamped ranges) + `VarispeedPitchCompensation`; (2) **the varispeed AC is MEASURED** — `VarispeedCompensationTests` (4 tests, pure DSP, runs everywhere): a synthesized 440 Hz sine read at speed s measures a drift of +12·log2(s) UP (faster = sharper), the −12·log2(s) compensation cancels it exactly, and it composes additively with a key change ("on top of any key change"); (3) `Engine/PlaybackKit/` — the Apple-only reference player (per-part AVAudioPlayerNode → per-lane AVAudioUnitTimePitch pitch=+100·n cents / rate=tempoScale, the PRIMED sample-accurate A/B wrap — segments queued back-to-back on one render timeline, no callback race — and the playerTime-based position clock with the MEASURED unit fact bundle=sampleTime/sr, render=sampleTime/(sr·tempoScale)) + smoke tests. **HONEST LIMITS:** the AudioUnit-specific behaviour (TimePitch rate pitch-preservation) binds in PlaybackKit and confirms on the D-56 device leg like every §8 number — the <20 ms drift over 4 min has NO runner/device number yet; the scheduling math is sample-accurate by construction and pinned by the unit facts. PlaybackKit does NOT compile in CI until X-402 wires it (the ImportKit branch-state precedent).
 - [P-403] TODO (M4) | Session recording (optional, local-only, default OFF): mic→ALAC for replay, aligned to the session, deletable | branch:paul | dep:P-401 | ac:optional/off by default; the replay aligns; delete purges; the privacy copy is present | note:local-only by contract (AGENTS §1's offline rail) — the recording never leaves the device
 - [X-301] TODO (STRETCH, non-gating) | The synthetic SATB data pipeline: hymn MIDI/MusicXML → permissively-licensed voicebanks → 5 stems + mix + church IR → the power-set subsets → the training manifest | branch:paul | dep:P-303,L-007 | ac:the spec + 1 synthetic song end-to-end on Linux/CI; the license verdicts; the training deferred post-v1 | note:the commercial-safe data path — GTSinger/M4Singer stay BANNED (D-30 Tier C)
 - [X-311] TODO (SEED, non-gating) | Read the soundfont technique + the dettato benchmark dataset → apply it to X-301 + the M3 eval harness | branch:paul | dep:— | ac:the notes filed | note:D-21/X-310 context
@@ -238,6 +238,21 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 
 ## BLOCKED / DECISIONS PENDING (anyone appends; Leto resolves)
 
+- **[X-402] FILED by Paul (2026-11-28) — LETO to assign/apply (AGENTS §12:
+  project.yml + .github/** are Leto's; the MicCapture/X-011 precedent).**
+  **Spec, exact:** (1) `project.yml` gains package `PlaybackKit` (path
+  `Engine/PlaybackKit`, local path-package like MicCapture/ImportKit — NO
+  remote deps; path-dep on the parent Engine package) + the app-target
+  dependency (Jess's J-402 consumes the player; the graded-session flow needs
+  it live in the app target). (2) `build.yml` gains a macOS step in the
+  MicCapture X-011b pattern: `cd Engine/PlaybackKit && swift test` (BLOCKING
+  where present) — 3 smoke tests, NO audio hardware needed (config math +
+  time-mapping unit facts + the D-33 transform identity; no engine start).
+  The Linux docker loop cannot build it (Apple-only) — the FIRST wiring run
+  is its compile proof (the ImportKit branch-state precedent; a red there is
+  a FIX task, not a design flaw). (3) No CI-minute risk: the suite is 3 fast
+  tests. **Why:** P-402's player exists and must be consumable + compiled;
+  without the wiring the package is dead code on every branch.
 - **THE M3 DEVICE DEMO (L-205 + J-210) — HUMAN, NOT RUN, EXPLICITLY WAIVED (D-51).**
   It needs an iPhone 12 Pro Max, the 84 MB `htdemucs` weights and a human. It is
   the ONLY source of the device RTF / peak RSS / thermal numbers (AGENTS §8), and
@@ -278,6 +293,33 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 ---
 
 ## LOG (append-only, everyone; newest at TOP)
+
+- 2026-11-28T1:4xZ paul: **P-402's ENGINE SIDE IS LANDED (DOING — the wiring
+  is X-402, filed for Leto).** (1) The portable C-20 core
+  (`PlaybackTransform` + `VarispeedPitchCompensation`, 12 pinned tests —
+  every C-20 clause incl. the latency sign and refused-not-clamped ranges);
+  (2) **THE VARISPEED AC IS MEASURED** (`VarispeedCompensationTests`, 4
+  tests, pure DSP, runs in the docker loop AND on the runner): a 440 Hz
+  sine read at speed s measures **+12·log2(s) semitones UP** (faster =
+  sharper — tape physics; A.2.8's −12·log2(s) is the COMPENSATION, and the
+  test proves imposed + compensation == 0 and that it composes additively
+  with a key change); (3) `Engine/PlaybackKit/` — the Apple-only reference
+  player (per-lane AVAudioUnitTimePitch, the PRIMED sample-accurate A/B
+  wrap, the playerTime position clock with the unit fact
+  bundle=sampleTime/sr) + 3 smoke tests. **HONEST LIMITS:** the TimePitch
+  rate pitch-preservation binds in PlaybackKit and confirms at the D-56
+  device leg; **the <20 ms drift over 4 min has NO runner/device number
+  yet** — the scheduling math is sample-accurate by construction (the wrap
+  is primed back-to-back, not callback-rescheduled) and pinned by the unit
+  facts. **X-402 is in the BLOCKED section with the EXACT spec** (project.yml
+  package + app-target dep + a MicCapture-pattern blocking `swift test`
+  step); PlaybackKit is dead code on every branch until it lands. **TO
+  JESS:** J-402 consumes `ReferencePlaybackEngine` (built per session from
+  the bundle's stems + ONE `PlaybackEnvironment`) and grades through
+  `engine.transform` (the same `PlaybackTransform` the tests pin) — never a
+  second mapping (D-33). EngineCore now **335/335** (331 + 4 varispeed)
+  local. CI run 46080866877 (P-404's) still in flight — checked at the next
+  natural checkpoint, never waited on (§5).
 
 - 2026-11-28T1:1xZ paul: **P-404 LANDED @55f3c12 (REVIEW, BUILD_PENDING — run
   46080866877@55f3c12) + P-402 CLAIMED (its portable core landed in the same

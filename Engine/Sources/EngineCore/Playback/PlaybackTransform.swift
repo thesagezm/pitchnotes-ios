@@ -40,14 +40,18 @@ import Foundation
 //      clamped into silent wrongness — so this type's initialiser THROWS on
 //      an out-of-range value rather than clamping.
 //
-// THE VARISPEED FACT (RESEARCH Addendum A.2.8, Muskey-verified — confirmed by
-// the measured offline-render test in Engine/PlaybackKit): changing playback
-// SPEED without pitch correction shifts pitch by −12·log2(speed) semitones on
-// top of any key change. `AVAudioUnitTimePitch` needs NO such compensation
-// (its pitch and rate are independent by construction — the reason P-402's
-// player uses it); the formula exists so a Varispeed-based path is never
-// wired uncorrected, and `VarispeedPitchCompensation` is the one place the
-// constant lives.
+// THE VARISPEED FACT (RESEARCH Addendum A.2.8, Muskey-verified — and
+// MEASURED in EngineCoreTests/VarispeedCompensationTests.swift, the pure-DSP
+// zero-crossing test that runs on every platform): changing playback SPEED
+// without pitch correction shifts pitch UP by +12·log2(speed) semitones
+// (faster = sharper — tape physics). The COMPENSATION a varispeed-based path
+// must therefore apply is **−12·log2(speed) semitones, on top of any key
+// change** — that is what A.2.8's number IS. `AVAudioUnitTimePitch` needs NO
+// such compensation (its pitch and rate are independent by construction —
+// the reason P-402's player uses it; the pitch-preserved-rate behaviour is
+// confirmed on the device at the D-56 demo leg, like every §8 number). The
+// formula lives in ONE place (`VarispeedPitchCompensation`) so a future
+// Varispeed path is never wired uncorrected.
 
 // MARK: - The session's playback environment
 
@@ -86,21 +90,36 @@ public enum PlaybackEnvironmentError: Error, Equatable, Sendable {
 
 // MARK: - The varispeed fact
 
-/// THE VARISPEED PITCH FACT, one place (C-20 / RESEARCH A.2.8): changing the
-/// playback speed shifts pitch by **−12·log2(speed) semitones** on top of any
-/// key change. A rate of 2.0 sounds one octave DOWN, not up.
+/// THE VARISPEED COMPENSATION, one place (C-20 / RESEARCH A.2.8). Plain
+/// varispeed (reading samples at `speed`) imposes a pitch drift of
+/// **+12·log2(speed) semitones UP** (faster = sharper — tape physics,
+/// MEASURED by `VarispeedCompensationTests` via zero crossings on a
+/// synthesized sine). The COMPENSATION such a path must apply is therefore
+/// **−12·log2(speed) semitones, on top of any key change** — A.2.8's number.
+/// `AVAudioUnitTimePitch` needs none of this (rate is pitch-preserved by
+/// construction); the enum exists so a future Varispeed-based path is never
+/// wired uncorrected.
 public enum VarispeedPitchCompensation {
 
-    /// The pitch shift a plain varispeed of `speed` imposes, in semitones
-    /// (negative = down). `−12·log2(speed)`.
+    /// The COMPENSATION semitones for a varispeed of `speed` — the value to
+    /// ADD to the key shift to cancel the drift (negative = down, cancelling
+    /// the sharpening). `−12·log2(speed)`.
     public static func semitones(forSpeed speed: Double) -> Double {
         -12.0 * log2(speed)
     }
 
-    /// The varispeed rate that would impose a given semitone shift — the
-    /// inverse mapping (for a compensated path that must CANCEL the shift).
+    /// The varispeed speed whose compensation equals `semitones` — the
+    /// inverse mapping.
     public static func speed(forSemitones semitones: Double) -> Double {
         pow(2.0, -semitones / 12.0)
+    }
+
+    /// The pitch drift a plain varispeed of `speed` IMPOSES, in semitones
+    /// (positive = sharper). `+12·log2(speed)`. The compensation is its
+    /// negation: `imposedDrift(speed) + semitones(forSpeed: speed) == 0` —
+    /// pinned by measurement in the tests.
+    public static func imposedDrift(forSpeed speed: Double) -> Double {
+        12.0 * log2(speed)
     }
 }
 
