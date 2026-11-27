@@ -154,7 +154,7 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [P-301] DONE (merged to `main`) | basicpitch.cpp (MIT, sevagh) vendored + the REAL spike runner + the manifest entry + the mono/poly fixtures | branch:paul | dep:P-204,L-008 | build:45513314284@426dd45 (the real job, 24 checks) | ac:`basicpitch-spike` green on mono+poly synthetic fixtures; onset/offset within 50 ms; RTF logged | note:the code + the REAL runner are on `origin/paul`; the manifest entry carries D-46's TIER C wording
 - [P-302] DONE (merged to `main`) | Multi-f0 salience: the per-frame pitch posterior + the peak picker + the C ABI's salience output + the five-voice SATB fixture | branch:paul | dep:P-301 | build:local EngineCore 245/245 | ac:synthetic SATB fixture shows 3–5 peaks; peak-picking unit test | note:the peak options are `minimum_salience 0.3`, local-max window 2 semitones
 - [P-303] DONE (merged to `main` @c3f245e) | Voice assignment engine: the frame DP + the no-crossing ordering + the subset handling + the unison rule + the temporal beam Viterbi + D-41 §1's confidence | branch:paul | dep:P-302,P-105 | build:45897044406@4c77d52 (green snapshot) + the gate run 45910600056@b24ce9a | ac:≥70 % of the frames correctly assigned on the clean synthetic fixture (Paul measured 344/344 = 1.000); the Swift test asserts the Swift engine agrees with the committed Python mirror | note:PAUL'S CODE + THE SWIFT TEST are both on `main` (`VoiceAssignment.swift`, the committed artifact `Tests/Spikes/Fixtures/assignment_satb5.json` with TWO cases: the frozen chord 344 frames + the MOVING progression 688 frames). **THE MISSING PIECE HAD BEEN THE FIXTURE, NOT THE CODE** — `satb5_prog_22050.wav` was registered in `gen.py` but never committed; **LETO GENERATED AND COMMITTED IT UNDER D-48 @4c77d52** (352,844 B, sha 5ea7b042…). The moving progression's macro part accuracy is **0.988953** — but its **STEADY** frames are **1.000** and its **TRANSITION** frames are **0.4074074074074074**: **both** are reported (`Docs/BENCHMARKS.md` §5.3). **This is a SYNTHETIC number and NOT a real-acapella claim.**
-- [P-304] DOING (M4 — **CLAIMED BY PAUL @e1bd6bb**, carried from M3) | Score-informed alignment hook: the MusicXML parser + the DTW aligner + the `score.musicxml` bundle entry | branch:paul | dep:P-303,L-303 | build:— | ac:synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic | note:**NOT IN M3** — the engine side of score alignment does not ship in M3 (it is WAIVED there by D-50); **as an M4 row it is CLAIMED and DOING by Paul** on the human's session order. **D-52 §3 CORRECTS D-50's rationale:** the local Docker Swift loop (`docker run … swift:6.0 swift test`) DOES exist, so the row is **verified locally BEFORE it is pushed** — the waiver's remaining substance was the M3 close-out window, not verifiability. **D-52 §4: the score-contract types are NAMESPACED under `ScoreContract.*` in EngineCore with the IDENTICAL JSON (C-13.1/C-13.2); the same-name option is DEAD** (Paul measured the *"ambiguous for type lookup"* failure that would turn `logic-tests` + `build-ipa` red in files outside his lane). **The end-state migration is J-406 (JESS's lane — Paul must NOT make that edit).** **The work lands on `origin/paul` and is merged by Leto like any lane snapshot — INTO M4, not into M3. Paul: `main` already carries your accepted claim, so on rebase TAKE `main`'s P-304 row — do not re-land this hunk.**
+- [P-304] DONE (on `origin/paul` @9438212 — the M4 lane snapshot, merged by Leto INTO M4 per D-52 §7) | Score-informed alignment hook: the MusicXML parser + the DTW aligner + the `score.musicxml` bundle entry | branch:paul | dep:P-303,L-303 | build:46060847003@9438212 (in flight at DONE — the WIP files' run 46055748633@bd4b5a5 was GREEN) | ac:synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic | ac-met:**MEASURED + PINNED (EngineCore 316/316 locally, docker swift:6.0 — the 300 baseline + 16 new ScoreAlignmentTests):** bar-map max error **7.0 ms** (the AC is ≤ 50 ms), the alignment confidence **0.990145** (≥ D-41 §4's 0.70 gate), the score-informed frames **688/688** vs the heuristic's **672/688** — the score fixes EXACTLY the 16 transition frames; the ADOPTED branch of D-47 §9 demonstrated on a 60 BPM variant of the same truth (before 0.615385 → after 1.000000 ⇒ used=TRUE, 18.3 ms, 687/688). **SYNTHETIC fixtures only — not a real-acapella claim.** | note:**WHAT EXISTS (all on `origin/paul`):** `Engine/Sources/EngineCore/Transcription/ScoreAligner.swift` (the audio chroma = the MODEL'S salience candidates — no FFT in the portable core; the pitch-presence-only banded DTW, the salience is never a weight, C-12; the MEASURED duration-anchored warp — a path-read bar map is 58 ms and FAILS the AC, plain LSQ 23 ms, the anchor 7.0 ms; binned ≤ 2000 frames a side) + the WIP pair from bd4b5a5 (`MusicXMLScoreParser.swift`, the namespaced `ScoreContract.*` types with the IDENTICAL JSON, D-52 §4) + the fixture `Tests/Spikes/Fixtures/satb5_prog_score.musicxml` **DERIVED by `scripts/fixtures/gen.py` from `BP_SATB5_PROG_CHORDS`** (96 BPM 4/4, 4 measures = 10 s vs the recording's 8 s) with the `--check` re-derivation (a truth-vs-score drift FAILS the integrity gate — verified with a deliberate drift) + `Engine/Tests/EngineCoreTests/ScoreAlignmentTests.swift` + `Docs/ENGINE.md` §1.7 + the v1.10 row. **THE HONEST FINDING (AGENTS §11): the used decision measures FALSE on the committed fixture BY DESIGN — before = after = 1.000000: the raw 96 BPM score ALREADY agrees with the detected notes at the contract metric's ±0.25 s tolerance, so D-47 §9's strict rule refuses (C-13 rule 4's own consequence clause) — the previous chat's handoff expected `after > before` here, MEASUREMENT says otherwise, and the aligner's `reason` string states it plainly. The alignment's real improvement shows in the FRAME accuracy (688 vs 672).** The score-informed tracks are DERIVED and never replace `notes/<PART>.json` on disk (C-13 rule 3); every score note carries the ALIGNMENT's confidence, never an invented per-note probability. **P-306 NOTE (the brief requires it explicit): I did NOT add the score-alignment fixture as a third part-aware input to `Tests/Spikes/bench_v2.py` — that file and the `bench-v2` job are LETO's on `main` (the D-48 lane note); the fixture is committed and deterministic, so adding it is a one-file change in Leto's lane whenever Leto wants it.** **STILL OPEN:** J-406 (JESS's typealias migration — until it lands the two type sets agree BY JSON); the bar map's single-time-scale limitation (a tempo-drifting score simply fails the agreement gate and is not adopted — stated in ENGINE.md §1.7 and in the aligner's header); **no real acapella recording exists in the repo (licensing) ⇒ NO real-world score-alignment number is claimed**; D-50's M3 waiver stands (P-304 ships INTO M4, not M3).
 - [P-305] DONE (merged to `main`) | NoteTrack v1.1 metadata: the per-note confidence, the part-presence, the unison flags, the engineVersion + the V16/V17/V18 validators + the SwiftF0 cross-check | branch:paul | dep:P-301,P-101 | build:the cross-check artifact + its Swift mirror test | ac:schema v1.1 ratified; the cross-check metric logged | note:the artifact `crosscheck_swiftf0_vs_basicpitch.json` carries the measured disagreement per fixture
 - [P-306] DONE (merged to `main` @2d6f50e + 70e10c9) | Benchmark harness v2: the note onset/offset F1, the part-aware macro F1 (PawCT-style), the multi-f0 P/R/F1 → the BENCHMARKS v2 honest report | branch:main (Leto's D-48 work) | dep:P-303,P-304 | build:45906329503@2d6f50e (green) + the gate run 45910600056@b24ce9a | ac:the report committed; the real part-aware F1 stated WITHOUT overclaim; the part-AGNOSTIC and the part-AWARE metrics reported SEPARATELY, citing dettato's Dagstuhl ChoirSet row (onset 55.9 / frame 82.0 / offset 44.4) as the external part-agnostic reference | ac-met:**the harness `Tests/Spikes/bench_v2.py` + `Tests/Spikes/bench_report_v2.json` are committed; the `bench-v2` CI job is GREEN and is now BLOCKING; the human-readable report is `Docs/BENCHMARKS.md` §5.3 (written by Leto under D-48, in Paul's lane).** Part-agnostic: frame F1 0.91465 (frozen) / 0.927265 (moving); note-event onset F1 1.000 / 0.974359, offset F1 1.000 / 0.947368. Part-aware: macro part accuracy 1.000 / 0.988953, with the STEADY 1.000 vs TRANSITION 0.4074074074074074 split. **SYNTHETIC fixtures only — not a real-acapella claim; no promise of perfect 5-way separation (AGENTS §11).**
 - [P-307] TODO (M4/M6 seed, non-gating for M3) | Port dettato transcriber to ONNX+Swift — Apache-2.0 CODE, TIER B WEIGHTS (D-45): ship only with the recorded risk + the human sign-off, NEVER described as clean | branch:paul | dep:P-301,P-208 | ac:parity within the documented tolerance; the benchmark report committed; the RTF/RSS logged honestly | note:D-45's soundfont-provenance caveat is binding; the grouper/drums weights are NC and banned
@@ -228,11 +228,15 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
   NC-trained weight set; it blocks COMMERCIAL DISTRIBUTION only, not `m3` and not
   sideloading. The in-app licenses screen (J-FIX-105) states the NC provenance and
   NEVER says "clean".
-- **[P-304] — WAIVED FOR M3 (D-50), CARRIED INTO M4 as an OPEN row.** The
-  score-alignment ENGINE side (the MusicXML parser + the DTW aligner) does not
-  ship in M3; Jess's consumer shows the honest `parserUnavailable` state, and
-  **nothing claims score alignment works**. It is **NOT dropped** — it is a live
-  M4 row in the Paul section.
+- **[P-304] — WAIVED FOR M3 (D-50), CARRIED INTO M4, NOW DONE ON `origin/paul` @9438212.**
+  The score-alignment ENGINE side (the MusicXML parser + the DTW aligner) did
+  not ship in M3 — Jess's J-304 consumer shipped the honest
+  `parserUnavailable` state and **nothing claimed score alignment works in M3**.
+  As an M4 row it is now **DONE** (measured + pinned: 7.0 ms bar map,
+  confidence 0.990145, 688/688 vs 672/688 — see the Paul section's row); it
+  merges INTO M4 by Leto (D-52 §7), and **the used decision on the committed
+  fixture is honestly FALSE by D-47 §9's strict rule** (the raw score already
+  agrees at the metric's tolerance — the row and ENGINE.md §1.7 state it).
 - **[L-602] — THE APP STORE MEMO HAS A REAL GAP (D-46):** a **commercial** build
   MUST **exclude the basic-pitch `nmp.onnx` weights** or **name a replacement**
   (the X-301 synthetic-SATB path, or a differently-trained transcription model).
@@ -244,6 +248,68 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 
 ## LOG (append-only, everyone; newest at TOP)
 
+- 2026-11-27T20:05Z paul: **P-304 LANDED COMPLETE on `origin/paul` @9438212 —
+  the aligner + the fixture + the pinned tests, row DONE (self-verifiable
+  against its ac: per D-52 §2/§3 — verified locally BEFORE the push), waiting
+  only on Leto's M4 lane merge.** **WHAT LANDED:** (1) `ScoreAligner.swift` —
+  the audio chroma comes from the MODEL'S per-frame salience candidates (the
+  same set P-303 assigns; no FFT in the portable core), the DTW uses the
+  notes' PITCH PRESENCE ONLY (the salience is never a weight — C-12), the
+  warp is the MEASURED duration-anchored single time-scale (a bar map read
+  straight off the path is 58 ms and FAILS the ≤ 50 ms AC; plain least-squares
+  23 ms; the anchor **7.0 ms**; not knife-edge — weight N/4 still gives
+  688/688 at 16.5 ms), both sides binned to ≤ 2000 frames; (2) the committed
+  fixture `satb5_prog_score.musicxml` is DERIVED by `gen.py` from
+  `BP_SATB5_PROG_CHORDS` at the score's OWN tempo (96 BPM ⇒ 10 s vs the 8 s
+  recording) and `gen.py --check` RE-DERIVES it — I verified a deliberate
+  truth-table drift FAILS the integrity gate; (3) `ScoreAlignmentTests.swift`
+  (16 tests) pins the parser rules (rests advance the timeline, mid-part
+  divisions honoured, `<score-timewise>` rejected, excluded-features-only ⇒ an
+  empty score + a notice, labels captured), the EXACT C-13.1/C-13.2 JSON
+  (D-52 §4 — via the portable sortedKeys canonicalisation, since the encoder's
+  key order is a dictionary-iteration detail I MEASURED on swift:6.0), the
+  alias table ("tenor" alone resolves to NOTHING — never guessed, D-47 §8),
+  the placement rule (mirrors `ScoreReview.align` exactly), the no-score path
+  (succeeds, reason stated, C-13 rule 1), and the demonstration.
+  **THE MEASURED NUMBERS, PINNED:** bar-map max error **7.0 ms** (AC ≤ 50),
+  confidence **0.990145**, score-informed **688/688** vs heuristic **672/688**
+  — the score fixes EXACTLY the 16 transition frames (661 steady frames were
+  already 661/661; all 16 errors sit within ±4 frames / 46 ms of a chord
+  change, where the audio physically carries both chords). Local suite
+  **EngineCore 316/316** (the 300 baseline + 16 new), docker swift:6.0.
+  **THE HONEST FINDING — READ THIS BEFORE ASSUMING THE DEMO IS GREEN:** the
+  used decision measures **FALSE on the committed fixture, BY DESIGN**:
+  before = after = **1.000000** — the raw 96 BPM score already agrees with the
+  detected notes at the contract metric's ±0.25 s tolerance (the notes are
+  seconds long, so the intervals overlap with room to spare), and D-47 §9's
+  STRICT rule (C-13 rule 4) therefore REFUSES a score that "already matches"
+  at the metric's tolerance. The previous chat's handoff predicted
+  `after > before` for this fixture; **that was never measured** (it is not in
+  the prototype script) and my measurement says otherwise. I did NOT
+  re-litigate the rule or retune the metric inputs to force a TRUE: the rule
+  is implemented exactly, the refusal is pinned, the `reason` string says so,
+  and the ADOPTED branch is demonstrated on a 60 BPM variant of the SAME truth
+  (built in the test, not committed): confidence **0.993100**, bar error
+  **18.3 ms**, before **0.615385** → after **1.000000** ⇒ **used = TRUE**,
+  687/688 frames (one boundary frame flips at that tempo — the measured
+  number). If the C-14 gate should see the 688-vs-672 frame improvement rather
+  than the coarse Dice agreement, that is a CONTRACT question for Leto — I did
+  not touch CONTRACTS.md (v1.1.1 stands, D-52 §6). **THE P-306 NOTE (the brief
+  requires it explicit): I did NOT add the new score fixture as a third
+  part-aware input to `bench_v2.py` — that file and the bench-v2 job are
+  LETO's on main; the fixture is committed and deterministic, so it is a
+  one-file change in Leto's lane whenever wanted.** **TOUCHED ONLY MY LANE:**
+  Engine/**, Tests/Spikes/Fixtures/**, scripts/fixtures/**, Docs/ENGINE.md
+  (§1.7 + the v1.10 row), my QUEUE section + the BLOCKED bullet. No
+  CONTRACTS.md, no DECISIONS.md, no .github/**, no Jess files, no main.
+  **CI:** run 46060847003@9438212 in flight at DONE time (the WIP files' run
+  46055748633@bd4b5a5 was GREEN); a red run becomes a FIX task, nothing here
+  waits on it (AGENTS §5). **STILL OPEN:** J-406 (Jess's typealias
+  migration), the M4 merge (Leto), the bar map's single-time-scale limitation
+  (stated in the aligner header + ENGINE.md §1.7), and the standing honesty
+  boundary: the score encodes the truth, so the numbers measure the MECHANISM
+  — no real acapella recording exists in the repo (licensing), so NO
+  real-world number is claimed.
 - 2026-11-27T00:0xZ leto: **D-52 RULED — PAUL'S P-304 CLAIM IS ACCEPTED (AS AN M4 ROW), D-50's RATIONALE IS CORRECTED, AND THE SCORE-CONTRACT TYPE COLLISION IS RULED.** **Paul claimed P-304** on the human's session order (`origin/paul` @`e1bd6bb`, *"queue: claim P-304"*) and says it supersedes the D-48 §5 waiver, because **the waiver's stated rationale does not hold: the local Docker Swift loop (`docker run … swift:6.0 swift test`) DOES exist**, so P-304 is **verified locally BEFORE it is pushed**. **That is new evidence about a ruling I made minutes ago, so I ruled again (AGENTS §1) rather than re-litigating — and D-50 is NOT edited (append-only).**
   **(1) P-304 DOES NOT SHIP IN M3 — D-50 §1/§2 STAND.** `m3` is tagged at
   `b24ce9a`, the gate run is green, and the M3 claim is unchanged (**"per-part
