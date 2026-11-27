@@ -399,8 +399,15 @@ final class ScoreAlignmentTests: XCTestCase {
     }
 
     func testTheC132JSONIsExactlyTheContractShape() throws {
+        // THE PIN VALUE IS BINARY-EXACT ON PURPOSE (0.75 = 3/4): the two
+        // Foundations disagree on the repr of an INEXACT double — macOS
+        // %.17g-prints 0.82 as "0.81999999999999995" where Linux prints
+        // "0.82" (MEASURED on the runner, run 46060847003). The contract
+        // pins the JSON's keys and values, not a platform's double
+        // formatting, so the string pin must use a value both platforms
+        // print identically.
         let file = ScoreContract.AlignmentFile(alignment: ScoreContract.Alignment(
-            confidence: 0.82,
+            confidence: 0.75,
             used: true,
             barMap: [ScoreContract.BarMapEntry(measure: 1, start_s: 0.0, end_s: 2.0)],
             method: "DTW",
@@ -409,7 +416,7 @@ final class ScoreAlignmentTests: XCTestCase {
         // C-13.2's example shape, exactly — including the OPTIONAL
         // partMapping as C-1 rawValues (D-47 §8).
         XCTAssertEqual(try canonicalJSON(data),
-                       #"{"alignment":{"barMap":[{"end_s":2,"measure":1,"start_s":0}],"confidence":0.82,"method":"DTW","partMapping":{"P1":"T1","P5":"BASS"},"used":true},"contractVersion":"v1.1"}"#)
+                       #"{"alignment":{"barMap":[{"end_s":2,"measure":1,"start_s":0}],"confidence":0.75,"method":"DTW","partMapping":{"P1":"T1","P5":"BASS"},"used":true},"contractVersion":"v1.1"}"#)
         let decoded = try JSONDecoder().decode(ScoreContract.AlignmentFile.self, from: data)
         XCTAssertEqual(decoded, file)
     }
