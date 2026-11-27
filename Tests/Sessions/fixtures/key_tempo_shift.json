@@ -1,0 +1,91 @@
+{
+ "contractPins": [
+  "C-20 \u00a71/\u00a72/\u00a73 (the view transform; overlay maps identically; tuningCents preserved)"
+ ],
+ "contractVersion": "v1.2",
+ "correctionOverlay": {
+  "contractVersion": "v1.1",
+  "operations": [
+   {
+    "fromPart": "BASS",
+    "noteIndex": 0,
+    "op": "split",
+    "splitAt_s": 1.5,
+    "toParts": [
+     "BASS",
+     "BASS"
+    ]
+   }
+  ],
+  "part": "BASS"
+ },
+ "description": "The C-20 view transform pinned: the SAME reference at transpositionSemitones=+2, tempoScale=1.25. midi moves +2; every time scales about the session start by 1/1.25; tuningCents is PRESERVED.",
+ "environment": {
+  "latencyOffset_ms": 0,
+  "tempoScale": 1.25,
+  "transpositionSemitones": 2,
+  "tuningCents": 0
+ },
+ "expectedTransformed": [
+  {
+   "cents_ref": 12,
+   "confidence": 0.9,
+   "end_s": 1.6,
+   "midi": 50,
+   "start_s": 0.8
+  },
+  {
+   "cents_ref": 0,
+   "confidence": 0.9,
+   "end_s": 2.52,
+   "midi": 52,
+   "start_s": 1.72
+  },
+  {
+   "cents_ref": -30,
+   "confidence": 0.9,
+   "end_s": 3.6,
+   "midi": 54,
+   "start_s": 2.8
+  }
+ ],
+ "fixture": "key_tempo_shift",
+ "invariants": [
+  "expectedTransformed is the C-20 mapping of `reference` (midi+2, times scaled about start by 1/tempoScale)",
+  "cents_ref is UNCHANGED by the transform (C-20 \u00a73: a semitone shift preserves the cents offset)",
+  "the overlay's splitAt_s transforms by the SAME time map (C-20 \u00a72)"
+ ],
+ "live": {
+  "contractVersion": "v0.0",
+  "frames": [],
+  "hopMs": 16,
+  "part": "BASS"
+ },
+ "reference": {
+  "contractVersion": "v1.1",
+  "notes": [
+   {
+    "cents_ref": 12,
+    "confidence": 0.9,
+    "end_s": 2.0,
+    "midi": 48,
+    "start_s": 1.0
+   },
+   {
+    "cents_ref": 0,
+    "confidence": 0.9,
+    "end_s": 3.15,
+    "midi": 50,
+    "start_s": 2.15
+   },
+   {
+    "cents_ref": -30,
+    "confidence": 0.9,
+    "end_s": 4.5,
+    "midi": 52,
+    "start_s": 3.5
+   }
+  ],
+  "part": "BASS"
+ }
+}

@@ -165,6 +165,44 @@ jobs:
           cd Tests/Logic
           swift test 2>&1 | tee ../../logic-tests.log
 
+      # L-402: the M4 session fixtures — synthetic sung-like pitch streams vs
+      # reference note tracks, one per grading scenario (steady, detuned
+      # ±35c, octave error, vibrato, late onset vs the grace, breath/silence/
+      # uncovered-span, the D-54 confidence/unison policy, a C-11 overlay, the
+      # C-20 key/tempo transform, the steady/transition class). ALWAYS
+      # BLOCKING: the fixtures are Leto's L-402 artifacts; `--check`
+      # re-derives every invariant + the sha256 manifest (a drift fails the
+      # job — the gen.py integrity-gate precedent, with a verified negative).
+      - name: Validate the M4 session fixtures (L-402)
+        run: python3 -I Tests/Sessions/gen_session_fixtures.py --check
+
+      # L-402: the M4 SCORING-SUITE gate. J-401's pure-Swift scoring engine
+      # (>= 30 unit tests, J-401's AC) must land under
+      # Tests/Logic/Tests/PitchLogicTests/Scoring/. UNTIL IT LANDS this step
+      # is RED BY DESIGN and continue-on-error keeps the job green (the
+      # L-302/L-304 precedent: the designed dependency signal, never a fix
+      # task). The gate FLIPS TO BLOCKING at the M4 close (L-403).
+      # NOTE: the suite's presence here is a static count of `func test`
+      # declarations; the suite actually EXECUTING green is the PitchLogic
+      # step above, and the APP-TARGET compile proof is build-ipa (macOS) —
+      # a green Linux/docker loop alone is NOT an app-target green (the M2
+      # ManifestV1 seam-bug lesson).
+      - name: M4 scoring-suite gate (L-402 — RED BY DESIGN until J-401 lands)
+        continue-on-error: true
+        run: |
+          SUITE_DIR="Tests/Logic/Tests/PitchLogicTests/Scoring"
+          if [ ! -d "$SUITE_DIR" ]; then
+            echo "::error::The M4 scoring suite does not exist yet — J-401 (the pure-Swift scoring engine + >= 30 unit tests) has not landed. This gate is RED BY DESIGN until it does; it flips to BLOCKING at the M4 close (L-403)."
+            exit 1
+          fi
+          COUNT=$(grep -h "func test" "$SUITE_DIR"/*.swift 2>/dev/null | wc -l | tr -d ' ')
+          echo "scoring test methods found: $COUNT"
+          if [ "$COUNT" -lt 30 ]; then
+            echo "::error::The scoring suite in $SUITE_DIR carries $COUNT test methods — J-401's AC requires >= 30 (silence, octave error, vibrato, late onset, breath, the D-22 detuned case, determinism, the closer-pitch property). This gate is RED BY DESIGN until it does."
+            exit 1
+          fi
+          echo "OK: the scoring suite declares >= 30 test methods"
+
       # Paul's EngineCore (P-001): contract types + validators + MockEngine.
       # Foundation-only — compiles and tests on the macOS runner (first macOS
       # compile of this package happens here; Linux-verified until X-003 wiring).

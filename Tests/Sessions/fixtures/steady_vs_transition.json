@@ -1,0 +1,58 @@
+{
+ "contractPins": [
+  "D-54 \u00a74 (steady vs transition, 50 ms window)"
+ ],
+ "contractVersion": "v1.2",
+ "description": "D-54 \u00a74's class computation pinned: a legato pair (gap 30 ms \u2264 the 50 ms window \u2192 note 1 is TRANSITION-class) and an isolated note (gap 470 ms \u2192 STEADY).",
+ "environment": {
+  "latencyOffset_ms": 0,
+  "tempoScale": 1.0,
+  "transpositionSemitones": 0,
+  "tuningCents": 0
+ },
+ "expectedClasses": [
+  "steady",
+  "transition",
+  "steady"
+ ],
+ "fixture": "steady_vs_transition",
+ "invariants": [
+  "note 0 \u2192 steady (first note of the part)",
+  "note 1 \u2192 TRANSITION (starts 30 ms after note 0 ends, \u2264 50 ms)",
+  "note 2 \u2192 steady (gap 470 ms > 50 ms)",
+  "expectedClasses mirrors D-54 \u00a74 exactly"
+ ],
+ "live": {
+  "contractVersion": "v0.0",
+  "frames": [],
+  "hopMs": 16,
+  "part": "BASS"
+ },
+ "reference": {
+  "contractVersion": "v1.1",
+  "notes": [
+   {
+    "cents_ref": 0,
+    "confidence": 0.9,
+    "end_s": 1.5,
+    "midi": 48,
+    "start_s": 0.5
+   },
+   {
+    "cents_ref": 0,
+    "confidence": 0.9,
+    "end_s": 2.53,
+    "midi": 50,
+    "start_s": 1.53
+   },
+   {
+    "cents_ref": 0,
+    "confidence": 0.9,
+    "end_s": 4.0,
+    "midi": 52,
+    "start_s": 3.0
+   }
+  ],
+  "part": "BASS"
+ }
+}

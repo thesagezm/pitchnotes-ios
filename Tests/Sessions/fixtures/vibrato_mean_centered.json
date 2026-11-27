@@ -1,0 +1,1036 @@
+{
+ "contractVersion": "v1.2",
+ "description": "A 5.5 Hz vibrato swinging \u00b140 cents MEAN-CENTERED about the note's pitch (C-19's vibrato model). The mean is the pitch; the swing is not an error.",
+ "environment": {
+  "latencyOffset_ms": 0,
+  "tempoScale": 1.0,
+  "transpositionSemitones": 0,
+  "tuningCents": 0
+ },
+ "fixture": "vibrato_mean_centered",
+ "invariants": [
+  "|frame cents - note cents| <= 40.5 at every voiced frame",
+  "the mean cents offset over any 220 ms window is within \u00b110 cents of the note's pitch",
+  "every deviation stays inside C-19's default vibratoExtentCents=50"
+ ],
+ "live": {
+  "contractVersion": "v0.0",
+  "frames": [
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.075585,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.512
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.109446,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.528
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.661011,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.544
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.276977,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.56
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.469458,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.576
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.868189,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.592
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.347433,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.608
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.071213,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.624
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.434521,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.64
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.929328,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.656
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.993496,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.672
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.892168,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.688
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.653724,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.704
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.063293,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.72
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.713654,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.736
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.112425,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.752
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.829212,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.768
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.638846,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.784
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.601433,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.8
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.04065,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.816
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.431089,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.832
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.246487,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.848
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.825248,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.864
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.285602,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.88
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.498286,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.896
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.11647,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.912
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.663167,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.928
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.667416,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.944
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.815611,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.96
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.060955,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.976
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.640364,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 0.992
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.990404,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.008
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.602595,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.024
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.877338,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.04
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.019114,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.056
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.988208,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.072
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.509799,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.088
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.140623,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.104
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.389748,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.12
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.870142,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.136
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.430432,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.152
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.209226,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.168
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.585312,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.184
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.048259,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.2
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.046482,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.216
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.864342,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.232
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.552869,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.248
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.918073,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.264
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.566591,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.28
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.008074,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.296
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.800094,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.312
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.694169,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.328
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.723751,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.344
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.192141,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.36
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.566343,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.376
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.32631,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.392
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.827113,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.408
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.208987,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.424
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.364796,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.44
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.96473,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.456
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.538591,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.472
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.608479,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.488
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.840886,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.504
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.162448,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.52
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.786414,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.536
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.136696,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.552
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.706227,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.568
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.908824,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.584
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.969645,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.6
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.871656,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.616
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.359525,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.632
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.001042,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.648
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.303516,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.664
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.864283,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.68
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.506801,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.696
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.343833,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.712
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.736851,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.728
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.171731,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.744
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.106406,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.76
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.843884,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.776
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.457748,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.792
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.775264,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.808
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.417784,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.824
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.898218,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.84
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.763353,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.856
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.742153,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.872
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.841316,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.888
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.342846,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.904
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.704875,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.92
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.412409,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.936
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.836434,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.952
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.138927,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.968
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.235077,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 1.984
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.812783,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.0
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.409749,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.016
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.542434,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.032
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.858428,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.048
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.258026,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.064
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.930154,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.08
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.284858,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.096
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.815226,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.112
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.947574,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.128
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.927297,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.144
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.760072,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.16
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.210566,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.176
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.858596,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.192
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.210993,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.208
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.850627,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.224
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.576334,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.24
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.474682,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.256
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 130.888758,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.272
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.299445,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.288
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.173127,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.304
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.830843,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.32
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.368588,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.336
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.63522,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.352
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.267616,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.368
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.783148,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.384
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.719087,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.4
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 133.78267,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.416
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 132.953816,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.432
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 131.492382,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.448
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 129.846345,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.464
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 128.504577,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.48
+   },
+   {
+    "confidence": 0.95,
+    "engine_id": "SWIFTF0",
+    "hz": 127.853189,
+    "lookahead_ms": 176,
+    "loudness_db": -30.0,
+    "t": 2.496
+   }
+  ],
+  "hopMs": 16,
+  "part": "BASS"
+ },
+ "reference": {
+  "contractVersion": "v1.1",
+  "notes": [
+   {
+    "cents_ref": 0,
+    "confidence": 0.9,
+    "end_s": 2.5,
+    "midi": 48,
+    "start_s": 0.5
+   }
+  ],
+  "part": "BASS"
+ }
+}
