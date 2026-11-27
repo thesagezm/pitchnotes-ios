@@ -29,6 +29,12 @@ Generates the git-committed fixture set for Tests/Spikes (all SYNTHETIC, all
                             (P-301 basicpitch-spike truth)
   bp_poly_22050.wav         8 s POLYPHONIC at 22.05 kHz: the C-F-G-C progression,
                             1.9 s chords every 2 s (P-301 basicpitch-spike truth)
+  satb5_prog_score.musicxml P-304's score fixture, DERIVED FROM BP_SATB5_PROG_CHORDS
+                            (never hand-typed): 96 BPM 4/4, one whole note per part
+                            per measure, 4 measures = 10 s — deliberately at the
+                            score's OWN tempo, different from the recording's 2.0 s
+                            chord pace, so the alignment has real work to do
+                            (C-13.1's times are pre-alignment)
 
 Truth sidecars (JSON, committed next to the WAVs — the SYNTHESIS truth, NOT a
 re-measurement; the spike asserts the model's onsets/offsets against them):
@@ -519,6 +525,144 @@ def satb5_prog_parts() -> dict[str, list[int]]:
     return parts
 
 
+# --- P-304: the score fixture ------------------------------------------------
+#
+# The score is DERIVED FROM BP_SATB5_PROG_CHORDS — the same synthesis table the
+# audio and the truth sidecar come from — so `--check` can fail the integrity
+# gate when either side drifts (a score that no longer matches the truth is
+# exactly as broken as a sidecar that no longer matches its WAV).
+#
+# THE SCORE'S OWN TEMPO IS DELIBERATELY DIFFERENT from the recording's pace
+# (2.0 s chords): 96 BPM, 4/4, one chord per measure ⇒ 2.5 s measures, 10 s
+# total vs the recording's 8 s. C-13.1's times are "at the score's own tempo,
+# BEFORE any alignment", and D-47 §9 requires the alignment to be STRICTLY
+# BETTER than the raw score — a score already at the audio's times would make
+# before == after and would (correctly) NOT be adopted. The 96 BPM numbers are
+# the prototype's measured ones (max bar error 7.0 ms, confidence 0.990145,
+# 688/688 frames vs the heuristic 672/688).
+#
+# PART ORDER: pitch order BASS, BARITONE, BARITENOR, T2, T1 → part_id P1…P5,
+# with <part-name> labels the engine's LABEL resolver maps ("Bass", "Baritone",
+# "Baritenor", "Tenor 2", "Tenor 1").
+BP_SATB5_PROG_SCORE_BPM = 96
+BP_SATB5_PROG_SCORE_DIVISIONS = 4      # a quarter = 4 divisions; a 4/4 measure = 16
+BP_SATB5_PROG_SCORE_PARTS = ["BASS", "BARITONE", "BARITENOR", "T2", "T1"]
+BP_SATB5_PROG_SCORE_LABELS = [
+    ("P1", "Bass"), ("P2", "Baritone"), ("P3", "Baritenor"),
+    ("P4", "Tenor 2"), ("P5", "Tenor 1"),
+]
+BP_SATB5_PROG_SCORE_NAME = "satb5_prog_score.musicxml"
+
+# The natural pitch spellings (the truth table has NO accidentals — this
+# raises if that ever changes, rather than guessing an enharmonic).
+_SCORE_STEP_BY_PC = {0: "C", 2: "D", 4: "E", 5: "F", 7: "G", 9: "A", 11: "B"}
+
+
+def _score_midi_to_step_octave(midi: int) -> tuple[str, int]:
+    pc = midi % 12
+    if pc not in _SCORE_STEP_BY_PC:
+        raise ValueError(f"pitch {midi} is not a natural — the score generator refuses to guess an enharmonic")
+    return _SCORE_STEP_BY_PC[pc], midi // 12 - 1
+
+
+def satb5_prog_score() -> str:
+    """The P-304 score fixture (MusicXML 3.1 text), derived from the truth table."""
+    divisions = BP_SATB5_PROG_SCORE_DIVISIONS
+    measure_divisions = 4 * divisions  # a 4/4 measure
+    tempo = BP_SATB5_PROG_SCORE_BPM
+    lines: list[str] = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<score-partwise version="3.1">',
+        '  <part-list>',
+    ]
+    for part_id, label in BP_SATB5_PROG_SCORE_LABELS:
+        lines += [
+            f'    <score-part id="{part_id}">',
+            f'      <part-name>{label}</part-name>',
+            '    </score-part>',
+        ]
+    lines.append('  </part-list>')
+    for part_index, (part_id, _label) in enumerate(BP_SATB5_PROG_SCORE_LABELS):
+        part_name = BP_SATB5_PROG_SCORE_PARTS[part_index]
+        lines.append(f'  <part id="{part_id}">')
+        for measure_index, chord in enumerate(BP_SATB5_PROG_CHORDS):
+            midi = dict(chord)[part_name]
+            step, octave = _score_midi_to_step_octave(midi)
+            lines.append(f'    <measure number="{measure_index + 1}">')
+            if measure_index == 0:
+                clef = '<clef><sign>F</sign><line>4</line></clef>' if part_name in ("BASS", "BARITONE") \
+                    else '<clef><sign>G</sign><line>2</line></clef>'
+                lines += [
+                    '      <attributes>',
+                    f'        <divisions>{divisions}</divisions>',
+                    '        <key><fifths>0</fifths></key>',
+                    '        <time><beats>4</beats><beat-type>4</beat-type></time>',
+                    f'        {clef}',
+                    '      </attributes>',
+                    f'      <sound tempo="{tempo}"/>',
+                ]
+            lines += [
+                '      <note>',
+                f'        <pitch><step>{step}</step><octave>{octave}</octave></pitch>',
+                f'        <duration>{measure_divisions}</duration>',
+                '        <voice>1</voice>',
+                '        <type>whole</type>',
+                '      </note>',
+                '    </measure>',
+            ]
+        lines.append('  </part>')
+    lines.append('</score-partwise>')
+    return "\n".join(lines) + "\n"
+
+
+def satb5_prog_score_check() -> list[str]:
+    """What `--check` verifies about the committed score (the failures)."""
+    import re
+
+    problems: list[str] = []
+    path = OUT_DIR / BP_SATB5_PROG_SCORE_NAME
+    if not path.exists():
+        return [f"{BP_SATB5_PROG_SCORE_NAME} missing"]
+    text = path.read_text()
+
+    # (1) The tempo and the divisions are the generator's own.
+    if f'<sound tempo="{BP_SATB5_PROG_SCORE_BPM}"/>' not in text:
+        problems.append(f"{BP_SATB5_PROG_SCORE_NAME}: the tempo is not {BP_SATB5_PROG_SCORE_BPM}")
+    if f"<divisions>{BP_SATB5_PROG_SCORE_DIVISIONS}</divisions>" not in text:
+        problems.append(f"{BP_SATB5_PROG_SCORE_NAME}: the divisions are not {BP_SATB5_PROG_SCORE_DIVISIONS}")
+
+    # (2) THE SEMANTIC RE-DERIVATION: every <note> must be the truth table's
+    # pitch for its part and measure — a score that no longer matches the
+    # truth fails exactly as a truth sidecar does.
+    part_blocks = re.findall(r'<part id="([^"]+)">(.*?)</part>', text, re.DOTALL)
+    if len(part_blocks) != len(BP_SATB5_PROG_SCORE_LABELS):
+        problems.append(f"{BP_SATB5_PROG_SCORE_NAME}: {len(part_blocks)} <part> blocks, expected {len(BP_SATB5_PROG_SCORE_LABELS)}")
+        return problems
+    for part_index, (part_id, block) in enumerate(part_blocks):
+        expected_id = BP_SATB5_PROG_SCORE_LABELS[part_index][0]
+        if part_id != expected_id:
+            problems.append(f"{BP_SATB5_PROG_SCORE_NAME}: part {part_index} has id {part_id!r}, expected {expected_id!r}")
+        part_name = BP_SATB5_PROG_SCORE_PARTS[part_index]
+        measures = re.findall(r'<measure number="([^"]+)">(.*?)</measure>', block, re.DOTALL)
+        if len(measures) != len(BP_SATB5_PROG_CHORDS):
+            problems.append(f"{BP_SATB5_PROG_SCORE_NAME}/{part_id}: {len(measures)} measures, expected {len(BP_SATB5_PROG_CHORDS)}")
+            continue
+        for measure_number, measure_block in measures:
+            chord = dict(BP_SATB5_PROG_CHORDS[int(measure_number) - 1])
+            expected_midi = chord[part_name]
+            pitches = re.findall(r"<pitch><step>([A-G])</step><octave>(\d+)</octave></pitch>", measure_block)
+            if len(pitches) != 1:
+                problems.append(f"{BP_SATB5_PROG_SCORE_NAME}/{part_id} m{measure_number}: {len(pitches)} notes, expected 1")
+                continue
+            step, octave = pitches[0]
+            step_pc = {s: pc for pc, s in _SCORE_STEP_BY_PC.items()}[step]
+            actual_midi = (int(octave) + 1) * 12 + step_pc
+            if actual_midi != expected_midi:
+                problems.append(f"{BP_SATB5_PROG_SCORE_NAME}/{part_id} m{measure_number}: {step}{octave} (MIDI {actual_midi}), "
+                                f"truth says MIDI {expected_midi} for {part_name}")
+    return problems
+
+
 def write_truth_json(path: Path, fixture: str, notes: list[dict],
                      extra: dict | None = None) -> None:
     """Write a deterministic truth sidecar (sorted keys, fixed formatting)."""
@@ -659,12 +803,16 @@ def regenerate() -> list[tuple[str, str]]:
         extra_fn = TRUTH_EXTRAS.get(name)
         write_truth_json(OUT_DIR / name, fixture, truth_fn(),
                          extra_fn() if extra_fn is not None else None)
+    # The P-304 score fixture — deterministic TEXT derived from the truth
+    # table (P-304: the alignment's demonstration fixture).
+    (OUT_DIR / BP_SATB5_PROG_SCORE_NAME).write_text(satb5_prog_score())
     encode_missing()
     # sha file covers every fixture on disk (WAVs byte-identical, encodes
-    # pinned, truth sidecars pinned).
+    # pinned, truth sidecars pinned, the score pinned).
     names = ([n for n, _, _, _ in ENCODED_FIXTURES]
              + [n for n, _, _ in FIXTURES]
-             + [n for n, _, _ in TRUTH_FIXTURES])
+             + [n for n, _, _ in TRUTH_FIXTURES]
+             + [BP_SATB5_PROG_SCORE_NAME])
     rows = [(name, sha256(OUT_DIR / name)) for name in names]
     SHA_FILE.write_text("".join(f"{h}  {n}\n" for n, h in rows))
     return rows
@@ -738,6 +886,20 @@ def check() -> bool:
         extra_fn = TRUTH_EXTRAS.get(name)
         if extra_fn is not None and payload.get("parts") != extra_fn():
             print(f"FAIL: {name} parts differ from the synthesis truth", file=sys.stderr)
+            ok = False
+    # The P-304 score fixture: pinned by sha AND re-derived from the truth
+    # table — a score that no longer describes the committed audio fails.
+    problems_score = satb5_prog_score_check()
+    if not problems_score:
+        path = OUT_DIR / BP_SATB5_PROG_SCORE_NAME
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if expected.get(BP_SATB5_PROG_SCORE_NAME) != actual:
+            print(f"FAIL: {BP_SATB5_PROG_SCORE_NAME} hash drift "
+                  f"(committed {expected.get(BP_SATB5_PROG_SCORE_NAME)}, actual {actual})", file=sys.stderr)
+            ok = False
+    else:
+        for problem in problems_score:
+            print(f"FAIL: {problem}", file=sys.stderr)
             ok = False
     return ok
 
