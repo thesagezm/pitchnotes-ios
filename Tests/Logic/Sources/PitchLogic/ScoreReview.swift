@@ -39,204 +39,42 @@ import EngineCore
 //     engine's `notes/<PART>.json` stays exactly what the engine wrote);
 //   · `used` is READ, never assumed.
 
-// MARK: - C-13.1 · The score-note list
+// MARK: - C-13 · The score-contract types (J-406 — the D-52 §5 typealias migration)
 
-/// One note of the score-note list (C-13.1).
-///
-/// JSON: `{ "midi", "start_s", "end_s", "measure", "part_id", "voice" }` —
-/// the property names ARE the JSON keys, so the synthesized `Codable`
-/// conformance is the contract's shape exactly.
-public struct ScoreNote: Codable, Equatable, Sendable {
-    /// Equal-tempered MIDI note number (A440, C4 = 60).
-    public var midi: Int
-    /// Seconds at the score's OWN tempo, BEFORE any alignment to the audio.
-    public var start_s: Double
-    /// Seconds at the score's own tempo. `start_s < end_s`.
-    public var end_s: Double
-    /// The measure index within the score (≥ 1).
-    public var measure: Int
-    /// The SCORE's own part identifier (e.g. `"P1"`) — NOT a C-1 `Part`
-    /// rawValue: the score does not know our part naming (C-13.1).
-    public var part_id: String
-    /// The voice within the part (≥ 1).
-    public var voice: Int
+// These eight names USED to be PitchLogic's own struct definitions — a second
+// copy of the shapes Paul's engine also owns. D-52 §4 ruled the same-name
+// option DEAD (two imported modules exporting one public name is "'X' is
+// ambiguous for type lookup"), so EngineCore defines its types under the
+// `ScoreContract.*` namespace with the IDENTICAL JSON (C-13.1/C-13.2 — pinned
+// byte-exact by Paul's EngineCore tests). This file IS the end-state
+// migration (D-52 §5): one line per type re-exports the engine's type under
+// the name the app and the tests already use — the two modules never export
+// the same public name, the app's call sites compile UNCHANGED, and the D-33
+// "one semantic, never two" residue collapses to zero. The JSON is NOT
+// re-pinned here: it is literally ONE type now, and the pin lives with the
+// definition (D-57 §2 — Jess consumes; she does not re-pin).
 
-    public init(midi: Int, start_s: Double, end_s: Double,
-                measure: Int, part_id: String, voice: Int) {
-        self.midi = midi
-        self.start_s = start_s
-        self.end_s = end_s
-        self.measure = measure
-        self.part_id = part_id
-        self.voice = voice
-    }
-}
+/// C-13.1 · One note of the score-note list.
+public typealias ScoreNote = ScoreContract.Note
 
-/// The score-note list (C-13.1).
-///
-/// JSON: `{ "contractVersion": "v1.1", "scoreNotes": [...] }`.
-public struct ScoreNoteList: Codable, Equatable, Sendable {
-    public static let currentContractVersion = "v1.1"
+/// C-13.1 · The score-note list
+/// (`{ "contractVersion": "v1.1", "scoreNotes": [...] }`).
+public typealias ScoreNoteList = ScoreContract.NoteList
 
-    public var contractVersion: String
-    public var scoreNotes: [ScoreNote]
+/// C-13.2 · One bar-map entry (the measure's span in AUDIO seconds — the map
+/// that turns D-41 §2's fixed 4.0 s phrases into BAR-ALIGNED phrases).
+public typealias BarMapEntry = ScoreContract.BarMapEntry
 
-    public init(contractVersion: String = ScoreNoteList.currentContractVersion,
-                scoreNotes: [ScoreNote]) {
-        self.contractVersion = contractVersion
-        self.scoreNotes = scoreNotes
-    }
-}
+/// C-13.2 · The alignment metadata
+/// (`{ "confidence", "used", "barMap", "method", "partMapping" }`).
+public typealias ScoreAlignment = ScoreContract.Alignment
 
-// MARK: - C-13.2 · The alignment metadata
+/// C-13.2 · The alignment file
+/// (`{ "contractVersion": "v1.1", "alignment": { ... } }`).
+public typealias ScoreAlignmentFile = ScoreContract.AlignmentFile
 
-/// One bar-map entry (C-13.2): the measure's span in AUDIO seconds.
-///
-/// This is the bar map that turns D-41 §2's fixed 4.0 s phrases into
-/// BAR-ALIGNED phrases when a score is present.
-public struct BarMapEntry: Codable, Equatable, Sendable {
-    public var measure: Int
-    public var start_s: Double
-    public var end_s: Double
-
-    public init(measure: Int, start_s: Double, end_s: Double) {
-        self.measure = measure
-        self.start_s = start_s
-        self.end_s = end_s
-    }
-}
-
-/// The alignment metadata (C-13.2).
-///
-/// JSON (inside the file's `alignment` object): `{ "confidence", "used",
-/// "barMap", "method", "partMapping" }`. `method` is OPTIONAL — absent ⇒
-/// `"unknown"`. `partMapping` is OPTIONAL — absent ⇒ NO score note is placed
-/// into any part (C-13.2 v1.1.1, D-47 §8).
-public struct ScoreAlignment: Codable, Equatable, Sendable {
-
-    public var confidence: Double
-    /// Whether this alignment was actually applied to the graded track. A
-    /// consumer MUST NOT assume `used == true` — it is READ.
-    public var used: Bool
-    public var barMap: [BarMapEntry]
-    /// Free string (e.g. `"DTW"`). Absent ⇒ `"unknown"`.
-    public var method: String?
-    /// The score's `part_id` → the C-1 part it was aligned to (C-13.2 v1.1.1).
-    ///
-    /// **OPTIONAL.** ABSENT ⇒ **no score note is placed into any part** — the
-    /// honest "unmapped" state; a consumer MUST NOT guess a mapping (D-47 §8).
-    /// The keys are the score's own `part_id` values; the values are C-1
-    /// rawValues, which are stable forever (§C-1).
-    public var partMapping: [String: Part]?
-
-    public init(confidence: Double, used: Bool, barMap: [BarMapEntry],
-                method: String? = nil, partMapping: [String: Part]? = nil) {
-        self.confidence = confidence
-        self.used = used
-        self.barMap = barMap
-        self.method = method
-        self.partMapping = partMapping
-    }
-
-    /// The method name, or `"unknown"` when the field was absent (C-13.2).
-    public var methodName: String { method ?? "unknown" }
-
-    /// The bar-map entry for a measure (nil when the map does not cover it).
-    public func bar(for measure: Int) -> BarMapEntry? {
-        barMap.first { $0.measure == measure }
-    }
-
-    /// The bar starts, in measure order — the `barStarts` the piano roll takes
-    /// to make its phrases bar-aligned (D-41 §2).
-    public var barStarts: [Double] {
-        barMap.sorted { $0.measure < $1.measure }.map(\.start_s)
-    }
-
-    // MARK: - Codable (the mapping's values are C-1 rawValues)
-
-    private enum CodingKeys: String, CodingKey {
-        case confidence, used, barMap, method, partMapping
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        confidence = try container.decode(Double.self, forKey: .confidence)
-        used = try container.decode(Bool.self, forKey: .used)
-        barMap = try container.decodeIfPresent([BarMapEntry].self, forKey: .barMap) ?? []
-        method = try container.decodeIfPresent(String.self, forKey: .method)
-        // The mapping is OPTIONAL: absent ⇒ nil ⇒ no score note enters any
-        // part (C-13.2 rule, D-47 §8).
-        if let raw = try container.decodeIfPresent([String: String].self, forKey: .partMapping) {
-            var mapping: [String: Part] = [:]
-            for (partID, rawValue) in raw {
-                // A value that is not a C-1 rawValue is IGNORED, never a
-                // reason to reject the whole alignment (the same posture as
-                // C-15's display-only preset label).
-                if let part = Part(rawValue: rawValue) {
-                    mapping[partID] = part
-                }
-            }
-            partMapping = mapping
-        } else {
-            partMapping = nil
-        }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(confidence, forKey: .confidence)
-        try container.encode(used, forKey: .used)
-        try container.encode(barMap, forKey: .barMap)
-        try container.encodeIfPresent(method, forKey: .method)
-        try container.encodeIfPresent(partMapping?.mapValues(\.rawValue), forKey: .partMapping)
-    }
-}
-
-/// The alignment FILE (C-13.2's example shape):
-/// `{ "contractVersion": "v1.1", "alignment": { ... } }`.
-public struct ScoreAlignmentFile: Codable, Equatable, Sendable {
-    public static let currentContractVersion = "v1.1"
-
-    public var contractVersion: String
-    public var alignment: ScoreAlignment
-
-    public init(contractVersion: String = ScoreAlignmentFile.currentContractVersion,
-                alignment: ScoreAlignment) {
-        self.contractVersion = contractVersion
-        self.alignment = alignment
-    }
-}
-
-/// The alignment RESULT: C-13.2's metadata, and the score-part → C-1-part
-/// mapping THAT IT CARRIES.
-///
-/// C-13.2 v1.1.1 (D-47 §8) gave the mapping a home IN THE CONTRACT JSON: the
-/// alignment object's optional `partMapping`. The mapping is therefore READ
-/// from the alignment — it travels with the file and survives persistence.
-/// **ABSENT ⇒ no score note is placed into any part**, and a consumer MUST
-/// NOT invent, infer or guess a mapping.
-public struct ScoreAlignmentResult: Equatable, Sendable {
-    public var alignment: ScoreAlignment
-    /// The score's `part_id` → the C-1 part it was aligned to (empty when the
-    /// alignment carries no mapping).
-    public var partMapping: [String: Part]
-
-    /// Builds the result from the alignment — the mapping comes FROM the
-    /// alignment's JSON, never from a guess.
-    public init(alignment: ScoreAlignment) {
-        self.alignment = alignment
-        self.partMapping = alignment.partMapping ?? [:]
-    }
-
-    /// Builds the result with an explicit mapping — the seam's escape hatch
-    /// for an aligner that has not written the mapping into the JSON yet.
-    /// The JSON's mapping WINS when it has one (D-47 §8: the mapping is
-    /// carried in the contract JSON).
-    public init(alignment: ScoreAlignment, partMapping: [String: Part]) {
-        self.alignment = alignment
-        self.partMapping = alignment.partMapping ?? partMapping
-    }
-}
+/// C-13.2's metadata + the score-part → C-1-part mapping it carries.
+public typealias ScoreAlignmentResult = ScoreContract.AlignmentResult
 
 // MARK: - The seam (the swap to P-304 lives here)
 
@@ -267,113 +105,18 @@ public protocol ScoreImportService: Sendable {
     func align(score: ScoreNoteList, detected: [Part: NoteTrack]) throws -> ScoreAlignmentResult
 }
 
-// MARK: - Agreement (D-41 §4's "improved note agreement")
+// MARK: - Agreement + the aligned notes (the same J-406 migration, one line each)
 
-/// How well two note sets agree (D-41 §4's second condition for using the
-/// score-informed track).
-///
-/// THE METRIC (deterministic, documented, symmetric):
-///   · two notes MATCH when they have the SAME MIDI and their time intervals
-///     overlap after both are extended by `tolerance_s`;
-///   · `ratio` is the matched pairs over all pairs (a Dice-style share in
-///     [0, 1]) — it counts BOTH directions, so a score that drops half the
-///     song cannot look like a perfect match.
-public struct ScoreAgreement: Equatable, Sendable {
-    /// The default match tolerance (seconds).
-    public static let defaultTolerance_s: Double = 0.25
-
-    public var matchedScoreNotes: Int
-    public var scoreNoteCount: Int
-    public var matchedDetectedNotes: Int
-    public var detectedNoteCount: Int
-
-    public init(matchedScoreNotes: Int, scoreNoteCount: Int,
-                matchedDetectedNotes: Int, detectedNoteCount: Int) {
-        self.matchedScoreNotes = matchedScoreNotes
-        self.scoreNoteCount = scoreNoteCount
-        self.matchedDetectedNotes = matchedDetectedNotes
-        self.detectedNoteCount = detectedNoteCount
-    }
-
-    /// The agreement ratio in [0, 1]. 0 when there is nothing to compare.
-    public var ratio: Double {
-        let total = scoreNoteCount + detectedNoteCount
-        guard total > 0 else { return 0 }
-        return Double(matchedScoreNotes + matchedDetectedNotes) / Double(total)
-    }
-
-    /// The agreement between a score-note list and the detected tracks.
-    public static func between(score: [ScoreNote], detected: [Part: NoteTrack],
-                                tolerance_s: Double = defaultTolerance_s) -> ScoreAgreement {
-        let detectedNotes = detected.values.flatMap(\.notes)
-        var matchedScore = Set<Int>()
-        var matchedDetected = Set<Int>()
-        for (scoreIndex, scoreNote) in score.enumerated() {
-            for (index, detectedNote) in detectedNotes.enumerated() {
-                guard scoreNote.midi == detectedNote.midi else { continue }
-                if overlaps(scoreNote.start_s, scoreNote.end_s,
-                            detectedNote.start_s, detectedNote.end_s, tolerance: tolerance_s) {
-                    matchedScore.insert(scoreIndex)
-                    matchedDetected.insert(index)
-                }
-            }
-        }
-        return ScoreAgreement(matchedScoreNotes: matchedScore.count,
-                              scoreNoteCount: score.count,
-                              matchedDetectedNotes: matchedDetected.count,
-                              detectedNoteCount: detectedNotes.count)
-    }
-
-    /// Do the two intervals overlap once both are extended by `tolerance`?
-    static func overlaps(_ aStart: Double, _ aEnd: Double,
-                         _ bStart: Double, _ bEnd: Double, tolerance: Double) -> Bool {
-        aStart - tolerance < bEnd && bStart - tolerance < aEnd
-    }
-}
-
-// MARK: - The aligned score notes
+/// D-41 §4's "improved note agreement" — the METRIC is now contract-pinned
+/// (C-17, D-58): same-MIDI integer equality (no octave fold), interval overlap
+/// with both sides extended by `tolerance_s` (default 0.25), one-to-one, a
+/// two-sided Dice ratio. Deterministic, documented, symmetric — it counts BOTH
+/// directions, so a score that drops half the song cannot look like a perfect
+/// match.
+public typealias ScoreAgreement = ScoreContract.Agreement
 
 /// One score note after it has been placed on the audio timeline.
-public struct ScoreAlignedNote: Equatable, Sendable, Identifiable {
-    /// The index of this note in the score-note list (stable identity — the
-    /// user's nudge is stored against it).
-    public var scoreIndex: Int
-    /// The C-1 part the alignment mapped it to. NIL when the score's part has
-    /// no C-1 mapping — the note is still placed in time (so the agreement is
-    /// honest) but it is NOT put into any part's track.
-    public var part: Part?
-    public var midi: Int
-    /// The score's own times (at the score's tempo).
-    public var scoreStart_s: Double
-    public var scoreEnd_s: Double
-    /// The ALIGNED time (bar-mapped), before the user's nudge.
-    public var alignedStart_s: Double
-    public var alignedEnd_s: Double
-    /// The measure the note is in.
-    public var measure: Int
-    /// The score's own part identifier.
-    public var scorePartID: String
-    /// The voice within the score's part.
-    public var voice: Int
-
-    public var id: Int { scoreIndex }
-
-    public init(scoreIndex: Int, part: Part?, midi: Int,
-                scoreStart_s: Double, scoreEnd_s: Double,
-                alignedStart_s: Double, alignedEnd_s: Double,
-                measure: Int, scorePartID: String, voice: Int) {
-        self.scoreIndex = scoreIndex
-        self.part = part
-        self.midi = midi
-        self.scoreStart_s = scoreStart_s
-        self.scoreEnd_s = scoreEnd_s
-        self.alignedStart_s = alignedStart_s
-        self.alignedEnd_s = alignedEnd_s
-        self.measure = measure
-        self.scorePartID = scorePartID
-        self.voice = voice
-    }
-}
+public typealias ScoreAlignedNote = ScoreContract.AlignedNote
 
 // MARK: - The grading reference (C-14)
 
