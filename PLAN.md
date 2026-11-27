@@ -316,13 +316,30 @@ as background prep, never blocks gate. Leto rules D10/D12 early.
 **CI jobs:** scoring `logic-tests` suite expanded; session
 fixture; `build-ipa`. **Contract:** v1.2 (SessionResult, GradingConfig, transposed note-track mapping).
 
+**M4 RULINGS (D-53…D-58, 2026-11-27 — all RULED, none re-opening M3):**
+D-53 the weights policy (`nmp.onnx` stays Tier C; sideload unaffected; a
+commercial build excludes-or-replaces; **X-401 opened** — non-gating for M4,
+GATING for L-602; no new Tier C weights in M4) · D-54 the grading confidence +
+honesty policy (confidence REPORTED, never a weight; UNASSIGNED excluded
+VISIBLY; steady vs transition reported SEPARATELY on the M3 template;
+synthetic-only labelled) · D-55 the GRDB pin (`7.6.1`, MIT, tools-6.0 manifest,
+wired by Leto, CI-proven static @92be390) · D-56 the device-demo gate policy
+(ONE human trip covering M2+M3+M4 legs; run-or-explicitly-waive; D-51 §5 stands)
+· D-57 the sequencing (P-304 merged INTO M4 @f159290; J-406 EARLY in Jess's
+sequence; P-404 filed) · D-58/L-401 **CONTRACTS v1.2 RATIFIED** (C-17 the
+adoption gate + the pinned Agreement metric — Paul's measured finding answered;
+C-18 SessionResult; C-19 GradingConfig; C-20 transposition/tempo/latency).
+
 **CARRIED IN FROM M3:** **P-304 — the MusicXML parser + the DTW aligner** (WAIVED for
-M3 by D-50, **not dropped**). **CLAIMED BY PAUL as an M4 row (@e1bd6bb, D-52)** —
-it is now `DOING` in the Paul section of the board, with its original acceptance
-criteria intact, and its end-state lane migration is **J-406** (the Jess-lane
-score-contract typealias). **D-52 §4: the engine-side score types are NAMESPACED
-under `ScoreContract.*` with the IDENTICAL JSON (C-13.1/C-13.2); `CONTRACTS.md` is
-unchanged (v1.1.1 stands).**
+M3 by D-50, **not dropped**). **DONE AND MERGED INTO M4** (paul→main #23
+@f159290, run 46063008723@a65d0f8 — D-57; its measured numbers are pinned in
+`ScoreAlignmentTests`), and its end-state lane migration is **J-406** (the
+Jess-lane score-contract typealias, lands EARLY in Jess's M4 sequence). The
+gate gains TWO rows the rulings filed: **P-404** (the C-17 corroboration branch
+in the aligner's `used` predicate — M4-gating) and **X-401** (the Tier C
+replacement path — non-gating here, GATING for L-602). **The engine-side score
+types are NAMESPACED under `ScoreContract.*` with the IDENTICAL JSON
+(C-13.1/C-13.2); `CONTRACTS.md` is now v1.2 (D-58).**
 
 | ID | Owner | Task & AC | Deps | Size |
 |---|---|---|---|---|
