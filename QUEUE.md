@@ -212,7 +212,7 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [J-403] TODO (M4) | Latency compensation: loopback calibration (play click→mic detect→offset) + a manual slider; the offset applies to the grading alignment | branch:jess | dep:P-104,J-401 | ac:the synthetic loopback offset is within ±10 ms; the slider persists per device | note:the offset feeds BOTH P-401 (the grading pitch path) and J-401 (the scoring alignment) — agree the sign convention early
 - [J-404] TODO (M4) | History & progress: a GRDB (MIT, per D4) sessions table (song/part/date/grade/metrics), the trends chart, the best/worst phrases, the session JSON export | branch:jess | dep:J-402,L-201 | ac:it persists+migrates; the trends render; a session can be deleted | note:D4's ruling — the JSON index is M2, GRDB is M4; **the history is local-only**
 - [J-405] TODO (M4) | Customization settings: tolerance, octave equivalence, vibrato, onset grace, the grade weights, the guide level, the count-in, the metronome | branch:jess | dep:J-401 | ac:all persist; the scoring reads the config; there are config-effect tests | note:the config is the `GradingConfig` of contract v1.2 (L-401) — **the settings must not be able to make the scoring dishonest**
-- [J-406] TODO (M4 — **filed by Leto at D-52, requested by Paul**) | The score-contract typealias migration: PitchLogic re-exports the engine-side score types as `public typealias ScoreNote = ScoreContract.Note` (etc., one line per type), so the two modules never export the same public name | branch:jess | dep:P-304 | ac:the EngineCore suite + `logic-tests` + `build-ipa` are green with the namespaced `ScoreContract.*` types in place; `ScoreReviewTests.swift` + `ScoreReviewView.swift` compile **UNCHANGED**; the JSON shape stays byte-identical to C-13.1/C-13.2 (pinned by a test) | note:**PAUL MEASURED WHY THIS ROW EXISTS:** two imported modules exporting the same public type name make an unqualified reference *"ambiguous for type lookup in this context"*, which would turn `logic-tests` AND `build-ipa` RED in files Paul may not touch ⇒ the same-name option is DEAD. The typealias makes it literally ONE type (D-33's "one semantic, never two" residue → zero) and the app's call sites do NOT change. **If Jess's lane is closed, the human may run this under D-48.** Until it lands, the two type sets agree BY JSON — the wire format that crosses the lane boundary.
+- [J-406] DOING (M4 — **filed by Leto at D-52, requested by Paul**) | The score-contract typealias migration: PitchLogic re-exports the engine-side score types as `public typealias ScoreNote = ScoreContract.Note` (etc., one line per type), so the two modules never export the same public name | branch:jess | dep:P-304 | ac:the EngineCore suite + `logic-tests` + `build-ipa` are green with the namespaced `ScoreContract.*` types in place; `ScoreReviewTests.swift` + `ScoreReviewView.swift` compile **UNCHANGED**; the JSON shape stays byte-identical to C-13.1/C-13.2 (pinned by a test) | note:**PAUL MEASURED WHY THIS ROW EXISTS:** two imported modules exporting the same public type name make an unqualified reference *"ambiguous for type lookup in this context"*, which would turn `logic-tests` AND `build-ipa` RED in files Paul may not touch ⇒ the same-name option is DEAD. The typealias makes it literally ONE type (D-33's "one semantic, never two" residue → zero) and the app's call sites do NOT change. **If Jess's lane is closed, the human may run this under D-48.** Until it lands, the two type sets agree BY JSON — the wire format that crosses the lane boundary.
 
 ---
 
@@ -419,6 +419,28 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
   formula throughout. **PAUL'S v1.2 ACK:** contract v1.2 (D-58) is read and
   acknowledged — C-17 implemented as P-404; C-20 implemented as the
   P-402 transform; C-18/C-19 are Jess's consumption.
+- 2026-11-27T23:01Z jess: **JESS IS BACK — J-406 CLAIMED, CONTRACTS v1.2 ACKED.**
+  (1) **ACK: CONTRACTS v1.2 @5b36be8 (D-58/L-401) — C-17 (the adoption gate +
+  the pinned Agreement metric), C-18 `SessionResult`, C-19 `GradingConfig`,
+  C-20 (transposition/tempo/latency; the latency sign, `tuningCents`
+  preservation, the C-19 bounds) — ALL READ AND IMPLEMENTED-AGAINST FROM
+  J-401 ON.** The L-006-precedent ack, one milestone late but explicit: J-401
+  consumes `tuning_cents` (D-22), the correction overlay, the C-20 latency
+  sign (`live t` vs `reference t − latencyOffset_ms`), and D-54's policy
+  (confidence REPORTED never weighted, `notAssessable` VISIBLE, steady vs
+  transition split, synthetic-labelled numbers). (2) **J-406 CLAIMED (DOING)**
+  — the D-52 §5 typealias migration: eight public typealiases in PitchLogic
+  (`ScoreNote → ScoreContract.Note` …), `ScoreReviewTests.swift` +
+  `ScoreReviewView.swift` compile UNCHANGED, JSON untouched (Paul's
+  EngineCore pin is the pin; D-57 §2 — I consume, I do not re-pin). Verify
+  loop: the docker `swift:6.0` logic-tests locally + `build-ipa` on the
+  runner (the app-target proof is CI, not the Linux loop). (3) **BRANCH
+  STATE:** `origin/jess` re-pointed 164998e → bcfb393 (rebase onto
+  origin/main was a fast-forward — my M3 tip was already merged;
+  force-with-lease, own branch only). Session checkout is the established
+  worktree `pitchnotes-ios-jess-wt` (Paul's root checkout with his in-flight
+  P-404 work is untouched). (4) NEXT after J-406: J-401 (the long pole),
+  then J-403 → J-402 → J-405 → J-404 per the mission order.
 
 - 2026-11-28T00:14Z leto: **CHECKPOINT (M4 session 3). (1) CI STATE VERIFIED:**
   the L-402 wiring run **46070286031@d0cf3c3 is GREEN 9/9** and the
