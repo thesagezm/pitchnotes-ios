@@ -449,6 +449,89 @@ Python-computed values, which the Swift test asserts **number for number**. The
 benchmark harness (P-306) reads the same artifact, so no benchmark run needs a
 model download.
 
+### 1.7 Score alignment — the MusicXML parser + the DTW aligner (P-304, CONTRACTS C-13)
+
+**THE FILES.** `Engine/Sources/EngineCore/Transcription/MusicXMLScoreParser.swift`
+(the ONE parser, D-40 §1 — Foundation `XMLParser`, note-events-only, portable),
+`ScoreContract.swift` (the engine's OWN namespaced `ScoreContract.*` types with
+the IDENTICAL JSON of C-13.1/C-13.2 — D-52 §4 ruled the same-name option DEAD:
+two imported modules exporting one public name is "ambiguous for type lookup",
+which would turn `logic-tests` + `build-ipa` red in files outside this lane;
+the end-state migration is J-406, JESS's lane), and `ScoreAligner.swift` (the
+DTW aligner + the C-13.2 metadata + the derived score-informed tracks).
+
+**THE METHOD (settled by the numeric prototype `p304_alignment_measurements.py`,
+kept OUTSIDE the repo so it can be re-run — the Swift numbers equal its
+numbers):** the audio side's chroma is the MODEL'S PER-FRAME SALIENCE
+CANDIDATES (the same candidate set P-303 assigns; 12-bin pitch-class mass,
+L2-normalised — NOT a spectrogram, no FFT in the portable core); the score
+side's chroma is pitch presence on the analysis grid (256/22050 ≈ 11.61 ms);
+a banded DTW (Sakoe-Chiba proportional band 0.15, steps (1,1)/(1,0)/(0,1),
+rolling rows + a UInt8 backpointer matrix) over cost = 1 − cosine. **The
+salience is NOT a DTW weight** (C-12). Both sides are binned to ≤ 2000 frames
+(~4 MB of backpointers for a 4-minute song; AGENTS §8's memory posture).
+
+**THE WARP IS ANCHORED TO BOTH DURATIONS** — and that choice was MEASURED, not
+guessed: a bar boundary read straight off the DTW path FAILS the ≤ 50 ms AC
+(58 ms — the path is a staircase, and its chord changeover runs ~3 frames
+early because basic-pitch's analysis window looks FORWARD); a plain global
+least-squares time-scale measures 23 ms; the chosen single time-scale whose
+least-squares fit is anchored to the S ↔ A duration correspondence
+(`scale = (Σ x_i·y_i + N·S·A) / (Σ x_i² + N·S²)`, warp(t) = scale·t, N = the
+number of path anchors) measures **7.0 ms**. The anchor is not knife-edge
+(weight N/4 still gives 688/688 at 16.5 ms). **HONEST LIMITATION: the warp is
+a SINGLE TIME-SCALE** — a recording whose tempo changes across the score is
+not modelled by the bar map (a drifting score simply fails the agreement gate
+and is not adopted; nothing hides it).
+
+**THE MEASURED DEMONSTRATION** (the committed fixture
+`Tests/Spikes/Fixtures/satb5_prog_score.musicxml` is DERIVED by
+`scripts/fixtures/gen.py` from the same truth table as the audio — 96 BPM 4/4,
+4 measures = 10 s vs the recording's 8 s; the pinned test is
+`Engine/Tests/EngineCoreTests/ScoreAlignmentTests.swift`):
+
+| Quantity | MEASURED (Swift, pinned by test) |
+|---|---|
+| max bar-map error vs the truth's chord times | **7.0 ms** (AC ≤ 50 ms) |
+| alignment confidence (mean path similarity) | **0.990145** (gate ≥ 0.70) |
+| score-informed frame accuracy | **688/688** |
+| heuristic frame accuracy (the artifact's own) | **672/688** — the score fixes EXACTLY the 16 transition frames |
+| local suite at landing | **316 tests, 0 failures** (Docker swift:6.0) |
+
+**THE USED DECISION MEASURES FALSE ON THE COMMITTED FIXTURE — BY DESIGN, AND
+STATED PLAINLY (AGENTS §11).** D-47 §9's strict rule (C-13 rule 4) is
+`used = (confidence ≥ 0.70) AND (after > before)`; on the 96 BPM fixture the
+RAW score already fully agrees with the detected notes under the contract's
+agreement metric (**before = after = 1.000000** — every score note overlaps
+its detected counterpart once both intervals are extended by the ±0.25 s
+tolerance, because the notes are seconds long), so the rule (correctly)
+refuses to adopt a score that "already matches" at the metric's tolerance and
+the reason string says so. The alignment's real improvement shows in the FRAME
+accuracy (688 vs 672); the agreement gate is the coarser contract gate. The
+ADOPTED branch is demonstrated on a 60 BPM variant of the SAME truth (built in
+the test, not committed): confidence **0.993100**, max bar error **18.3 ms**,
+before **0.615385** → after **1.000000** ⇒ **used = true**, frame accuracy
+687/688 (one boundary frame flips at this tempo — the MEASURED number).
+
+**THE GUARANTEES (C-11/C-13/D-47):** the parser never aligns by itself (D-40
+§5); the score is OPTIONAL end-to-end — no score ⇒ heuristic-only, the import
+succeeds, the reason is stated; the score-informed tracks are DERIVED and
+NEVER replace `notes/<PART>.json` on disk (C-13 rule 3); each score-informed
+note carries the ALIGNMENT's confidence (the score has no per-note confidence,
+and inventing one would be a lie); the part mapping is LABEL-based and EXPLICIT
+(an explicit `options.explicitPartMapping` wins; the alias table is normalised
+lowercase/no-punctuation and pinned by a test; "tenor" alone resolves to
+NOTHING — T1 or T2 would be a guess, D-47 §8); an unmapped score part is
+placed in time but enters NO part's track; the placement rule mirrors Jess's
+`ScoreReview.align` exactly.
+
+**HONESTY BOUNDARY:** the score fixture encodes the truth, so "the score fixes
+the transition frames" measures the MECHANISM, not real-world accuracy. There
+is NO real acapella recording in the repo (licensing) ⇒ the real-world
+score-alignment number is NOT measured and is NOT claimed anywhere. Synthetic
+fixtures only.
+
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -540,3 +623,4 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.7 | 2026-11-25 | **P-301 — the M3 note-tracking stack (§1.5 added):** the vendored basicpitch.cpp pipeline under the ONE ORT (D-39), the TWO shared rules (the chunk-aware frame → seconds mapping — the vendored frame grid drifts −188 samples/chunk ≈ 5.2 ms per second of audio, so the naive mapping is ~1.25 s late on a 4-minute song — and the RELATIVE release trim that cuts the LAST dip at 0.60 × the note's own median sustain energy), the C ABI bridge the app's Swift side calls (amplitude → confidence stays in NoteTrackBuilder, clamped and never rescaled), the vendor LINK bug P-301 surfaced (a global vs `basic_pitch::`-qualified definition — FIXED by Leto's PATCH 6 + 7 on main @bc68e0b, proven by a LINK test), and the honest limits (sub-octave bleed: 3 spurious midi 31 events at amplitude 0.36–0.40, below the 0.5 band; the CI RTF/RSS are RUNNER numbers, never device claims). The trim constant's provenance: ~1 200 candidate rules swept against ALL 21 truth notes; the shipped rule is at the family's floor (39.3 ms worst offset) and the 50 ms budget was NOT loosened to fit it. |
 | v1.8 | 2026-11-25 | **X-219 + X-220 (D-46 + the macOS link fix):** the basic-pitch WEIGHTS are re-classified **TIER C** per D-46 (the code is Apache-2.0/MIT and ship-safe; the weights inherit NC training data ⇒ STUDY-ONLY for commercial/App Store distribution, and no human sign-off can promote them — the M3 code path and sideloading are unaffected) — §1.5 gains the honest-limit bullet, the model table's basicpitch row carries the verdict, and `Models/manifest.json` + the spike's own provenance strings now say Tier C (the bytes, URL, sha256 and size are unchanged). **X-220:** the real spike now extracts the ORT pod WITH its symlinks (Python's `zipfile.extractall` flattens a symlink into a regular file holding the target AS TEXT, which left the framework's 'binary' 28 bytes and made ld fail with `unknown file type`) and links through an ORDERED strategy list — the shipped `-F <slice> -framework onnxruntime` form first — reporting which strategy linked. |
 | v1.9 | 2026-11-25 | **P-305 — §1.6 added: the v1.1 NoteTrack metadata (C-10.0/C-10.1/C-10.2, D-41) + the SwiftF0↔basic-pitch cross-check.** The v1.1 metadata (per-note `unison`/`salience`/`assignmentBand`, per-track `engineVersion`/`partPresence`/`assignmentSummary`) is ADDITIVE and OPTIONAL — **the absence rule is binding**: absent ⇒ behave exactly as before v1.1, and a v0.0 note file stays valid forever (validated under V7–V10 only). **ONE SEMANTIC, NEVER TWO:** the D-41 thresholds (0.80/0.50), the 4.0 s phrase grid, the 0.60 presence bar and the ±25 ¢ unison rule live in ONE place (`NoteTrackV11Builder` + `NoteTrackMetadata`), so Jess's app-side derivation and the engine cannot drift (the D-33 pattern). The V16/V17/V18 validators are era-scoped to v1.1 and REPORT a band/presence mismatch as a CONTRACT VIOLATION rather than repairing it silently; `assignmentBand` is stored as the RAW STRING so a fourth spelling is reported instead of crashing the decoder. The cross-check compares two INDEPENDENT estimators (SwiftF0 = monophonic tracker, segmented; basic-pitch = polyphonic transcriber) and reports **`disagreement = 1 − F1`** — measured (BENCHMARKS §5.2): monophonic **F1 1.000** (full agreement), monophonic+vibrato **F1 0.714** (the transcriber's 3 octave artefacts + 1 vibrato split), five-voice **F1 0.222** (a MONOPHONIC tracker cannot referee a five-part mix — the cross-check's own limit, on the record on purpose). The metric is implemented twice (Swift + a Python mirror) and the Swift test asserts number-for-number agreement with the committed artifact. **The metric is REPORTED, never a filter** (C-12 / AGENTS §11). |
+| v1.10 | 2026-11-27 | **P-304 — §1.7 added: the score-alignment hook (the ONE MusicXML parser + the namespaced ScoreContract types + the DTW aligner).** The parser is note-events-only (D-40 §2: rests advance the timeline, mid-part `<divisions>` honoured, `<score-timewise>` rejected, excluded-features-only ⇒ an EMPTY score + a notice, never a crash); the types are the engine's OWN `ScoreContract.*` namespace with the IDENTICAL C-13.1/C-13.2 JSON (D-52 §4 — the same-name option measured DEAD; the migration is J-406, Jess's lane); the aligner is the MEASURED design (§1.7): the model's per-frame salience candidates as the audio chroma (no FFT in the portable core), pitch-presence-only DTW (the salience is never a weight, C-12), the duration-anchored single-time-scale warp (a path-read bar map measured 58 ms ✗, plain LSQ 23 ms, the anchor 7.0 ms ✓), binned to ≤ 2000 frames a side. The committed score fixture is DERIVED from the synthesis truth by `gen.py` (96 BPM vs the recording's 2.0 s chords; `gen.py --check` re-derives it — a truth-vs-score drift FAILS the integrity gate). MEASURED + PINNED (ScoreAlignmentTests, 316/316 local): bar-map max error 7.0 ms (AC ≤ 50), confidence 0.990145, score-informed 688/688 vs heuristic 672/688 (exactly the 16 transition frames fixed); the used decision measures FALSE on the committed fixture BY DESIGN (before = after = 1.000000 — the raw score already agrees at the metric's ±0.25 s tolerance; D-47 §9's strict rule refuses) and TRUE on the 60 BPM variant (0.615385 → 1.000000, 18.3 ms, 687/688). The score-informed tracks are derived, never written over the heuristic ones (C-13 rule 3), and every score note carries the ALIGNMENT's confidence, never an invented per-note probability. Synthetic fixtures only — no real-acapella claim. |
