@@ -4,16 +4,21 @@
 > Leto ratifies every change. Within a milestone, contracts change ONLY additively;
 > breaking changes require a new version + Leto ruling + a migration task.
 >
-> Status: **v1.1.1 — RATIFIED 2026-11-25 UTC by Leto (D-47 — ADDITIVE ONLY over v1.1;
-> v1.1 is NOT re-opened and every v1.1 clause, every v1.0.3 field and every V-rule
-> V1–V18 stays exactly as it is). v1.1.1 adds: NEW **C-15** (the per-song calibration +
-> display overlay — `corrections/song.json`: part renames + per-song range overrides) ·
-> NEW **C-16** (the score-edit overlay — `corrections/score.json`: score-note time
-> offsets) · C-13.2 gains the OPTIONAL `partMapping` (score `part_id` → C-1 part) ·
-> C-11's `split` gains the OPTIONAL `confidence` override.
-> The on-disk `contractVersion` string stays `"v1.1"` for every file — the string
-> identifies the v1.1 schema FAMILY, and an additive clause inside that family does not
-> change it. Additive-only from
+> Status: **v1.2 — RATIFIED 2026-11-27 UTC by Leto (D-58 — ADDITIVE ONLY over v1.1.1;
+> v1.1.1 is NOT re-opened and every v1.1/v1.1.1 clause, every v1.0.3 field and every
+> V-rule V1–V18 stays exactly as it is). v1.2 adds: NEW **C-17** (the C-14 adoption
+> gate — v1.2 amendment: the CORROBORATION branch + the pinned `Agreement` metric —
+> answering Paul's measured C-14 finding) · NEW **C-18** (`SessionResult` — the
+> grading output, C-5's deferred schema) · NEW **C-19** (`GradingConfig` — the
+> user-tunable grading configuration, C-5's deferred config) · NEW **C-20** (the
+> transposition & tempo mapping + the latency offset + the `tuningCents`
+> preservation rule). The grading formulas stay implementation-owned (Jess's);
+> v1.2 pins the SHAPES, the ranges, the determinism requirement and the D-54
+> policy fields (D-54: confidence is reported, never a weight).
+> The on-disk `contractVersion` string stays `"v1.1"` for every pre-existing file —
+> the string identifies the v1.1 schema FAMILY, and an additive clause inside that
+> family does not change it; the NEW C-18/C-19 files carry `"v1.2"`.
+> Additive-only from
 > here on**; breaking changes require a new version + Leto ruling + a migration
 > task (AGENTS §7). Paul + Jess: ack in QUEUE LOG when you first implement against it.
 > Change log at the bottom. v0.0 (L-006,
@@ -23,7 +28,10 @@
 > v1.0.3 (L-204, D-36 — C-9.1 + rule 5 restated);
 > v1.1 (L-301, 2026-11-24 — the M3 additive delta; v1.0.3 semantics UNCHANGED);
 > v1.1.1 (D-47, 2026-11-25 — the M3 contract-gap delta: C-15 + C-16 + the C-13.2
-> `partMapping` + the C-11 split `confidence`; v1.1 semantics UNCHANGED)**.
+> `partMapping` + the C-11 split `confidence`; v1.1 semantics UNCHANGED);
+> v1.2 (D-58, 2026-11-27 — the M4 grading delta: the C-14 adoption-gate amendment +
+> the Agreement metric pin + C-18 SessionResult + C-19 GradingConfig + C-20
+> transposition/tempo/latency; v1.1.1 semantics UNCHANGED)**.
 
 Naming rules for this document:
 - **Units:** seconds fields end in `_s` (float, decimal); milliseconds in `_ms` (int);
@@ -896,7 +904,11 @@ core) and consumed by P-304's alignment and by J-304's review UI.
    adopted whenever the alignment reports confidence ≥ 0.70. **A consequence, stated
    plainly:** a score that ALREADY matches the recording exactly is **not** adopted as the
    grading reference (the alignment improved nothing ⇒ the heuristic track stays), and in
-   that case the UI **MUST say so**.
+   that case the UI **MUST say so**. **(v1.2 AMENDED by D-58/C-17: the strict rule
+   remains the IMPROVEMENT branch and is now joined by a CORROBORATION branch — a
+   score that already matches at ≥ 0.90 IS adopted. The pinned `Agreement` metric and
+   the exact gate live in C-17; the sentence above stays on file as the v1.1.1
+   reading it superseded. D-47 is not edited.)**
 
 ---
 
@@ -1018,6 +1030,255 @@ ambiguous, so the score's edits live in their own file, beside C-11's and C-15's
 
 ---
 
+## C-17 · The C-14 adoption gate — v1.2 AMENDMENT (D-58, ADDITIVE)
+
+**Why this exists (the measured finding):** P-304 landed with the v1.1.1 strict
+rule implemented exactly, and the implementation **measured** its consequence on
+the committed fixture: the raw 96 BPM score already agrees with the detected
+notes at the contract metric (`before = after = 1.000000`), so the score is
+**refused** — even though the score-informed track is measurably BETTER where it
+matters for grading (688/688 frames correct vs the heuristic's 672/688; it fixes
+exactly the 16 transition frames) and its bar map errs by 7.0 ms. The v1.1.1
+rule conflated "**did not degrade**" with "**improved nothing observable at this
+metric's granularity**" and over-refuses the case where the score is MOST
+trustworthy: near-unanimous corroboration of the engine's own hearing.
+
+**The pinned metric (was implementation-owned until v1.2 — now contractual):**
+`Agreement` between a score-note list and the detected tracks:
+
+- A **match** is: same `midi` (integer equality — **no octave fold**) AND the
+  two intervals overlap once **both** are extended by `tolerance_s`
+  (default **0.25** s; `scoreStart − tol < detectedEnd && detectedStart − tol <
+  scoreEnd`).
+- Matching is **one-to-one** (an index may be claimed once per side).
+- **`ratio = (matchedScoreNotes + matchedDetectedNotes) / (scoreNoteCount +
+  detectedNoteCount)`** — a two-sided Dice. **0 when there is nothing to
+  compare** (either side empty).
+- `before` = the RAW score's agreement with the detected notes; `after` = the
+  ALIGNED score's.
+
+**The v1.2 gate (supersedes the v1.1.1 rule 4 consequence BY REFERENCE — the
+improvement branch is unchanged):**
+
+```
+used = (confidence >= 0.70)  AND  (after >= before)  AND
+       (after > before  OR  after >= 0.90)
+```
+
+- **The IMPROVEMENT branch (`after > before`)** is D-47 §9's rule, unchanged and
+  still sufficient alone. It covers "the alignment fixed something measurable".
+- **The CORROBORATION branch (`after >= 0.90`, NEW)** covers "the score already
+  matches the engine's hearing near-unanimously at the pinned metric". The
+  score is consistent evidence; refusing it would discard its real grading
+  value (exact times, `partMapping`, the bar map) exactly when it is most
+  trustworthy. **0.90 is a ruling, not a derivation** — adoption replaces the
+  grading reference wholesale, and wholesale replacement requires
+  near-unanimous corroboration. Lowering it is a future ruling with evidence.
+- **`after >= before` (never degrades) applies to BOTH branches:** an alignment
+  that made the agreement WORSE than the raw score is never adopted, at any
+  absolute level.
+- **The zero-agreement refusal is preserved:** `after = 0` passes neither
+  branch — D-47 §9's degenerate case (`before = after = 0`) stays refused.
+- **On refusal the UI MUST say so, with the reason** (confidence short of the
+  gate, degraded agreement, or no improvement AND corroboration short of 0.90).
+
+**What this gate deliberately does NOT see:** the frame-level part-assignment
+delta (e.g. 688/688 vs 672/688). It stays a **REPORTED** metric (ENGINE.md,
+BENCHMARKS), never a gate input — a gate must be recomputable by any consumer
+from the C-13.2 JSON alone, and coupling adoption to the assignment engine
+would make it neither cheap nor portable.
+
+**Ack duty:** PAUL implements the corroboration branch (P-404: `used =
+confidence ≥ 0.70 AND after ≥ before AND (after > before OR after ≥ 0.90)` with
+tests pinning both branches and the refusal case). JESS reads `used` — she MUST
+NOT re-derive the gate. D-47 stays on file, unedited.
+
+## C-18 · `SessionResult` — NEW v1.2 (D-58 + D-54, ADDITIVE)
+
+C-5 froze the grading IO and deferred the schema to v1.2. This is that schema —
+**JSON shapes, not Swift type names** (D-52's rule: the contract pins the wire
+format; each lane owns its types). `SessionResult` is **LOCAL-ONLY** (AGENTS
+§0): it lives in J-404's GRDB history (schema = Jess's lane, D-55) and is the
+shape of the user-triggered session-JSON export. **It never leaves the device
+except through that explicit export.**
+
+```json
+{
+  "contractVersion": "v1.2",
+  "sessionId": "6f0e2b1a-…",
+  "bundleId": "sweet-hour-of-prayer-…",
+  "part": "BASS",
+  "createdAt": "2026-11-27T12:00:00Z",
+  "duration_s": 132.4,
+  "gradingReference": { "source": "heuristic", "alignmentConfidence": null },
+  "config": { "…C-19 GradingConfig, embedded by value…" },
+  "latencyOffset_ms": 0,
+  "tuningCents": 32,
+  "transpositionSemitones": 0,
+  "tempoScale": 1.0,
+  "perNote": [
+    { "noteIndex": 0, "hit": true, "centsDeviation": 8.0, "coverage": 0.93,
+      "sustain_ms": 410, "confidenceBand": "CONFIRMED", "unison": false,
+      "transitional": false, "notAssessable": false, "notAssessableReason": null }
+  ],
+  "perPhrase": [ { "phraseIndex": 0, "score": 0.87 } ],
+  "accuracy": { "overall": 0.88, "steady": 0.92, "transition": 0.41 },
+  "notAssessable": { "total": 3, "byReason": { "unassigned": 3, "noLiveFrames": 0 } },
+  "grade": "B",
+  "engineVersion": "grading-0.1.0"
+}
+```
+
+**Field rules (every field OPTIONAL except `sessionId`, `bundleId`, `part`,
+`createdAt`; absent ⇒ the consumer behaves as before v1.2 — the binding absence
+rule):**
+
+- **`perNote[]`** — one entry per GRADED reference note, ordered by `noteIndex`
+  (the index into the grading-reference `notes[]`):
+  - `{centsDeviation, coverage, sustain, hit}` — **C-5's four outputs, names
+    FROZEN as written there** (`centsDeviation` = signed cents, live minus
+    reference; `coverage` ∈ [0,1]; `sustain_ms` ≥ 0; `hit` bool).
+  - `confidenceBand` — the reference note's C-10 band
+    (`CONFIRMED`/`PROVISIONAL`/`UNASSIGNED`) or absent for a v0.0-era track.
+    **D-54 §2: the band is REPORTED here, and NEVER a scoring weight.**
+  - `unison` — the reference note's C-10 flag (D-54 §3: per-part grading, no
+    math change).
+  - `transitional` — **D-54 §4's class**: `true` when this note starts within
+    **50 ms** after the preceding note of the SAME part ends, else `false`
+    (the first note of a part is `false`).
+  - `notAssessable` / `notAssessableReason` — when `true` the note contributed
+    NO score: `reason` is one of the exact strings `"unassigned"` (C-14's
+    excluded band) or `"noLiveFrames"` (no live pitch frames covered the note).
+    **The exclusion is VISIBLE, never silent (D-54 §1).**
+- **`accuracy`** — `{overall, steady, transition}`, each ∈ [0,1] or `null` when
+  that class has no members. **BOTH classes are reported whenever an accuracy
+  number is published (D-54 §4) — the lower one is the honest one.** Every M4
+  accuracy number is **synthetic until real fixtures land, labelled synthetic
+  where it appears (D-54 §5)**.
+- **`notAssessable`** — `{total, byReason{unassigned, noLiveFrames}}`; counts
+  agree with the `perNote` flags.
+- **`gradingReference.source`** — one of `"correctionOverlay"`,
+  `"scoreInformed"`, `"heuristic"` (C-14's order, first match wins). The UI
+  MUST state which reference graded the session (C-14 §case-3 duty).
+- **`latencyOffset_ms` / `tuningCents` / `transpositionSemitones` /
+  `tempoScale`** — the session's C-20 environment, recorded so any grade is
+  **reproducible** (same inputs + config + environment ⇒ byte-identical
+  result — J-401's determinism AC).
+- **`grade`** — one of `"A"`, `"B"`, `"C"`, `"D"`, `"F"` (exact strings; no
+  `"E"`). The letter is the UI band over `accuracy.overall` (and `perPhrase`);
+  the bands' thresholds are Jess's implementation (configurable weights are in
+  C-19), with the J-401 property test (closer pitch ⇒ higher score) as the
+  standing invariant.
+- **`config`** — the C-19 `GradingConfig` **by value**: the session must record
+  what it was graded against, or a later config change rewrites history.
+
+## C-19 · `GradingConfig` — NEW v1.2 (D-58 + D-54, ADDITIVE)
+
+The user-tunable grading configuration (J-405). **"The settings must not be
+able to make the scoring dishonest"** — so every tunable is bounded, and the
+bounds are contractual:
+
+```json
+{
+  "contractVersion": "v1.2",
+  "toleranceCents": 50,
+  "octaveEquivalence": true,
+  "onsetGrace_ms": 100,
+  "vibratoExtentCents": 50,
+  "breathGate_db": -60.0,
+  "weights": { "pitch": 0.5, "timing": 0.3, "sustain": 0.2 },
+  "goldenNoteBonus": 1.1,
+  "guideLevel": "ribbon+notes",
+  "countIn_beats": 4,
+  "metronome": false
+}
+```
+
+- **`toleranceCents`** — int, **[10, 50]** (the D-22 ±50 default; the ±25/±10
+  presets are the canonical stops). A value outside the range is CLAMPED for
+  grading and reported as clamped — the UI cannot widen the tolerance past the
+  loosest preset, because a tolerance that grades every off note a hit is a
+  dishonest grade (D-12 honesty).
+- **`octaveEquivalence`** — bool, default **true** (C-5): a pitch an exact
+  octave from the reference folds to it (equivalence classes, not tolerance
+  widening — fold THEN measure cents).
+- **`onsetGrace_ms`** — int, **[80, 120]**, default 100 (C-5's 80–120 band):
+  pitch deviation in the first `onsetGrace_ms` of a note is not scored against
+  `centsDeviation` (the sung glide through a note boundary is physiology, not
+  error).
+- **`vibratoExtentCents`** — int, **[10, 100]**, default 50: vibrato is
+  measured MEAN-CENTERED (D-12/D-41's dettato lineage) — the note's mean pitch
+  is the reference for its deviation; the extent is the accepted ± swing.
+- **`breathGate_db`** — float, **[-90.0, -30.0]**, default **-60.0**: frames
+  below this `loudness_db` are UNVOICED for grading (C-2.4's loudness) — a
+  breath is silence, not a sung pitch.
+- **`weights`** — the three named components `pitch`/`timing`/`sustain`, each
+  ∈ [0,1], **summing to 1.0 ± 0.001**; a config that does not sum is rejected
+  (never silently normalized — a silently rewritten config is a lie about what
+  graded the session).
+- **`goldenNoteBonus`** — float, **[1.0, 1.5]**, default 1.1: the multiplier on
+  a golden note's contribution (C-4: UltraStar `*` notes).
+- **`guideLevel`** — one of the exact strings `"ribbon+notes"`, `"ribbon"`,
+  `"notes"`, `"none"` (how much help the session shows; a UI concern with a
+  contractual vocabulary so a session's difficulty is comparable).
+- **`countIn_beats`** — int, **[0, 8]**, default 4. **`metronome`** — bool,
+  default false.
+- **Defaults are FIXED by this contract** (the C-5 v0.0 defaults where one was
+  already fixed); `ABSENT ⇒ the default applies` for every field (a v1.2
+  config file may carry a subset).
+- **`GradingConfig` is DEVICE-LOCAL user data** (like C-6.1's calibration and
+  C-15's nudge rule): it is never written into a SongBundle and never
+  changes a bundle file. `SessionResult.config` records a COPY.
+
+## C-20 · Transposition & tempo mapping + the latency offset — NEW v1.2 (D-58, ADDITIVE)
+
+P-402 shifts the reference playback (key via `AVAudioUnitTimePitch` pitch,
+tempo via its rate — pitch-preserved) and J-403 calibrates the live-path
+latency. Grading must stay aligned through BOTH. This section fixes the
+mapping; **P-402 implements it; J-401/J-402 consume it.**
+
+1. **THE TRANSFORM IS A VIEW, NEVER A REWRITE.** The bundle's files
+   (`notes/<PART>.json`, `corrections/<PART>.json`, `corrections/score.json`,
+   `song.json`) are NEVER mutated by a key/tempo shift. The transform applies
+   AT LOAD to the **composed grading reference** (the C-14 pipeline's output),
+   uniformly:
+   - `midi' = midi + transpositionSemitones` (int; the reference's MIDI moves
+     with the key shift).
+   - `t' = start + (t − start) / tempoScale` for every time `t` in
+     `[start, start + duration/tempoScale]` — the whole composed reference
+     (note times AND phrase/bar spans) scales about the session start by the
+     SAME factor. (`tempoScale` = the playback speed factor; 1.0 = unchanged;
+     a 1.25× tempo renders a 4.0 s phrase as 3.2 s.)
+2. **THE OVERLAY TRANSFORMS IDENTICALLY TO THE TRACK IT CORRECTS.** C-11's ops
+   address the engine's `notes[]` by INDEX (unchanged by transposition — the
+   transform never adds, removes or reorders notes), and its time-carrying
+   fields (`splitAt_s`) and C-16's `offset_s` are expressed in **untransposed
+   bundle time** and are mapped by the SAME transform as the note times they
+   address. A corrected split stays corrected under any key/tempo; an overlay
+   file on disk never changes.
+3. **`tuningCents` IS PRESERVED UNDER TRANSPOSITION.** A semitone shift adds
+   exactly `100·n` cents to the reference; the recording's deviation from
+   equal temperament is invariant under it. **The reference pitch for grading
+   is: `cents(midi') + tuningCents`** — D-22's rule (the grader offsets the
+   REFERENCE, never the stored audio) composed with the shift. A faithful
+   singer of a +32c recording shifted +2 semitones is still graded against
+   +32c, not against A440. (A ±50c-clamped `tuningCents` and the J-205 user
+   override compose BEFORE this point; `SessionResult.tuningCents` records
+   the resolved value.)
+4. **THE LATENCY OFFSET — sign convention (pinned):** `latencyOffset_ms ≥ 0`
+   means **the live path is LATE by that much** (output → air → mic →
+   processing). The grader compares the live frame captured at `t` against the
+   reference at **`t − latencyOffset_ms`** (per C-18 the applied value is
+   recorded per session). **Its HOME is device-local** (J-403's calibration +
+   slider, per device — the C-6.1/C-15 device-local precedent): it is NEVER
+   written into a bundle, and C-18 records only the value APPLIED.
+5. **RANGES:** `transpositionSemitones` int **[−12, +12]**; `tempoScale` float
+   **[0.5, 2.0]**. A shift outside the range is refused by the UI, never
+   clamped into silent wrongness (a clamped key change would re-grade against
+   a key the user did not hear).
+
+---
+
 ## Change log
 
 | Version | Date (UTC) | Change | Ruled by |
@@ -1033,3 +1294,4 @@ ambiguous, so the score's edits live in their own file, beside C-11's and C-15's
 | **v1.0.3** | 2026-11-23 | **RATIFIED (L-204, D-36 — ADDITIVE, no signature changed):** NEW **C-9.1 (the M2 whole-import entry point)** — the M2 bundle-producing engine exposes `importSong(source:title:) -> ImportOutcome`, ONE call that owns decode → separate → assemble → atomic publish (all-or-nothing per C-8); the app drives an engine that has it through that call and an engine that does not (the mock) with the frozen C-3 pair. **C-9 rule 5 is RESTATED shape-agnostically: the contract requires the OUTCOME (the flow ends with a complete published bundle + `importedBundleID` set), not a particular call shape.** Rationale: the manifest needs the decode stage's facts (source hash, duration), so splitting decode from publish forces a second decode/hash and splits C-8's no-residue guarantee across two calls with the app in between. Jess's rewritten binding (probe-v5, build-ipa SUCCESS with the real classes) already implements exactly this and is the ratified shape. NO new Swift protocol required; no EngineAPI signature changed. | Leto |
 | **v1.1** | 2026-11-24 | **RATIFIED (L-301 — the M3 ADDITIVE delta; v1.0.3 semantics UNCHANGED, every v1.0.3 field and validator still valid):** NEW **C-10 (NoteTrack v1.1 metadata)** — per-note `unison` (D-41 §3), `salience` (P-302, OPTIONAL), `assignmentBand` (D-41 §1, three exact strings), per-phrase `partPresence` (D-41 §2, 4.0 s spans or bar-aligned), `assignmentSummary`, and a per-track `engineVersion` (C-10.2 — additional to the manifest's, never replacing it); **NEW V16/V17/V18** (v1.1 note fields; presence consistency; band/presence coherence — **a mismatch is a CONTRACT VIOLATION, not silently repaired**). NEW **C-11 (correction overlay)** — a SEPARATE additive file `corrections/<PART>.json` with ordered `reassign`/`delete`/`split` operations against the engine's immutable `notes[]` indices; **the heuristic track is NEVER mutated in place**, and the overlay wins at grading time (D-41 §4). NEW **C-12 (optional salience)** — absent ⇒ the consumer behaves EXACTLY as it does today; present ⇒ a DISPLAY/ANALYSIS hint, never a silent filter and never a change to what is graded. NEW **C-13 (score-note list + alignment metadata)** — the D-40 §4 list `{midi, start_s, end_s, measure, part_id, voice}` (times at the score's own tempo, BEFORE alignment) + alignment `{confidence, used, barMap, method}`; the score is OPTIONAL end-to-end and the parser NEVER aligns by itself. NEW **C-14 (grading input order)** — correction overlay → else score-informed (alignment confidence ≥ **0.70** AND agreement improved) → else heuristic (and the UI must say "heuristic" + report the CONFIRMED/PROVISIONAL/UNASSIGNED split); UNASSIGNED excluded from grading by default; unison grades per-part; absent parts DIMMED, never hidden. **C-2.3's `confidence` field is NOT redefined** — v1.1 adds `assignmentBand` beside it. **The ABSENCE RULE is binding: every new field is OPTIONAL, and absent ⇒ behave exactly as before v1.1.** | Leto |
 | **v1.1.1** | 2026-11-25 | **RATIFIED (D-47 — ADDITIVE ONLY over v1.1; v1.1 is NOT re-opened, every v1.1 clause, every v1.0.3 field and V1–V18 stay as they are):** NEW **C-15 (per-song calibration + display overlay)** — the file `corrections/song.json` beside C-11's per-part files: OPTIONAL `partRenames` (C-1 rawValue → display string) + OPTIONAL `rangeOverrides` (C-1 rawValue → `{preset}` where the **label is display-only and the bounds come from C-6.1 by part key** — **there is no second preset vocabulary** — or `{custom:{minMidi,maxMidi}}` clamped into 24…96); **the ±2 semitone nudge stays DEVICE-LOCAL (C-6.1 unchanged) and MUST NOT be written into this file (a reader MUST ignore it)**. NEW **C-16 (score-edit overlay)** — the file `corrections/score.json`: `{scoreEdits:[{scoreIndex, offset_s}]}` shifting the **score's** times (never the engine's notes; the score-informed track stays derived); **deliberately NOT a C-11 op** (the engine's and the score's index spaces are different). C-13.2 gains the OPTIONAL `partMapping` (score `part_id` → C-1 rawValue; ABSENT ⇒ no score note enters any part; a consumer MUST NOT guess a mapping) and C-13.2 rule 4 fixes **"improved note agreement" = STRICTLY BETTER (`after > before`)**. C-11's `split` gains the OPTIONAL `confidence` override + the ordered `toParts` / strictly-inside `splitAt_s` clarification. **The on-disk `contractVersion` string stays `"v1.1"`** (the v1.1 family); the absence rule still governs every new field; nothing is breaking and no migration is owed. | Leto |
+| **v1.2** | 2026-11-27 | **RATIFIED (D-58 — ADDITIVE ONLY over v1.1.1; every v1.1/v1.1.1 clause, every v1.0.3 field and V1–V18 stay as they are; the on-disk `contractVersion` string of every PRE-EXISTING file stays `"v1.1"`/`"v1.0"`; the NEW C-18/C-19 files carry `"v1.2"`):** NEW **C-17 (the C-14 adoption gate — v1.2 amendment)** — the pinned `Agreement` metric (same-MIDI integer equality, no octave fold; interval overlap with both sides extended by tolerance, default **0.25 s**; one-to-one; two-sided Dice ratio; 0 when nothing to compare) + the gate `used = confidence ≥ 0.70 AND after ≥ before AND (after > before OR after ≥ 0.90)` — D-47 §9's strict rule stays as the IMPROVEMENT branch; the NEW **CORROBORATION branch** adopts a score that already matches at ≥ 0.90 (P-304's measured finding: `before = after = 1.000000` refused a score that fixes exactly the 16 transition frames — 688/688 vs 672/688); `after ≥ before` (never degrades) binds BOTH branches; the zero-agreement refusal is preserved; the frame-level delta stays REPORTED, never a gate input. NEW **C-18 (`SessionResult`)** — the C-5-deferred grading output: per-note `{centsDeviation, coverage, sustain, hit}` (C-5's names FROZEN) + `confidenceBand`/`unison` (REPORTED, never a weight — D-54 §2/§3) + `transitional` (D-54 §4's 50 ms class) + `notAssessable`/`notAssessableReason` (`"unassigned"` | `"noLiveFrames"` — the exclusion is VISIBLE, D-54 §1) + `accuracy{overall,steady,transition}` (BOTH classes always, the lower one honest, synthetic-labelled until real fixtures) + `gradingReference.source` + the session's C-20 environment (`latencyOffset_ms`, `tuningCents`, `transpositionSemitones`, `tempoScale`) + `grade ∈ {A,B,C,D,F}` + `config` BY VALUE (determinism = J-401's AC); LOCAL-ONLY. NEW **C-19 (`GradingConfig`)** — the J-405 tunables, ALL BOUNDED: `toleranceCents [10,50]` (clamped-and-reported outside), `octaveEquivalence` (fold THEN measure), `onsetGrace_ms [80,120]`, `vibratoExtentCents [10,100]` (mean-centered), `breathGate_db [−90,−30]`, `weights{pitch,timing,sustain}` summing to 1.0 ± 0.001 (never silently normalized), `goldenNoteBonus [1.0,1.5]`, `guideLevel` four exact strings, `countIn_beats [0,8]`, `metronome`; defaults FIXED; absent ⇒ default; DEVICE-LOCAL. NEW **C-20 (transposition & tempo mapping + the latency offset)** — the transform is a VIEW, never a rewrite (bundle files never mutate; the composed C-14 reference transforms at load); `midi' = midi + transpositionSemitones`; times scale about the session start by `1/tempoScale`; **the overlay transforms IDENTICALLY to the track it corrects** (indices unchanged; `splitAt_s`/`offset_s` in untransposed bundle time mapped by the same transform); **`tuningCents` is preserved under transposition** (reference = `cents(midi') + tuningCents`; a +32c recording shifted +2 semitones grades against +32c); **latency sign pinned** (`≥ 0` = live is LATE; compare live `t` against reference `t − latencyOffset_ms`; home is DEVICE-LOCAL); ranges `transpositionSemitones [−12,+12]`, `tempoScale [0.5,2.0]` (refused outside, never clamped). | Leto |
