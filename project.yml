@@ -57,6 +57,22 @@ packages:
     # an SPM path-dependency on a missing directory hard-fails resolution
     # (that was the X-201-r1 red).
     path: Engine/ImportKit
+  GRDB:
+    # J-404's session-history store (D-4: JSON index = M2 library, GRDB = M4
+    # history). PIN RULING D-55: exactVersion 7.6.1 — the newest release whose
+    # package manifest declares swift-tools-version 6.0 (v7.7.0+ declare 6.1,
+    # which the team's local `swift:6.0` docker fast loop cannot parse); MIT
+    # (upstream license verified 2026-11-27); iOS 13+ under our 16.0 floor.
+    # The `GRDB` product is STATIC by default (the dynamic variant is a
+    # separate `GRDB-dynamic` product nothing references; the build-ipa patch
+    # step strips `type: .dynamic` lines anyway, and the otool -L verify step
+    # is the guard). SQLite links the SYSTEM libsqlite3 on Apple platforms —
+    # no bundled framework, no new @rpath surface. WIRING IS LETO'S (D-55 §2):
+    # Jess consumes via her PitchLogic Package.swift with the SAME pin spelled
+    # `exact: "7.6.1"` (the SwiftPM spelling — XcodeGen's key is
+    # `exactVersion:`); a version bump is a Leto ruling.
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: "7.6.1"
 targets:
   PitchNotesIOS:
     type: application
@@ -106,6 +122,12 @@ targets:
       # binding is on main (D-36 §7).
       - package: ImportKit
         product: ImportKit
+      # M4 (D-55): the session-history store's database layer. Declared HERE
+      # by Leto (the lane rule — Jess must not add remote deps) with the same
+      # pin Jess's PitchLogic Package.swift will declare, so SPM resolves ONE
+      # version across the graph. No app code imports it until J-404 lands.
+      - package: GRDB
+        product: GRDB
     info:
       path: App/Resources/Info.plist
       properties:
