@@ -207,12 +207,26 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [J-207] REVIEW (the runtime model download) | The URLSession fetch of the manifest entry → SHA256-verify → the cache under the existing scheme | branch:jess | dep:P-104 | ac:the download verifies and the offline path works | note:closes on the device demo (the airplane-mode leg)
 - [J-208] REVIEW (the real-engine swap seam) | The REAL engine behind a factory; the mock retained for the previews; ZERO UI change (the J-105 precedent) | branch:jess | dep:P-204 | ac:the import flow runs the real engine | note:the binding was rewritten per D-36 and it now compiles (the green build-ipa)
 - [J-210] TODO (HUMAN — rides with L-205's ONE device trip; **NOT RUN — EXPLICITLY WAIVED (D-51)**) | **THE M3 DEVICE DEMO CHECKLIST — the same device, the same weights, one trip.** The human runs it on an iPhone 12 Pro Max with the `htdemucs` weights and logs the result IN THIS ROW, verbatim: real SDA FLAC import → staged progress → cancel leaves NO partial bundle → re-import → VOCALS/INSTRUMENTAL → mixer (solo / focus mix / mute / fader glide) → seek + region loop → a detuned recording shows the tuning offset AND the ribbon reference adjusts → the 5-part roll with confidence shading → correct a note → import a hymn MusicXML → alignment improves → export UltraStar `.txt` → **play it in an external UltraStar-family player** → storage + delete → airplane mode AFTER the one-time model download. **LOG THE DEVICE RTF / PEAK RSS / THERMAL.** | ac:the checklist is walked end-to-end ON THE DEVICE, the honest assignment quality is recorded, and the device numbers are in the row | note:**NOT RUN — explicitly waived by D-51. M2 is NOT device-verified, M3 is NOT device-verified, and neither may ever be described as such. AGENTS §8's device RTF / peak RSS / thermal remain UNMEASURED.** The row STAYS OPEN so a human with the device can still run it; **no device number may ever be fabricated (D-51 §5).**
-- [J-401] TODO (M4) | Scoring engine (pure Swift): cents deviation; tolerance ±50 default (±25/±10 presets); octave-equivalence fold; onset grace 80–120 ms; sustain (continuous in-tune ms); vibrato tolerance (mean-centered ±extent); breath gate (loudness_db/RMS); per-note {hit,coverage,sustain,centsDev}; phrase aggregation; golden-note bonus; A–F grade + heatmap; configurable weights | branch:jess | dep:P-305,J-101 | ac:≥30 unit tests (silence, octave error, vibrato, late onset, breath); deterministic; a property test that closer pitch→higher score; grading MUST consume `tuning_cents` (D-22) — including a detuned-recording unit test proving a faithful singer is never marked flat | note:**THE M4 LONG POLE.** Jess's withdrawn premature J-401 claim stands — the row was opened by L-304 at the `m3` tag; **pure Swift, unit-testable, no UI** (AGENTS §1: scoring belongs to Jess)
+- [J-401] DOING (M4) | Scoring engine (pure Swift): cents deviation; tolerance ±50 default (±25/±10 presets); octave-equivalence fold; onset grace 80–120 ms; sustain (continuous in-tune ms); vibrato tolerance (mean-centered ±extent); breath gate (loudness_db/RMS); per-note {hit,coverage,sustain,centsDev}; phrase aggregation; golden-note bonus; A–F grade + heatmap; configurable weights | branch:jess | dep:P-305,J-101 | ac:≥30 unit tests (silence, octave error, vibrato, late onset, breath); deterministic; a property test that closer pitch→higher score; grading MUST consume `tuning_cents` (D-22) — including a detuned-recording unit test proving a faithful singer is never marked flat | note:**THE M4 LONG POLE.** Jess's withdrawn premature J-401 claim stands — the row was opened by L-304 at the `m3` tag; **pure Swift, unit-testable, no UI** (AGENTS §1: scoring belongs to Jess)
 - [J-402] TODO (M4) | Learner session flow: select song+part → focus mix → count-in → live ribbon over the scrolling reference → real-time hit feedback → the post-session grade (per-phrase, heatmap, sustain) → retry/loop the weak phrases | branch:jess | dep:J-401,P-401,J-203 | ac:end-to-end with the real engine; interrupt/resume works; the weak-phrase loop works | note:depends on J-401 + P-401 — the first session the user can actually sing against
 - [J-403] TODO (M4) | Latency compensation: loopback calibration (play click→mic detect→offset) + a manual slider; the offset applies to the grading alignment | branch:jess | dep:P-104,J-401 | ac:the synthetic loopback offset is within ±10 ms; the slider persists per device | note:the offset feeds BOTH P-401 (the grading pitch path) and J-401 (the scoring alignment) — agree the sign convention early
 - [J-404] TODO (M4) | History & progress: a GRDB (MIT, per D4) sessions table (song/part/date/grade/metrics), the trends chart, the best/worst phrases, the session JSON export | branch:jess | dep:J-402,L-201 | ac:it persists+migrates; the trends render; a session can be deleted | note:D4's ruling — the JSON index is M2, GRDB is M4; **the history is local-only**
 - [J-405] TODO (M4) | Customization settings: tolerance, octave equivalence, vibrato, onset grace, the grade weights, the guide level, the count-in, the metronome | branch:jess | dep:J-401 | ac:all persist; the scoring reads the config; there are config-effect tests | note:the config is the `GradingConfig` of contract v1.2 (L-401) — **the settings must not be able to make the scoring dishonest**
-- [J-406] DOING (M4 — **filed by Leto at D-52, requested by Paul**) | The score-contract typealias migration: PitchLogic re-exports the engine-side score types as `public typealias ScoreNote = ScoreContract.Note` (etc., one line per type), so the two modules never export the same public name | branch:jess | dep:P-304 | ac:the EngineCore suite + `logic-tests` + `build-ipa` are green with the namespaced `ScoreContract.*` types in place; `ScoreReviewTests.swift` + `ScoreReviewView.swift` compile **UNCHANGED**; the JSON shape stays byte-identical to C-13.1/C-13.2 (pinned by a test) | note:**PAUL MEASURED WHY THIS ROW EXISTS:** two imported modules exporting the same public type name make an unqualified reference *"ambiguous for type lookup in this context"*, which would turn `logic-tests` AND `build-ipa` RED in files Paul may not touch ⇒ the same-name option is DEAD. The typealias makes it literally ONE type (D-33's "one semantic, never two" residue → zero) and the app's call sites do NOT change. **If Jess's lane is closed, the human may run this under D-48.** Until it lands, the two type sets agree BY JSON — the wire format that crosses the lane boundary.
+- [J-406] REVIEW (M4 — **filed by Leto at D-52, requested by Paul**) | The score-contract typealias migration: PitchLogic re-exports the engine-side score types as `public typealias ScoreNote = ScoreContract.Note` (etc., one line per type), so the two modules never export the same public name | branch:jess | dep:P-304 | build:46080653148@eb6a6f6 (dispatched 2026-11-27T23:1xZ — logic-tests runs BOTH the EngineCore suite AND PitchLogic; build-ipa is the app-target proof) | ac:the EngineCore suite + `logic-tests` + `build-ipa` are green with the namespaced `ScoreContract.*` types in place; `ScoreReviewTests.swift` + `ScoreReviewView.swift` compile **UNCHANGED**; the JSON shape stays byte-identical to C-13.1/C-13.2 (pinned by a test) | note:**PAUL MEASURED WHY THIS ROW EXISTS:** two imported modules exporting the same public type name make an unqualified reference *"ambiguous for type lookup in this context"*, which would turn `logic-tests` AND `build-ipa` RED in files Paul may not touch ⇒ the same-name option is DEAD. The typealias makes it literally ONE type (D-33's "one semantic, never two" residue → zero) and the app's call sites do NOT change. **If Jess's lane is closed, the human may run this under D-48.** Until it lands, the two type sets agree BY JSON — the wire format that crosses the lane boundary.
+  **JESS HANDOFF (2026-11-27): LANDED @eb6a6f6.** One line per type, exactly D-52 §5's
+  shape — the eight struct definitions in `ScoreReview.swift` became
+  `public typealias ScoreNote = ScoreContract.Note` (+ `ScoreNoteList`, `BarMapEntry`,
+  `ScoreAlignment`, `ScoreAlignmentFile`, `ScoreAlignmentResult`, `ScoreAgreement`,
+  `ScoreAlignedNote` = `ScoreContract.AlignedNote`); `ScoreImportError` +
+  `ScoreImportService` + `GradingReference` + `ScoreReview` (the consumer logic) are
+  untouched and stay Jess-owned. `ScoreReviewTests.swift` + `ScoreReviewView.swift` +
+  `MockScore.swift` compiled UNCHANGED (zero edits). **Local docker proof:
+  `swift test` (swift:6.0) on Tests/Logic = 383/383 GREEN @eb6a6f6** — the
+  JSON-exact decode/round-trip tests passing unchanged against the ScoreContract types
+  IS the C-13.1/C-13.2 JSON-identity behavior (Paul's byte-exact pin stays with the
+  definition per D-57 §2; nothing re-pinned). Net −257 lines (45+/302−). CI run
+  46080653148@eb6a6f6 covers EngineCore + PitchLogic + build-ipa; the row flips DONE on
+  its green.
 
 ---
 
@@ -419,6 +433,25 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
   formula throughout. **PAUL'S v1.2 ACK:** contract v1.2 (D-58) is read and
   acknowledged — C-17 implemented as P-404; C-20 implemented as the
   P-402 transform; C-18/C-19 are Jess's consumption.
+- 2026-11-27T23:15Z jess: **J-406 → REVIEW @eb6a6f6 (build 46080653148 dispatched,
+  not waited on) + J-401 CLAIMED.** The typealias migration landed exactly as
+  D-52 §5 specified: eight `public typealias` lines replace the duplicate struct
+  definitions in `PitchLogic/ScoreReview.swift`; `ScoreReviewTests.swift`,
+  `ScoreReviewView.swift` and `MockScore.swift` compile UNCHANGED (zero edits —
+  the AC is met literally). Local docker `swift:6.0` loop: **Tests/Logic 383/383
+  GREEN @eb6a6f6** (the JSON-exact decode/round-trip tests pass unchanged against
+  the ScoreContract types — the wire format is one type now; Paul's byte-exact
+  pin stays with the definition, D-57 §2). CI 46080653148@eb6a6f6 will prove
+  EngineCore + PitchLogic + build-ipa (the app-target compile is a runner fact,
+  not a Linux-loop fact); the row flips DONE on its green — no FIX filed unless
+  it goes red. **LETO WIRING NOTE: J-401's suite starts landing in
+  `Tests/Logic/Tests/PitchLogicTests/Scoring/` (your declared L-402 home) on the
+  next push(es) — the scoring-suite gate should start counting real `func test`s
+  then; no other CI change is asked for.** J-401 (DOING): the pure-Swift scoring
+  engine consuming `tuning_cents` (D-22), the C-11/C-14 composed reference, the
+  C-20 environment (latency sign, transposition/tempo, tuningCents preservation),
+  and emitting the C-18 `SessionResult` with D-54's honesty fields.
+
 - 2026-11-27T23:01Z jess: **JESS IS BACK — J-406 CLAIMED, CONTRACTS v1.2 ACKED.**
   (1) **ACK: CONTRACTS v1.2 @5b36be8 (D-58/L-401) — C-17 (the adoption gate +
   the pinned Agreement metric), C-18 `SessionResult`, C-19 `GradingConfig`,
