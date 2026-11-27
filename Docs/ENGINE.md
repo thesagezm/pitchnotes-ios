@@ -560,6 +560,49 @@ score-alignment number is NOT measured and is NOT claimed anywhere. Synthetic
 fixtures only.
 
 
+### 1.8 The grading pitch path — the session batch + the estimator split (P-401, CONTRACTS v1.2 C-20 §4)
+
+**THE FILES.** `Engine/Sources/EngineCore/Pitch/GradingPitchPath.swift`
+(`GradingPitchBatch` + `GradingPitchSource`), tested by
+`EngineCoreTests/GradingPitchPathTests.swift` (5 tests).
+
+**THE TWO-ESTIMATOR RULE (D-7/D-22, restated where it bites):** GRADING reads
+ONLY `GradingPitchBatch` — the post-hoc SwiftF0 batch (176 ms lookahead is
+fine post-hoc); THE LIVE RIBBON keeps the causal engine (RibbonEngine, D-7 —
+the Swift MPM portable path + the vendored sevagh hot path) and NEVER feeds a
+grade. The ribbon's frames are window-end causal estimates; its lag is part
+of the live path's END-TO-END latency that J-403's loopback calibration
+MEASURES — no batch/ribbon compensation is invented in code.
+
+**THE BUNDLE TIMELINE (the alignment AC, stated honestly):** the batch's t=0
+IS the bundle timeline's t=0 BY CONSTRUCTION — the caller decodes the SAME
+staged audio whose decoded clock wrote `song.json`'s `duration_s` and from
+which the separator cut the stems (C-2). No offset is applied or invented;
+the P-203 MP3 padding finding (decoded duration up to ~51 ms longer than
+ffmpeg's) is uniform across mix, stems and manifest — ONE clock, three
+consumers. The ONE offset that applies to a session is J-403's measured
+loopback latency, consumed exactly as C-20 §4 pins it (≥ 0 = live is LATE;
+compare live t against reference t − offset) — and the batch's
+`frames(forLiveTime:latencyOffset_ms:)` agrees EXACTLY with
+`PlaybackTransform.referenceTime` (one semantic, two surfaces, D-33; pinned
+by test).
+
+**THE MEASURED ESTIMATOR BIAS (the "alignment offset stable" AC):** the same
+synthetic audio through the batch (grid-position semantics) and the ribbon
+(window-end causal semantics) puts the ribbon's first voiced frame **exactly
+16.000 ms after the batch's — at BOTH onset positions tested** (0.496 vs
+0.512 s; 1.248 vs 1.264 s) — ONE HOP, perfectly stable, never drifting with
+the onset's position. That is the estimator-semantics difference (window end
+vs grid position), not a device latency; the device's real end-to-end number
+is the D-56 demo leg's, like every §8 number.
+
+**THE HONESTY BOUNDARY:** the onset test's mock voices exactly when the
+hop's peak clears the silence gate (the model's own postprocessor rule) — it
+measures TIMING/alignment, not pitch accuracy. The model's accuracy numbers
+stay in BENCHMARKS §3 (runner-labelled). No real-acapella grading number is
+claimed anywhere (D-54 §5: synthetic until real fixtures land).
+
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -652,4 +695,5 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.8 | 2026-11-25 | **X-219 + X-220 (D-46 + the macOS link fix):** the basic-pitch WEIGHTS are re-classified **TIER C** per D-46 (the code is Apache-2.0/MIT and ship-safe; the weights inherit NC training data ⇒ STUDY-ONLY for commercial/App Store distribution, and no human sign-off can promote them — the M3 code path and sideloading are unaffected) — §1.5 gains the honest-limit bullet, the model table's basicpitch row carries the verdict, and `Models/manifest.json` + the spike's own provenance strings now say Tier C (the bytes, URL, sha256 and size are unchanged). **X-220:** the real spike now extracts the ORT pod WITH its symlinks (Python's `zipfile.extractall` flattens a symlink into a regular file holding the target AS TEXT, which left the framework's 'binary' 28 bytes and made ld fail with `unknown file type`) and links through an ORDERED strategy list — the shipped `-F <slice> -framework onnxruntime` form first — reporting which strategy linked. |
 | v1.9 | 2026-11-25 | **P-305 — §1.6 added: the v1.1 NoteTrack metadata (C-10.0/C-10.1/C-10.2, D-41) + the SwiftF0↔basic-pitch cross-check.** The v1.1 metadata (per-note `unison`/`salience`/`assignmentBand`, per-track `engineVersion`/`partPresence`/`assignmentSummary`) is ADDITIVE and OPTIONAL — **the absence rule is binding**: absent ⇒ behave exactly as before v1.1, and a v0.0 note file stays valid forever (validated under V7–V10 only). **ONE SEMANTIC, NEVER TWO:** the D-41 thresholds (0.80/0.50), the 4.0 s phrase grid, the 0.60 presence bar and the ±25 ¢ unison rule live in ONE place (`NoteTrackV11Builder` + `NoteTrackMetadata`), so Jess's app-side derivation and the engine cannot drift (the D-33 pattern). The V16/V17/V18 validators are era-scoped to v1.1 and REPORT a band/presence mismatch as a CONTRACT VIOLATION rather than repairing it silently; `assignmentBand` is stored as the RAW STRING so a fourth spelling is reported instead of crashing the decoder. The cross-check compares two INDEPENDENT estimators (SwiftF0 = monophonic tracker, segmented; basic-pitch = polyphonic transcriber) and reports **`disagreement = 1 − F1`** — measured (BENCHMARKS §5.2): monophonic **F1 1.000** (full agreement), monophonic+vibrato **F1 0.714** (the transcriber's 3 octave artefacts + 1 vibrato split), five-voice **F1 0.222** (a MONOPHONIC tracker cannot referee a five-part mix — the cross-check's own limit, on the record on purpose). The metric is implemented twice (Swift + a Python mirror) and the Swift test asserts number-for-number agreement with the committed artifact. **The metric is REPORTED, never a filter** (C-12 / AGENTS §11). |
 | v1.10 | 2026-11-27 | **P-304 — §1.7 added: the score-alignment hook (the ONE MusicXML parser + the namespaced ScoreContract types + the DTW aligner).** The parser is note-events-only (D-40 §2: rests advance the timeline, mid-part `<divisions>` honoured, `<score-timewise>` rejected, excluded-features-only ⇒ an EMPTY score + a notice, never a crash); the types are the engine's OWN `ScoreContract.*` namespace with the IDENTICAL C-13.1/C-13.2 JSON (D-52 §4 — the same-name option measured DEAD; the migration is J-406, Jess's lane); the aligner is the MEASURED design (§1.7): the model's per-frame salience candidates as the audio chroma (no FFT in the portable core), pitch-presence-only DTW (the salience is never a weight, C-12), the duration-anchored single-time-scale warp (a path-read bar map measured 58 ms ✗, plain LSQ 23 ms, the anchor 7.0 ms ✓), binned to ≤ 2000 frames a side. The committed score fixture is DERIVED from the synthesis truth by `gen.py` (96 BPM vs the recording's 2.0 s chords; `gen.py --check` re-derives it — a truth-vs-score drift FAILS the integrity gate). MEASURED + PINNED (ScoreAlignmentTests, 316/316 local): bar-map max error 7.0 ms (AC ≤ 50), confidence 0.990145, score-informed 688/688 vs heuristic 672/688 (exactly the 16 transition frames fixed); the used decision measures FALSE on the committed fixture BY DESIGN (before = after = 1.000000 — the raw score already agrees at the metric's ±0.25 s tolerance; D-47 §9's strict rule refuses) and TRUE on the 60 BPM variant (0.615385 → 1.000000, 18.3 ms, 687/688). The score-informed tracks are derived, never written over the heuristic ones (C-13 rule 3), and every score note carries the ALIGNMENT's confidence, never an invented per-note probability. Synthetic fixtures only — no real-acapella claim. |
-| v1.11 | 2026-11-28 | **P-404 — the used decision moves to the v1.2 gate (C-17, D-58).** §1.7's used-decision paragraph rewritten: `used = confidence ≥ 0.70 AND after ≥ before AND (after > before OR after ≥ 0.90)` — the IMPROVEMENT branch (D-47 §9) unchanged and still sufficient alone, the NEW CORROBORATION branch (`after ≥ 0.90`) adopting a score that already matches the engine's hearing near-unanimously (0.90 is a ruling, not a derivation; the default lives in `ScoreAlignerOptions.corroborationAgreementThreshold`), `after ≥ before` on BOTH branches, the ZERO-AGREEMENT refusal preserved. The decision is exposed as `ScoreAligner.AdoptionDecision` (`improvement`/`corroboration`/`lowConfidence`/`degraded`/`insufficient` — C-17's contractual refusal vocabulary) via `ScoreAligner.decideAdoption`; Jess reads `used`, never re-derives the gate. **The committed 96 BPM fixture flips `used` → TRUE via the corroboration branch** (before = after = 1.000000 — the v1.1.1 rule's MEASURED over-refusal is exactly what C-17 fixed); the 60 BPM variant stays TRUE via the improvement branch; the three refusal kinds are pinned directly on the predicate AND end-to-end (the zero-agreement end-to-end case: a confident alignment of a score sharing NO MIDI with the detection stays refused). The frame-accuracy delta (688 vs 672) stays REPORTED, never a gate input. The Agreement metric itself is unchanged (C-17 pins what P-304 already implemented). |
+
+| v1.12 | 2026-11-28 | **P-401 — §1.8 added: the grading pitch path (the session batch + the estimator split).** GRADING reads ONLY the `GradingPitchBatch` — the post-hoc SwiftF0 stream on the C-2.4 grid over the bundle's OWN decoded audio (t=0 IS the bundle timeline by construction — one clock for mix/stems/manifest, the P-203 padding finding uniform across all three); the live ribbon keeps the causal engine (D-7) and never feeds a grade (its lag is inside J-403's MEASURED loopback calibration, never modelled in code). The batch consumes J-403's offset exactly as C-20 §4 pins the sign and agrees EXACTLY with `PlaybackTransform.referenceTime` (D-33, pinned by test). **THE MEASURED ESTIMATOR BIAS: exactly 16.000 ms — one hop, stable at BOTH onset positions tested** (batch 0.496/ribbon 0.512; batch 1.248/ribbon 1.264) — window-end vs grid-position semantics, not a device latency. The grid-integrity rule (a frame off the 16 ms grid is a contract violation) and byte-equal determinism are pinned; the onset test's mock measures TIMING, not pitch accuracy (accuracy stays in BENCHMARKS §3, runner-labelled). EngineCore 340/340 local. |
