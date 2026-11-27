@@ -113,21 +113,45 @@ Task row format (one line per task, keep it short):
   withdrew her premature J-401 claim, and the board is now seeded from PLAN.md's
   M4 table verbatim). **M3 is CLOSED** — the code gate is green, `m3` is tagged,
   the waivers are D-50 (P-304) + D-51 (the device demo).
-- Contract: **v1.2** — `SessionResult`, `GradingConfig`, the transposed note-track
-  mapping (L-401's job).
-- CI jobs: the scoring `logic-tests` suite expanded; the synthetic
-  sung-stream-vs-reference session fixture; `build-ipa` (L-402's job).
+- **M4 RULINGS ARE IN (D-53…D-58, 2026-11-27):** the weights policy (D-53 —
+  `nmp.onnx` stays Tier C; sideload unaffected; a commercial build excludes or
+  replaces; **X-401 opened**, non-gating for M4, GATING for L-602), the grading
+  confidence + honesty policy (D-54 — confidence is REPORTED, never a weight;
+  UNASSIGNED excluded VISIBLY; steady vs transition reported separately on the
+  M3 template; synthetic-only labelled), the GRDB pin (D-55 — 7.6.1, MIT, wired
+  by Leto), the device-demo gate policy (D-56 — ONE human trip covering the
+  M2+M3+M4 legs together; run-or-explicitly-waive; never fabricate), the
+  sequencing (D-57 — P-304 merged INTO M4 @f159290, J-406 EARLY in Jess's
+  sequence, P-404 filed), and **CONTRACTS v1.2 RATIFIED (D-58/L-401 @5b36be8:
+  C-17 the adoption gate + the pinned Agreement metric — Paul's measured finding
+  answered; C-18 SessionResult; C-19 GradingConfig; C-20
+  transposition/tempo/latency)**.
+- Contract: **v1.2** — RATIFIED @5b36be8. Additive over v1.1.1; every
+  pre-existing file's on-disk `contractVersion` string is unchanged.
+- CI: **the L-402 session fixtures are LANDED and ALWAYS blocking** (11
+  scenarios in `Tests/Sessions/`, deterministic generator + integrity gate with
+  a verified negative, @d0cf3c3); the **scoring-suite gate is RED BY DESIGN
+  until J-401 lands** (`continue-on-error` now; flipped to BLOCKING at L-403);
+  `build-ipa` is green WITH GRDB 7.6.1 linked (run 46067454452@92be390 — the
+  D-55 static-link proof: otool -L shows system deps only).
 - **CARRIED IN FROM M3: [P-304]** — the MusicXML parser + the DTW aligner.
-  **WAIVED for M3 by D-50, NOT dropped** — and **CLAIMED BY PAUL as an M4 row
-  (@e1bd6bb, D-52)**: it is now `DOING` in the Paul section below, with its
-  original acceptance criteria intact. **Its end-state lane migration is
-  [J-406]** (the Jess-lane score-contract typealias).
-- **Merge Gate M4 (PLAN.md, verbatim):** J-401…J-405, P-401…P-403, L-401…L-403
-  `DONE`; scoring logic-tests green; spikes green; build-ipa green; contracts v1.2.
+  **DONE AND MERGED INTO M4** (paul→main #23 @f159290, evidence run
+  46063008723@a65d0f8; D-57). Its follow-up **[P-404]** (the C-17 corroboration
+  branch in the aligner's `used` predicate) is filed below and is M4-GATING.
+  **Its end-state lane migration is [J-406]** (the Jess-lane score-contract
+  typealias) and lands EARLY in Jess's M4 sequence (D-57 §2).
+- **Merge Gate M4 (PLAN.md verbatim + the D-57/D-58 additions):** J-401…J-405,
+  P-401…P-403, L-401…L-403, the carried **P-304 (DONE)**, **J-406** and
+  **P-404** `DONE`; scoring logic-tests green (the scoring-suite gate flipped to
+  BLOCKING); spikes green (`basicpitch-spike` + `bench-v2` stay BLOCKING;
+  `pitch-bench` v1 stays informational); build-ipa green; contracts v1.2.
 - **Device Demo M4 (PLAN.md, verbatim):** full learn-a-part loop: pick Bass →
   focus mix → count-in → sing → live hits → grade A–F + heatmap → retry weak
   phrase → view history trend → shift key +2 → re-sing → grade still aligned. Log
-  latency compensation result.
+  latency compensation result. **Per D-56: ONE human trip is asked for, covering
+  the M2+M3+M4 legs together (J-210 + L-205 + this loop); at gate time the leg
+  is RUN (logged verbatim in the rows) or EXPLICITLY WAIVED with the human ask
+  outstanding; no device number may ever be fabricated (D-51 §5 stands).**
 
 ### M4 board — PLAN.md's M4 table, VERBATIM
 
@@ -155,7 +179,7 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [P-302] DONE (merged to `main`) | Multi-f0 salience: the per-frame pitch posterior + the peak picker + the C ABI's salience output + the five-voice SATB fixture | branch:paul | dep:P-301 | build:local EngineCore 245/245 | ac:synthetic SATB fixture shows 3–5 peaks; peak-picking unit test | note:the peak options are `minimum_salience 0.3`, local-max window 2 semitones
 - [P-303] DONE (merged to `main` @c3f245e) | Voice assignment engine: the frame DP + the no-crossing ordering + the subset handling + the unison rule + the temporal beam Viterbi + D-41 §1's confidence | branch:paul | dep:P-302,P-105 | build:45897044406@4c77d52 (green snapshot) + the gate run 45910600056@b24ce9a | ac:≥70 % of the frames correctly assigned on the clean synthetic fixture (Paul measured 344/344 = 1.000); the Swift test asserts the Swift engine agrees with the committed Python mirror | note:PAUL'S CODE + THE SWIFT TEST are both on `main` (`VoiceAssignment.swift`, the committed artifact `Tests/Spikes/Fixtures/assignment_satb5.json` with TWO cases: the frozen chord 344 frames + the MOVING progression 688 frames). **THE MISSING PIECE HAD BEEN THE FIXTURE, NOT THE CODE** — `satb5_prog_22050.wav` was registered in `gen.py` but never committed; **LETO GENERATED AND COMMITTED IT UNDER D-48 @4c77d52** (352,844 B, sha 5ea7b042…). The moving progression's macro part accuracy is **0.988953** — but its **STEADY** frames are **1.000** and its **TRANSITION** frames are **0.4074074074074074**: **both** are reported (`Docs/BENCHMARKS.md` §5.3). **This is a SYNTHETIC number and NOT a real-acapella claim.**
 - [P-304] DONE (on `origin/paul` @9438212 + the FIX @a65d0f8 — the M4 lane snapshot, merged by Leto INTO M4 per D-52 §7) | Score-informed alignment hook: the MusicXML parser + the DTW aligner + the `score.musicxml` bundle entry | branch:paul | dep:P-303,L-303 | build:46063008723@a65d0f8 **GREEN (all 9 jobs incl. logic-tests + build-ipa)** · 46060847003@9438212 (RED — logic-tests only: the C-13.2 JSON pin tripped a MEASURED macOS-vs-Linux double repr difference, 0.82 prints "0.81999999999999995" on macOS and "0.82" on Linux; fixed @a65d0f8) · 46055748633@bd4b5a5 (GREEN, the WIP files) | ac:synthetic score+audio aligns ≤50 ms; alignment improves assignment on synthetic | ac-met:**MEASURED + PINNED (EngineCore 316/316 locally, docker swift:6.0 — the 300 baseline + 16 new ScoreAlignmentTests):** bar-map max error **7.0 ms** (the AC is ≤ 50 ms), the alignment confidence **0.990145** (≥ D-41 §4's 0.70 gate), the score-informed frames **688/688** vs the heuristic's **672/688** — the score fixes EXACTLY the 16 transition frames; the ADOPTED branch of D-47 §9 demonstrated on a 60 BPM variant of the same truth (before 0.615385 → after 1.000000 ⇒ used=TRUE, 18.3 ms, 687/688). **SYNTHETIC fixtures only — not a real-acapella claim.** | note:**WHAT EXISTS (all on `origin/paul`):** `Engine/Sources/EngineCore/Transcription/ScoreAligner.swift` (the audio chroma = the MODEL'S salience candidates — no FFT in the portable core; the pitch-presence-only banded DTW, the salience is never a weight, C-12; the MEASURED duration-anchored warp — a path-read bar map is 58 ms and FAILS the AC, plain LSQ 23 ms, the anchor 7.0 ms; binned ≤ 2000 frames a side) + the WIP pair from bd4b5a5 (`MusicXMLScoreParser.swift`, the namespaced `ScoreContract.*` types with the IDENTICAL JSON, D-52 §4) + the fixture `Tests/Spikes/Fixtures/satb5_prog_score.musicxml` **DERIVED by `scripts/fixtures/gen.py` from `BP_SATB5_PROG_CHORDS`** (96 BPM 4/4, 4 measures = 10 s vs the recording's 8 s) with the `--check` re-derivation (a truth-vs-score drift FAILS the integrity gate — verified with a deliberate drift) + `Engine/Tests/EngineCoreTests/ScoreAlignmentTests.swift` + `Docs/ENGINE.md` §1.7 + the v1.10 row. **THE FIX @a65d0f8:** the C-13.2 exact-JSON pin's confidence example is now the binary-exact 0.75 (both Foundations print it identically) — the contract pins keys and values, not a platform's double formatting; the measurement is recorded in the test's comment. **THE HONEST FINDING (AGENTS §11): the used decision measures FALSE on the committed fixture BY DESIGN — before = after = 1.000000: the raw 96 BPM score ALREADY agrees with the detected notes at the contract metric's ±0.25 s tolerance, so D-47 §9's strict rule refuses (C-13 rule 4's own consequence clause) — the previous chat's handoff expected `after > before` here, MEASUREMENT says otherwise, and the aligner's `reason` string states it plainly. The alignment's real improvement shows in the FRAME accuracy (688 vs 672).** The score-informed tracks are DERIVED and never replace `notes/<PART>.json` on disk (C-13 rule 3); every score note carries the ALIGNMENT's confidence, never an invented per-note probability. **P-306 NOTE (the brief requires it explicit): I did NOT add the score-alignment fixture as a third part-aware input to `Tests/Spikes/bench_v2.py` — that file and the `bench-v2` job are LETO's on `main` (the D-48 lane note); the fixture is committed and deterministic, so adding it is a one-file change in Leto's lane whenever Leto wants it.** **STILL OPEN:** J-406 (JESS's typealias migration — until it lands the two type sets agree BY JSON); the bar map's single-time-scale limitation (a tempo-drifting score simply fails the agreement gate and is not adopted — stated in ENGINE.md §1.7 and in the aligner's header); **no real acapella recording exists in the repo (licensing) ⇒ NO real-world score-alignment number is claimed**; D-50's M3 waiver stands (P-304 ships INTO M4, not M3).
-- [P-305] DONE (merged to `main`) | NoteTrack v1.1 metadata: the per-note confidence, the part-presence, the unison flags, the engineVersion + the V16/V17/V18 validators + the SwiftF0 cross-check | branch:paul | dep:P-301,P-101 | build:the cross-check artifact + its Swift mirror test | ac:schema v1.1 ratified; the cross-check metric logged | note:the artifact `crosscheck_swiftf0_vs_basicpitch.json` carries the measured disagreement per fixture
+- [P-404] TODO (M4-GATING — **filed by Leto at D-57 §4**) | The aligner's `used` predicate gains C-17's corroboration branch: `used = confidence ≥ 0.70 AND after ≥ before AND (after > before OR after ≥ 0.90)` | branch:paul | dep:P-304,L-401 | build:— | ac:tests pin BOTH branches (improvement AND corroboration) AND the refusal case (no improvement AND after < 0.90); the committed fixture's `used` flips to TRUE with the `reason` string updated; the 60 BPM variant stays TRUE; EngineCore + `logic-tests` + `build-ipa` green | note:**D-58/C-17 is the ruling this implements** — the v1.1.1 strict rule over-refuses a perfectly-corroborating score (Paul's own measured finding: before = after = 1.000000 refused a score that fixes the 16 transition frames). One predicate + tests; the C-13.2 JSON gains NOTHING (agreementBefore/after already carry the numbers). Until it lands, the shipped predicate is the v1.1.1 rule and must not be described as the v1.2 rule. **The bench-v2 score-fixture extension remains PAUL's optional claim** (his Tests/Spikes lane — the file was authored by Leto under D-48, the directory is his).
 - [P-306] DONE (merged to `main` @2d6f50e + 70e10c9) | Benchmark harness v2: the note onset/offset F1, the part-aware macro F1 (PawCT-style), the multi-f0 P/R/F1 → the BENCHMARKS v2 honest report | branch:main (Leto's D-48 work) | dep:P-303,P-304 | build:45906329503@2d6f50e (green) + the gate run 45910600056@b24ce9a | ac:the report committed; the real part-aware F1 stated WITHOUT overclaim; the part-AGNOSTIC and the part-AWARE metrics reported SEPARATELY, citing dettato's Dagstuhl ChoirSet row (onset 55.9 / frame 82.0 / offset 44.4) as the external part-agnostic reference | ac-met:**the harness `Tests/Spikes/bench_v2.py` + `Tests/Spikes/bench_report_v2.json` are committed; the `bench-v2` CI job is GREEN and is now BLOCKING; the human-readable report is `Docs/BENCHMARKS.md` §5.3 (written by Leto under D-48, in Paul's lane).** Part-agnostic: frame F1 0.91465 (frozen) / 0.927265 (moving); note-event onset F1 1.000 / 0.974359, offset F1 1.000 / 0.947368. Part-aware: macro part accuracy 1.000 / 0.988953, with the STEADY 1.000 vs TRANSITION 0.4074074074074074 split. **SYNTHETIC fixtures only — not a real-acapella claim; no promise of perfect 5-way separation (AGENTS §11).**
 - [P-307] TODO (M4/M6 seed, non-gating for M3) | Port dettato transcriber to ONNX+Swift — Apache-2.0 CODE, TIER B WEIGHTS (D-45): ship only with the recorded risk + the human sign-off, NEVER described as clean | branch:paul | dep:P-301,P-208 | ac:parity within the documented tolerance; the benchmark report committed; the RTF/RSS logged honestly | note:D-45's soundfont-provenance caveat is binding; the grouper/drums weights are NC and banned
 - [P-308] TODO (seed) | Retune-before-transcribe (D-22): consume `tuning_cents`; retune IN MEMORY only; the stored audio is never mutated | branch:paul | dep:P-207,P-307 | ac:a detuned synthetic (±35c) transcribes at ≈true-pitch quality; the times map back within tolerance
@@ -202,8 +226,9 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
 - [L-303] DONE | DECISIONS: D10 (the MusicXML parser), D12 (the assignment confidence thresholds), the score alignment is OPTIONAL-not-required for grading | branch:leto | dep:— | ac:the rulings recorded in DECISIONS.md | ac-met:D-39, D-40, D-41, D-42 recorded
 - [L-304] DONE | **THE M3 CLOSE: merge `jess`→`main` + `paul`→`main`; flip `basicpitch-spike` AND `bench-v2` to blocking; finish or explicitly waive P-303/P-304/P-306; fire the gate run; tag `m3`; open M4; seed its board** | branch:leto | dep:all M3 | build:45910600056@b24ce9a (the gate run, GREEN with both flipped jobs blocking) | ac:the gate run is green with ALL the blocking jobs; the `m3` tag exists; the M4 board is seeded in the FRESH `QUEUE.md` | ac-met:**the merges are in (#21 @c944d79, #22 @c3f245e, + the P-306 harness @2d6f50e); `basicpitch-spike` AND `bench-v2` lost `continue-on-error` @8563920; the gate run 45910600056@b24ce9a is GREEN (9 jobs, 8 blocking); `m3` is TAGGED; M4 is OPEN below with PLAN.md's M4 table verbatim (J-401…J-405, P-401…P-403, L-401…L-403) + the carried P-304; the waivers are D-50 (P-304) + D-51 (the device demo).**
 - [L-211] DONE | **THE M3 CLOSE — under D-48.** Land D-47/D-48 + the MusicXML UTI; merge the two lanes; flip the two CI jobs to blocking; finish or explicitly waive the remaining M3 rows VISIBLY; fire the gate run; tag `m3`; open M4 + seed its board | branch:leto | dep:— | build:45910600056@b24ce9a | ac:all of L-304 | ac-met:**same work as L-304 (the same session) — the umbrella row is kept so the D-48 deviation stays findable. The lane deviation is bounded to M3 and ENDS with the `m3` tag: the M4 board is seeded with NORMAL ownership restored (AGENTS §1/§12).**
-- [L-401] TODO (M4) | Contract v1.2: `SessionResult`, `GradingConfig`, the transposed note-track mapping | branch:leto | dep:J-401,P-402 | ac:ratified; both lanes ack | note:the M4 contract — additive where possible (D-47's precedent); the transposed-note-track mapping is the piece P-402's key/tempo shift needs
-- [L-402] TODO (M4) | CI: the scoring `logic-tests` expanded; the synthetic sung-stream-vs-reference session fixture; `build-ipa` green | branch:leto | dep:J-401 | ac:green | note:the M4 CI — the scoring suite is pure Swift and needs no hardware (AGENTS §6's `logic-tests` job); the session fixture is the new artifact
+- [L-401] DONE | Contract v1.2: `SessionResult`, `GradingConfig`, the transposed note-track mapping | branch:leto | dep:J-401,P-402 | ac:ratified; both lanes ack | ac-met:**RATIFIED @5b36be8 (D-58)** — C-17 (the C-14 adoption gate: the pinned `Agreement` metric + the corroboration branch, answering Paul's measured finding), C-18 (`SessionResult`), C-19 (`GradingConfig`), C-20 (transposition/tempo mapping + the latency offset + `tuningCents` preservation). **ADDITIVE over v1.1.1** (D-47's precedent): every pre-existing file's on-disk `contractVersion` string unchanged; the JSON shapes are pinned, NOT Swift type names (D-52's rule). **ACKS: the L-006 precedent applies — if a lane does not ack in its next LOG line, the ratification stands and the ack is recorded OUTSTANDING; the milestone does not stall for it.**
+- [L-402] DOING (M4) | CI: the scoring `logic-tests` expanded; the synthetic sung-stream-vs-reference session fixture; `build-ipa` green | branch:leto | dep:J-401 | build:the L-402 wiring @d0cf3c3 (the run is in flight — record it when checked at the next natural checkpoint) | ac:green | note:**THE WIRING IS LANDED (@d0cf3c3):** (1) the 11-scenario session fixtures + the deterministic generator with an integrity gate and a VERIFIED NEGATIVE (`Tests/Sessions/`, ALWAYS blocking in `logic-tests`); (2) the scoring-suite gate — RED BY DESIGN until J-401 lands (`continue-on-error` now; **FLIPPED TO BLOCKING at L-403**), counting ≥30 `func test` in `Tests/Logic/Tests/PitchLogicTests/Scoring/` (the suite home is declared in its README); (3) `build-ipa` green WITH GRDB 7.6.1 linked (run 46067454452@92be390 — the D-55 static-link proof). **The row completes when J-401's suite exists (the gate goes green) and the flip is done at L-403.** The app-target compile proof is `build-ipa` on macOS — a Linux/docker green alone is NOT an app-target green (the M2 ManifestV1 seam-bug lesson); J-406 must land before Jess's first UI row touching score types (D-57 §2).
+- [X-401] TODO (owner: Leto — **filed by D-53 §3**; non-gating for M4, **GATING for L-602**) | The commercial replacement path for the Tier C basic-pitch weights: evaluate (i) the dettato transcriber port (P-307, Tier B — recorded risk + human sign-off), (ii) a clean retrain on X-301's synthetic SATB (Tier A by construction), (iii) exclusion (the feature does not ship commercially); rule which path ships | branch:leto | dep:D-53,X-301,P-307 | ac:a DECISIONS ruling naming the path; it never calls the `nmp.onnx` weights clean | note:the standing honesty rail applies — the basic-pitch `nmp.onnx` weights are TIER C (D-46) with NO sign-off path; M4 is unaffected (sideload/research); only a COMMERCIAL build must exclude-or-replace.
 - [L-403] TODO (M4) | M4 merge + Device Demo; tag `m4`; open M5; seed queue | branch:leto | dep:all M4 | ac:the demo is logged (sing bass part→grade→history→shift key +2→re-sing→still aligned); `m4` is tagged | note:the M4 close — **the M4 device demo is a HUMAN leg; D-51's precedent applies (it may be waived ONLY explicitly, and no device number may be fabricated)**
 - [X-302] TODO (STRETCH, non-gating) | The per-singer model evaluation memo (SepACap / jaCappella MRDST / HTDemucs fine-tune on synthetic data); the license verification; the post-v1 pursue/drop ruling | branch:leto | dep:X-301 | ac:a memo in DECISIONS; no shipping without the license + the benchmark
 - [L-602] TODO | **THE APP STORE MEMO — it has a REAL GAP (D-46):** the basic-pitch `nmp.onnx` weights are TIER C ⇒ a commercial build MUST exclude them or name a replacement (the X-301 synthetic-SATB path, or a differently-trained transcription model) | branch:leto | dep:X-217,D-46 | ac:the memo names the excluded weights or the replacement; it never calls them clean | note:**the Tier B sign-off (htdemucs + dettatto) is a separate, still-outstanding human action**
@@ -228,25 +253,104 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
   NC-trained weight set; it blocks COMMERCIAL DISTRIBUTION only, not `m3` and not
   sideloading. The in-app licenses screen (J-FIX-105) states the NC provenance and
   NEVER says "clean".
-- **[P-304] — WAIVED FOR M3 (D-50), CARRIED INTO M4, NOW DONE ON `origin/paul` @9438212.**
-  The score-alignment ENGINE side (the MusicXML parser + the DTW aligner) did
-  not ship in M3 — Jess's J-304 consumer shipped the honest
-  `parserUnavailable` state and **nothing claimed score alignment works in M3**.
-  As an M4 row it is now **DONE** (measured + pinned: 7.0 ms bar map,
-  confidence 0.990145, 688/688 vs 672/688 — see the Paul section's row); it
-  merges INTO M4 by Leto (D-52 §7), and **the used decision on the committed
-  fixture is honestly FALSE by D-47 §9's strict rule** (the raw score already
-  agrees at the metric's tolerance — the row and ENGINE.md §1.7 state it).
-- **[L-602] — THE APP STORE MEMO HAS A REAL GAP (D-46):** a **commercial** build
-  MUST **exclude the basic-pitch `nmp.onnx` weights** or **name a replacement**
-  (the X-301 synthetic-SATB path, or a differently-trained transcription model).
-  This blocks **commercial distribution only** — not the M3/M4 code path, not
-  `m3`, not `m4`, not sideloading. The memo must **never** call those weights
-  clean.
+- **[P-304] — WAIVED FOR M3 (D-50), CARRIED INTO M4, NOW DONE AND MERGED
+  (paul→main #23 @f159290, D-57).** The score-alignment ENGINE side (the
+  MusicXML parser + the DTW aligner) did not ship in M3 — Jess's J-304
+  consumer shipped the honest `parserUnavailable` state and **nothing claimed
+  score alignment works in M3**. As an M4 row it is **DONE and MERGED**
+  (measured + pinned: 7.0 ms bar map, confidence 0.990145, 688/688 vs 672/688 —
+  see the Paul section's row). Its follow-up **[P-404]** (the C-17
+  corroboration branch, D-58) is filed and M4-gating.
+- **[L-602] — THE APP STORE MEMO HAS A REAL GAP (D-46/D-53):** a **commercial**
+  build MUST **exclude the basic-pitch `nmp.onnx` weights** or **name a
+  replacement**. **[X-401] is OPENED (D-53 §3)** for that replacement path —
+  non-gating for M4, **GATING for L-602**. This blocks **commercial
+  distribution only** — not the M3/M4 code path, not `m3`, not `m4`, not
+  sideloading. The memo must **never** call those weights clean.
+- **THE M4 DEVICE LEG (D-56):** ONE human trip is asked for, covering the
+  M2+M3+M4 legs together (J-210's checklist + L-205's + the M4 learn-a-part
+  loop, on the same iPhone 12 Pro Max with the 84 MB `htdemucs` weights). At
+  gate time the leg is **RUN (logged verbatim in the rows)** or **EXPLICITLY
+  WAIVED with the human ask outstanding** — D-51's precedent and its
+  no-fabrication rule stand unchanged. J-206 / J-207 / L-205 / J-210 stay
+  OPEN.
 
 ---
 
 ## LOG (append-only, everyone; newest at TOP)
+
+- 2026-11-27T23:40Z leto: **M4 IS UNDER WAY — THE RULINGS ARE IN (D-53…D-58), CONTRACTS v1.2 IS RATIFIED, P-304 IS MERGED INTO M4, THE GRDB PIN IS WIRED AND CI-PROVEN, AND THE L-402 CI IS LANDED.** To BOTH LANES — read this before your next claim:
+  **(1) PAUL→MAIN #23 @f159290 — P-304 IS IN M4** (D-57 §1; evidence run
+  46063008723@a65d0f8, 9/9 green; the merge was conflict-free because main had
+  not moved since Paul branched). **PAUL: take main's P-304 row on rebase (it
+  is DONE with your handoff note); your follow-up is [P-404]** — C-17's
+  corroboration branch in the aligner's `used` predicate
+  (`confidence ≥ 0.70 AND after ≥ before AND (after > before OR after ≥ 0.90)`),
+  M4-gating, filed at D-57 §4. **YOUR MEASURED FINDING WAS RIGHT AND IS NOW
+  CONTRACT:** D-58/C-17 pins the `Agreement` metric you implemented (same-MIDI,
+  no octave fold, ±0.25 s extended-overlap, one-to-one, two-sided Dice) and
+  adds the corroboration branch (`after ≥ 0.90`) beside D-47 §9's unchanged
+  improvement branch, with `after ≥ before` (never degrades) on both and the
+  zero-agreement refusal preserved. The frame-level 688-vs-672 delta stays
+  REPORTED, never a gate input. D-47 is NOT edited (append-only).
+  **(2) CONTRACTS v1.2 @5b36be8 (D-58/L-401), ADDITIVE over v1.1.1:** C-18
+  `SessionResult` (per-note `{centsDeviation, coverage, sustain, hit}` — C-5's
+  names FROZEN — + `confidenceBand`/`unison`/`transitional`/
+  `notAssessable{Reason}` + `accuracy{overall,steady,transition}` +
+  `gradingReference.source` + the C-20 environment + `grade ∈ {A,B,C,D,F}` +
+  `config` BY VALUE; LOCAL-ONLY), C-19 `GradingConfig` (every tunable BOUNDED —
+  `toleranceCents [10,50]` clamped-and-reported, `weights` must sum to 1.0,
+  never silently normalized), C-20 (the transform is a VIEW, never a rewrite;
+  the overlay maps IDENTICALLY to the track it corrects; **`tuningCents` is
+  PRESERVED under transposition** — a +32c recording shifted +2 grades against
+  +32c; **latency sign PINNED: ≥ 0 = live is LATE, compare live t against
+  reference t − latencyOffset_ms**; home DEVICE-LOCAL). **JESS: ack v1.2 in
+  your next LOG line (the L-006 precedent — an un-acked ratification stands,
+  the ack is recorded OUTSTANDING).**
+  **(3) THE D-54 GRADING POLICY (binding on J-401/J-402/J-405):** confidence is
+  REPORTED, NEVER a scoring weight; UNASSIGNED notes are excluded VISIBLY
+  (`notAssessable`, reason "unassigned" — a grade from a subset must never
+  look like a grade of the whole); PROVISIONAL grades at full weight; unison
+  grades per-part (C-14 unchanged); steady vs transition reported SEPARATELY
+  (50 ms note-boundary window) on the M3 template — the lower number is the
+  honest one; every M4 accuracy number is SYNTHETIC-labelled until real
+  fixtures land.
+  **(4) THE WEIGHTS POLICY (D-53):** `nmp.onnx` stays TIER C (no sign-off path
+  exists); M4 proceeds for sideload/research unchanged; a COMMERCIAL build
+  excludes Tier C weights or names a replacement; **[X-401] is OPENED** for
+  that path (non-gating for M4, GATING for L-602); no new Tier C weights in
+  M4. The Tier B sign-off (htdemucs + dettato) stays outstanding, human-owned.
+  **(5) THE GRDB PIN (D-55): `exactVersion 7.6.1`** — MIT verified upstream;
+  the newest release whose manifest is tools-6.0 (v7.7.0+ are tools-6.1,
+  which the `swift:6.0` docker loop cannot parse); **WIRED BY ME in
+  project.yml @92be390, and run 46067454452@92be390 IS GREEN — build-ipa
+  resolved GRDB, linked it, and the otool -L verify shows system deps only
+  (the LiveContainer static-link proof). JESS: add GRDB to YOUR
+  Tests/Logic/Package.swift with the SAME pin spelled `exact: "7.6.1"` when
+  J-404 starts (XcodeGen's key is `exactVersion:`, SwiftPM's is `exact:` —
+  measured); never invent a second version; a bump is a Leto ruling.**
+  **(6) THE DEVICE LEG (D-56):** ONE human trip covering the M2+M3+M4 legs
+  together; at gate time it is RUN (logged verbatim) or EXPLICITLY WAIVED
+  with the human ask outstanding; no device number may ever be fabricated
+  (D-51 §5 stands). Pushed for, surfaced at L-403, not nagged.
+  **(7) THE L-402 CI IS LANDED @d0cf3c3:** the 11-scenario session fixtures
+  (steady, detuned ±35c, octave error, vibrato, late onset vs the grace,
+  breath/silence/uncovered-span, the D-54 confidence/unison policy, a C-11
+  overlay, the C-20 transform, the steady/transition class) live in
+  `Tests/Sessions/` with a deterministic generator whose `--check` is ALWAYS
+  blocking and carries a VERIFIED NEGATIVE; the scoring-suite gate is RED BY
+  DESIGN until J-401 lands (continue-on-error now, BLOCKING at L-403) and
+  counts ≥30 `func test` in `Tests/Logic/Tests/PitchLogicTests/Scoring/` —
+  **JESS: that directory (declared in its README) is where J-401's suite
+  lives, and the fixtures are #filePath-readable from your tests (the
+  ImportKit pattern; no Package.swift resource declaration needed).** The
+  app-target compile proof is build-ipa on macOS — a Linux/docker green alone
+  is NOT an app-target green (the M2 ManifestV1 seam-bug lesson). J-406 lands
+  BEFORE your first UI row touching score types (D-57 §2) — J-401's pure-Swift
+  core is NOT blocked by it.
+  **(8) BOARD HYGIENE:** the dangling duplicated lead-in line of the D-49 LOG
+  entry (a rotation-rebuild residue) is removed in this commit; every other
+  LOG line is untouched.
 
 - 2026-11-27T20:45Z paul: **P-304 IS GREEN ON CI — run 46063008723@a65d0f8, ALL 9 JOBS SUCCESS (logic-tests + build-ipa + all the blocking spikes). The row stands DONE; the only remaining step is LETO's M4 lane merge (D-52 §7).** The one red leg (46060847003, logic-tests only) was the C-13.2 exact-JSON pin tripping the MEASURED macOS-vs-Linux double repr difference (0.82 → "0.81999999999999995" vs "0.82"); the pin now uses the binary-exact 0.75 and the measurement is recorded in the test's comment. Board lesson stands: an exact-JSON pin must use binary-exact doubles (or compare parsed structure) — an inexact double's repr is platform surface, not contract surface.
 - 2026-11-27T20:22Z paul: **P-304 FIX PUSHED @a65d0f8 — run 46060847003@9438212 came back RED on `logic-tests` ONLY (the other 8 jobs, incl. `build-ipa`, GREEN).** The failure is the C-13.2 exact-JSON pin: **a MEASURED macOS-vs-Linux Foundation difference** — macOS %.17g-prints the INEXACT double 0.82 as `"0.81999999999999995"` where Linux prints `"0.82"`, so my exact-string pin of that value was not portable (the Linux Docker loop I verify with could never see it — the honest limit of a local loop). The contract pins the JSON's KEYS and VALUES, not a platform's double formatting, so the pin now uses the binary-exact 0.75 (both Foundations print it identically); the measurement is recorded in the test's comment; **no engine type, no contract surface touched**; the local suite is 16/16 again. The fix run is 46063008723@a65d0f8 (in flight); the P-304 row carries every run URL. Lesson for the board: **an exact-JSON pin must use binary-exact doubles (or compare parsed structure) — an inexact double's repr is platform surface, not contract surface.**
@@ -397,8 +501,6 @@ _— M0/M1/M2 rows are closed: see `Docs/QUEUE-ARCHIVE.md` (search by task ID) �
   TRAINING data; it blocks **COMMERCIAL DISTRIBUTION only**, not `m3` and not
   sideloading) and the **L-602 App Store memo gap** (a commercial build MUST
   exclude the basic-pitch weights or name a replacement).
-- 2026-11-27T00:0xZ leto: **THE BOARD IS ROTATED (D-49).** The human owner asked for
-
 - 2026-11-27T00:0xZ leto: **THE BOARD IS ROTATED (D-49).** The human owner asked for
   a fresh `QUEUE.md` — *"the old one seems to be filled"* (983 lines / 598 KB, the
   closed M0/M1/M2 history dominating). **The closed history is archived VERBATIM in
