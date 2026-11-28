@@ -121,6 +121,19 @@ jobs:
           cd Engine/MicCapture
           swift test 2>&1 | tee ../miccapture-tests.log
 
+      # X-402 (P-402, BLOCKING — Paul's exact spec, the X-011b pattern):
+      # PlaybackKit's 3 smoke tests — config math + time-mapping unit facts
+      # + the D-33 transform identity; NO audio hardware, no engine start.
+      # Apple-only (AVAudioEngine bindings): the Linux docker loop CANNOT
+      # build it. Wired AFTER the paul→main #24 merge landed
+      # Engine/PlaybackKit on main, so the FIRST wiring run is its macOS
+      # compile proof; a red there is a FIX task, not a design flaw.
+      - name: Run PlaybackKit package tests (X-402 BLOCKING)
+        run: |
+          set -o pipefail
+          cd Engine/PlaybackKit
+          swift test 2>&1 | tee ../playbackkit-tests.log
+
       # X-204 (P-203 ac leg, BLOCKING where present): ImportKit format-import
       # tests — 3 lossless BIT-IDENTITY vs ffmpeg reference (loud XCTSkip if
       # ffmpeg missing, never fake-pass), 1 MP3 tolerance (CoreAudio vs ffmpeg
@@ -234,6 +247,14 @@ jobs:
         with:
           name: miccapture-tests-log
           path: miccapture-tests.log
+          if-no-files-found: warn
+
+      - name: Upload PlaybackKit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playbackkit-tests-log
+          path: playbackkit-tests.log
           if-no-files-found: warn
 
       - name: Upload ImportKit test log

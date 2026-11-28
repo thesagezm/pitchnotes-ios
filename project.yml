@@ -46,6 +46,19 @@ packages:
     # Engine only); static by default. Mic permission string already in the
     # Info.plist above.
     path: Engine/MicCapture
+  PlaybackKit:
+    # Paul's Apple-only reference-playback wrapper (P-402; wired per X-402 —
+    # Paul's exact spec, the MicCapture/X-011 precedent): per-part
+    # AVAudioPlayerNode → per-lane AVAudioUnitTimePitch (pitch =
+    # transposition × 100 cents; rate = tempoScale, pitch-preserved),
+    # sample-accurate A/B loop, host-time-anchored position clock. The
+    # PORTABLE C-20 core (PlaybackTransform + VarispeedPitchCompensation)
+    # stays in EngineCore and is Linux-tested. No new remote deps (path-dep
+    # on the parent Engine package); static by default. Wired AFTER the
+    # paul→main #24 merge landed Engine/PlaybackKit on main — the first
+    # wiring run is the compile proof (X-209's ordering lesson: a path-dep
+    # on a directory absent from main hard-fails SPM resolve).
+    path: Engine/PlaybackKit
   ImportKit:
     # Paul's Apple-only import kit (P-204; package boundary answered in
     # Docs/ENGINE.md v1.4 — EXTEND Engine/ImportKit, product name `ImportKit`,
@@ -128,6 +141,12 @@ targets:
       # version across the graph. No app code imports it until J-404 lands.
       - package: GRDB
         product: GRDB
+      # M4 (X-402, P-402): the reference playback player enters the app
+      # target — Jess's J-402 session flow consumes it (the focus-mix
+      # playback, the weak-phrase audio loop region). Local path-package
+      # per Paul's exact X-402 spec; no remote deps.
+      - package: PlaybackKit
+        product: PlaybackKit
     info:
       path: App/Resources/Info.plist
       properties:
