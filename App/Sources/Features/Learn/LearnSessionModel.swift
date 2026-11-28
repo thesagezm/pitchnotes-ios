@@ -17,10 +17,18 @@ import EngineCore
 //     C-20 environment the grader consumes;
 //   · the grading itself is J-401's `SessionGrader` (C-18 SessionResult out).
 //
-// THE AUDIO SEAM: the device layer (the mic pipeline P-104 feeds) calls
-// `ingest(frame:)` per grading-grade frame (engine_id SWIFTF0, C-6.0). The
-// DEMO path ingests a synthetic perfect-ish stream built from the composed
-// reference (labelled DEMO — it is not a human singing, AGENTS §11).
+// THE SESSION CLOCK (the J-402 wire-in): a `SessionFrameProducing` source
+// stamps frames on the SESSION-LOCAL grid (t = 0 at run start, frozen on
+// pause); the reference begins at t = countIn_s (beats are 1 s — the ticker's
+// convention). The model translates frames to REFERENCE-ALIGNED time at
+// ingest — exactly once, here — so the pure machine, the markers and the
+// grader all share one clock (the C-20 latency mapping applies on top).
+//
+// THE DEMO PATH renders DemoSinger's synthetic stream (labelled DEMO at
+// every UI surface — it is not a human singer, AGENTS §11). THE REAL PATH
+// consumes the C-6.0 causal ribbon behind `RibbonSessionFrameProducer`;
+// P-401's aligned SwiftF0 batch becomes the grade input at `grade()`'s
+// documented seam when it lands (zero model/UI change).
 //
 // MAIN-THREAD RULE (the J-402 AC): frames arrive on the audio queue and are
 // handed over non-blocking; grading runs detached and lands on the main
@@ -29,6 +37,9 @@ import EngineCore
 @MainActor
 final class LearnSessionModel: ObservableObject {
 
+    /// The §5.4 tail: the session ends this long after the last note ends.
+    static let tail_s = 1.0
+
     // MARK: Published session state
 
     @Published private(set) var phase: SessionPhase = .ready
@@ -36,6 +47,9 @@ final class LearnSessionModel: ObservableObject {
     @Published private(set) var phraseBanner: String?
     @Published private(set) var result: SessionResult?
     @Published private(set) var errorMessage: String?
+    /// An interruption (call/backgrounding) paused this session — the banner
+    /// says so; the user resumes explicitly.
+    @Published private(set) var pausedByInterruption = false
 
     // The READY sheet's controls (§5.4).
     @Published var selectedPart: Part
@@ -66,15 +80,28 @@ final class LearnSessionModel: ObservableObject {
         GradingReferenceInfo(source: .heuristic)
     private var resolvedLatency_ms: Int = 0
 
-    /// The live frames of the CURRENT run (buffered from COUNT-IN too, per
-    /// §5.4 — mic captured, not graded; the grader maps them by note span, so
-    /// buffering early frames is harmless and keeps the stream contiguous).
+    /// The live frames of the CURRENT run, reference-aligned (t = 0 at the
+    /// reference's start; the count-in offset was removed at ingest).
     private var liveFrames: [PitchFrame] = []
-    /// The reference timeline's zero, in live-clock time (the transport's
-    /// start moment). Frame `t` values are live-clock seconds.
-    var sessionLiveStart_s: Double = 0
+    /// The newest ingested frame's reference-aligned time (the restart-phrase
+    /// rewind target). nil while no frame has arrived (e.g. no mic).
+    private var latestFrameT_s: Double?
 
-    /// The metronome/count-in ticker (COUNT-IN only; 1 Hz = 1 beat).
+    // The run's clock facts (re-derived per run — start AND retry).
+    private var countInDuration_s: Double = 0
+    private var referenceEnd_s: Double = 0
+    private var tailFired = false
+    /// The ticker's ACTIVE-phase seconds (frozen on pause — the session clock).
+    private var activeSeconds = 0
+
+    /// The live-frame source of the current run (demo synth or the real
+    /// ribbon). nil until start/retry arms it, or when the mic failed.
+    private var frameProducer: SessionFrameProducing?
+    /// Interruption/route observers (J-102's controller reused for its
+    /// notification glue; a session model owning one is cheap and confined).
+    private let sessionAudio = AudioSessionController()
+    /// The 1 Hz session ticker: count-in beats during COUNT-IN, the tail
+    /// deadline check during ACTIVE. Paused with the session.
     private var ticker: Timer?
 
     init(rawTracks: [Part: NoteTrack], bundleDirectory: URL?,
@@ -126,6 +153,15 @@ final class LearnSessionModel: ObservableObject {
         gradingReference = GradingReferenceInfo(source: .heuristic)
     }
 
+    /// The C-20 environment every consumer shares (markers, grader, loop
+    /// spans): J-403's resolved latency + D-22's resolved tuning.
+    var currentEnvironment: SessionEnvironment {
+        SessionEnvironment(
+            latencyOffset_ms: resolvedLatency_ms,
+            tuningCents: TuningPolicy.resolvedCents(detected: detectedTuningCents,
+                                                    override: tuningOverride))
+    }
+
     /// The latency badge + applied offset (J-403) for THIS session.
     func refreshLatency() {
         let stored = LatencyCalibration.load()
@@ -139,39 +175,57 @@ final class LearnSessionModel: ObservableObject {
 
     func start() {
         guard phase == .ready else { return }
-        errorMessage = nil
-        result = nil
-        markers = [:]
-        liveFrames = []
-        recompose()
-        refreshLatency()
-        sessionLiveStart_s = ProcessInfo.processInfo.systemUptime
         machine.handle(.start(configuredCountIn_beats: countIn_beats))
         phase = machine.phase
-        if machine.configuredCountIn_beats > 0 { startTicker() }
+        armRun()
     }
 
-    func pause() {
+    func pause() { applyPause(interrupted: false) }
+
+    private func applyPause(interrupted: Bool) {
         machine.handle(.pause)
         phase = machine.phase
+        frameProducer?.pause()
         stopTicker()
+        pausedByInterruption = interrupted
     }
 
     func resume() {
         machine.handle(.resume)
         phase = machine.phase
-        if case .countIn = phase { startTicker() }
+        pausedByInterruption = false
+        frameProducer?.resume()
+        startTicker()
     }
 
     func restartPhrase() {
         machine.handle(.restartPhrase)
         phase = machine.phase
+        // Rewind to the phrase's start and REDO it honestly: the frames of
+        // the abandoned attempt are dropped (a redo never grades the old
+        // take against the new one), and the phrase's markers reset.
+        guard let now = latestFrameT_s,
+              let reference = composed[selectedPart],
+              let span = SessionFeedback.phraseSpan(containing: now,
+                                                    reference: reference,
+                                                    environment: currentEnvironment)
+        else { return }
+        let cutoff = span.start - 1e-9
+        let environment = currentEnvironment
+        liveFrames.removeAll { $0.t >= cutoff }
+        for (index, note) in reference.notes.enumerated()
+        where environment.transformedTime(note.start_s) >= span.start - 1e-9
+              && environment.transformedTime(note.end_s) <= span.end + 1e-9 {
+            markers.removeValue(forKey: index)
+        }
+        frameProducer?.seek(toT_s: span.start + countInDuration_s)
+        latestFrameT_s = span.start
     }
 
     func quit() {
         machine.handle(.quit)
         phase = machine.phase
-        stopTicker()
+        tearDownAudio()
         // Discarded: no result, no history row. The discard is the honesty —
         // a session that never graded is never recorded as graded.
         result = nil
@@ -179,35 +233,141 @@ final class LearnSessionModel: ObservableObject {
 
     func retryWeakPhrases() {
         guard result != nil else { return }
-        result = nil
-        markers = [:]
-        liveFrames = []
-        recompose() // §12.4: the reference is re-read through C-14 at retry
         machine.handle(.retry(configuredCountIn_beats: countIn_beats))
         phase = machine.phase
-        if machine.configuredCountIn_beats > 0 { startTicker() }
+        armRun() // §12.4: armRun re-reads the reference through C-14
     }
 
     func retryAll() { retryWeakPhrases() }
 
+    /// The shared per-run arming: fresh buffers, the C-14 reference, the
+    /// clock facts, the frame producer, the observers, the ticker.
+    private func armRun() {
+        errorMessage = nil
+        result = nil
+        markers = [:]
+        liveFrames = []
+        latestFrameT_s = nil
+        tailFired = false
+        activeSeconds = 0
+        pausedByInterruption = false
+        recompose()
+        refreshLatency()
+
+        countInDuration_s = Double(machine.configuredCountIn_beats)
+        let environment = currentEnvironment
+        referenceEnd_s = composed[selectedPart]?.notes
+            .map { environment.transformedTime($0.end_s) }.max() ?? 0
+
+        tearDownAudio()
+        wireSessionObservers()
+        armProducer(environment: environment)
+        startTicker()
+    }
+
+    private func armProducer(environment: SessionEnvironment) {
+        guard let reference = composed[selectedPart], !reference.notes.isEmpty else {
+            frameProducer = nil
+            return
+        }
+        if isDemo {
+            let end = DemoSinger.sessionEnd_s(for: reference,
+                                              environment: environment,
+                                              countIn_s: countInDuration_s,
+                                              tail_s: Self.tail_s)
+            let frames = DemoSinger.frames(for: reference,
+                                           environment: environment,
+                                           countIn_s: countInDuration_s,
+                                           sessionEnd_s: end)
+            let producer = DemoSessionFrameProducer(frames: frames)
+            do {
+                try producer.start(into: { [weak self] frame in
+                    self?.ingest(frame: frame)
+                })
+                frameProducer = producer
+            } catch {
+                frameProducer = nil
+                errorMessage = "The demo stream could not start: \(error)"
+            }
+        } else {
+            let producer = RibbonSessionFrameProducer()
+            do {
+                try producer.start(into: { [weak self] frame in
+                    self?.ingest(frame: frame)
+                })
+                frameProducer = producer
+            } catch {
+                // Honest: the session runs frame-less — markers never land,
+                // grading reports every note not-assessable (no live frames).
+                frameProducer = nil
+                errorMessage = "Microphone unavailable (\(error.localizedDescription)) — the session runs without live feedback."
+            }
+        }
+    }
+
+    /// The interruption/route hooks (J-102's controller + J-402's policy).
+    private func wireSessionObservers() {
+        sessionAudio.startObserving()
+        sessionAudio.onInterruptionBegan = { [weak self] in
+            self?.applyPause(interrupted: true)
+        }
+        sessionAudio.onInterruptionEnded = {
+            // Stay paused — a graded session never auto-resumes into grading.
+        }
+        sessionAudio.onRouteChange = { [weak self] in
+            // A route change stales a loopback calibration (J-403): re-read
+            // the latency so the badge shows the honest state immediately.
+            self?.refreshLatency()
+        }
+    }
+
+    /// Releases the audio resources (producer + observers). Idempotent; does
+    /// NOT touch results — called on quit, on done, and from onDisappear.
+    func tearDownAudio() {
+        frameProducer?.stop()
+        frameProducer = nil
+        stopTicker()
+        sessionAudio.onInterruptionBegan = nil
+        sessionAudio.onInterruptionEnded = nil
+        sessionAudio.onRouteChange = nil
+        sessionAudio.stopObserving()
+    }
+
     // MARK: The audio clock's events
 
-    /// One metronome beat during COUNT-IN (the ticker's event).
-    func countInBeatElapsed() {
-        machine.handle(.countInBeatElapsed)
-        phase = machine.phase
-        if !phase.isLive || phase.isGradingActive { stopTicker() }
+    /// The ticker's tick: a count-in beat during COUNT-IN, the tail check
+    /// during ACTIVE (the frame clock drives the precise tail; this is the
+    /// pause-aware fallback for the frame-less path).
+    private func tickerFired() {
+        switch phase {
+        case .countIn:
+            machine.handle(.countInBeatElapsed)
+            phase = machine.phase
+            if !phase.isLive { stopTicker() }
+        case .active:
+            activeSeconds += 1
+            let deadline = (referenceEnd_s + Self.tail_s).rounded(.up)
+            if !tailFired, Double(activeSeconds) >= deadline {
+                tailFired = true
+                tailElapsed()
+            }
+        default:
+            stopTicker()
+        }
     }
 
     /// The last note ended and the 1 s tail elapsed (the transport's event).
     func tailElapsed() {
         machine.handle(.sessionTailElapsed)
         phase = machine.phase
-        if phase == .done { grade() }
+        if phase == .done {
+            tearDownAudio()
+            grade()
+        }
     }
 
-    /// A live grading-grade frame from the mic pipeline (the audio queue's
-    /// call; non-blocking — buffer + cheap marker math only).
+    /// A live grading-grade frame from the producer (the audio queue's call;
+    /// non-blocking — hop to the main actor for the buffer + marker math).
     nonisolated func ingest(frame: PitchFrame) {
         Task { @MainActor in
             self.buffer(frame)
@@ -215,21 +375,38 @@ final class LearnSessionModel: ObservableObject {
     }
 
     private func buffer(_ frame: PitchFrame) {
-        guard phase.isLive else { return }
-        liveFrames.append(frame)
+        // Frames are captured (not graded) during COUNT-IN and ACTIVE; PAUSED
+        // holds them (§5.4 — the transport is frozen, so is the stream).
+        switch phase {
+        case .countIn, .active: break
+        default: return
+        }
+        // THE ONE CLOCK TRANSLATION: session-local t → reference-aligned t
+        // (the reference begins at t = countIn_s).
+        var aligned = frame
+        aligned.t = frame.t - countInDuration_s
+        liveFrames.append(aligned)
+        latestFrameT_s = aligned.t
+
+        let environment = currentEnvironment
+        // The frame-clock tail (precise; the ticker is the fallback).
+        if case .active = phase, !tailFired,
+           aligned.t >= referenceEnd_s + Self.tail_s - 1e-9 {
+            tailFired = true
+            tailElapsed()
+            return
+        }
         // The real-time markers (§5.4): when a note's window closes, its dot
         // lands. Cheap: only the not-yet-marked notes are examined.
-        let now = frame.t - sessionLiveStart_s
-        let environment = SessionEnvironment(latencyOffset_ms: resolvedLatency_ms)
         let closed = SessionFeedback.closedNoteIndices(
             reference: composed[selectedPart] ?? NoteTrack(part: selectedPart, notes: []),
-            environment: environment, atLiveTime_s: now)
+            environment: environment, atLiveTime_s: aligned.t)
         for index in closed where markers[index] == nil {
             let note = composed[selectedPart]?.notes.indices.contains(index) == true
                 ? composed[selectedPart]!.notes[index] : nil
             guard let note else { continue }
             let inSpan = liveFrames.filter {
-                let referenceT = environment.referenceTime(forLiveT: $0.t - sessionLiveStart_s)
+                let referenceT = environment.referenceTime(forLiveT: $0.t)
                 return referenceT >= note.start_s - 1e-9 && referenceT < note.end_s - 1e-9
             }
             markers[index] = SessionFeedback.marker(for: note, frames: inSpan,
@@ -249,12 +426,14 @@ final class LearnSessionModel: ObservableObject {
 
     /// Grades the buffered session (runs detached; the result lands on the
     /// main actor). Called when the machine reaches DONE.
+    ///
+    /// THE P-401 SEAM: the grade input is the buffered live stream. When
+    /// P-401's aligned SwiftF0 batch lands, ITS frames replace `liveFrames`
+    /// here (the aligned-batch producer conforms to SessionFrameProducing;
+    /// this method's shape does not change).
     private func grade() {
         let reference = composed[selectedPart]
-        let tuningCents = TuningPolicy.resolvedCents(detected: detectedTuningCents,
-                                                     override: tuningOverride)
-        let environment = SessionEnvironment(latencyOffset_ms: resolvedLatency_ms,
-                                             tuningCents: tuningCents)
+        let environment = currentEnvironment
         let config = effectiveConfig
         let referenceInfo = gradingReference
         let frames = liveFrames
@@ -264,6 +443,7 @@ final class LearnSessionModel: ObservableObject {
         let id = bundleId
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
+                try environment.validatedForGrading()
                 let result = try SessionGrader.grade(
                     reference: reference ?? NoteTrack(part: part, notes: []),
                     live: frames,
@@ -286,25 +466,38 @@ final class LearnSessionModel: ObservableObject {
         }
     }
 
-    // MARK: The count-in ticker (1 Hz, COUNT-IN only)
-
-    private func startTicker() {
-        stopTicker()
-        let ticker = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.countInBeatElapsed() }
-        }
-        self.ticker = ticker
-    }
-
-    private func stopTicker() {
-        ticker?.invalidate()
-        ticker = nil
-    }
+    // MARK: The weak-phrase retry queue (§12.4)
 
     /// The weak phrases of the finished result (the results screen's queue).
     var weakPhrases: [PerPhraseResult] {
         guard let result else { return [] }
         return WeakPhrasePicker.phrases(in: result)
+    }
+
+    /// A weak phrase's loop region — the span the retry plays (and loops)
+    /// against. THE P-402 SEAM: the transport consumes this when the audio
+    /// loop lands; until then the span is exposed and tested, no fake audio.
+    func loopSpan(for phrase: PerPhraseResult) -> (start: Double, end: Double)? {
+        guard let result, let reference = composed[selectedPart] else { return nil }
+        return WeakPhrasePicker.loopSpan(forPhraseIndex: phrase.phraseIndex,
+                                         in: result,
+                                         reference: reference,
+                                         environment: currentEnvironment)
+    }
+
+    // MARK: The session ticker (1 Hz; COUNT-IN beats + the tail fallback)
+
+    private func startTicker() {
+        stopTicker()
+        let timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tickerFired() }
+        }
+        self.ticker = timer
+    }
+
+    private func stopTicker() {
+        ticker?.invalidate()
+        ticker = nil
     }
 }
 

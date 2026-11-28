@@ -49,6 +49,7 @@ struct SessionView: View {
         }
         .padding(Token.Spacing.s4)
         .accessibilityElement(children: .contain)
+        .onDisappear { model.tearDownAudio() }
     }
 
     private var header: some View {
@@ -69,10 +70,13 @@ struct SessionView: View {
         }
     }
 
+    /// Dynamic-type-scaled count-in numeral (§12 audit: every fixed size scales).
+    @ScaledMetric(relativeTo: .largeTitle) private var countInSize: CGFloat = 64
+
     private func countInRing(remaining: Int) -> some View {
         VStack(spacing: Token.Spacing.s2) {
             Text("\(remaining)")
-                .font(.system(size: 64, weight: .bold, design: .rounded))
+                .font(.system(size: countInSize, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .accessibilityLabel("Count-in beat \(remaining)")
             Text("Get ready — grading starts at beat 0")
@@ -138,25 +142,38 @@ struct SessionView: View {
 
     private var controlsRow: some View {
         HStack(spacing: Token.Spacing.s2) {
-            Button("Pause") { model.pause() }.buttonStyle(.bordered)
+            Button("Pause") { model.pause() }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Pauses the session; graded frames are held and the reference stops.")
             Spacer()
         }
     }
 
     private var pausedBanner: some View {
-        Text("Paused — graded frames held; the latency setting is unchanged.")
+        Text(model.pausedByInterruption
+             ? "Paused by an interruption (a call or another app's audio) — nothing was graded while paused. Resume when you're ready."
+             : "Paused — graded frames held; the latency setting is unchanged.")
             .font(Token.Fonts.caption)
             .foregroundStyle(Color.pnTextSecondary)
             .padding(Token.Spacing.s2)
             .frame(maxWidth: .infinity)
             .background(Color.pnSurfaceElevated)
+            .accessibilityLabel(model.pausedByInterruption
+                                ? "Session paused by an interruption. Resume when ready."
+                                : "Session paused.")
     }
 
     private var pausedControls: some View {
         VStack(spacing: Token.Spacing.s2) {
-            Button("Resume") { model.resume() }.buttonStyle(.borderedProminent)
-            Button("Restart phrase") { model.restartPhrase() }.buttonStyle(.bordered)
-            Button("Quit (discard)") { model.quit() }.buttonStyle(.bordered)
+            Button("Resume") { model.resume() }
+                .buttonStyle(.borderedProminent)
+                .accessibilityHint("Continues from where the session paused.")
+            Button("Restart phrase") { model.restartPhrase() }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Rewinds to the start of the current phrase and redoes it.")
+            Button("Quit (discard)") { model.quit() }
+                .buttonStyle(.bordered)
+                .accessibilityHint("Ends the session without grading or saving anything.")
         }
     }
 }
@@ -191,11 +208,14 @@ struct ResultsSection: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// Dynamic-type-scaled grade numeral (§12 audit).
+    @ScaledMetric(relativeTo: .largeTitle) private var gradeSize: CGFloat = 56
+
     private func gradeHeader(_ result: SessionResult) -> some View {
         VStack(alignment: .leading, spacing: Token.Spacing.s1) {
             HStack(alignment: .firstTextBaseline, spacing: Token.Spacing.s2) {
                 Text(result.grade.map { "\($0.rawValue)" } ?? "—")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
+                    .font(.system(size: gradeSize, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.pnAccent)
                     .accessibilityLabel("Grade \(result.grade?.rawValue ?? "not available")")
                 if let accuracy = result.accuracy {

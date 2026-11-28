@@ -58,6 +58,19 @@ final class AudioSessionController: ObservableObject {
     private var levelSource: MicLevelSource = MockMicLevelSource()
     private var observers: [NSObjectProtocol] = []
 
+    // MARK: - Session hooks (J-402)
+
+    /// The learn session installs these while live. Fire on the main actor.
+    /// · onInterruptionBegan — a call arrived / the app backgrounded: the
+    ///   session PAUSES (the §5.4 machine event; graded frames held).
+    /// · onInterruptionEnded — the session STAYS paused (the user resumes
+    ///   explicitly — a graded session never auto-resumes into grading).
+    /// · onRouteChange — the audio route moved: the session re-reads J-403's
+    ///   latency (a loopback is route-bound → the honest zero + recalibrate).
+    var onInterruptionBegan: (() -> Void)?
+    var onInterruptionEnded: (() -> Void)?
+    var onRouteChange: (() -> Void)?
+
     // MARK: - Permission
 
     /// Reads the CURRENT system permission (call on appear — the user may
@@ -119,8 +132,10 @@ final class AudioSessionController: ObservableObject {
                 switch AVAudioSession.InterruptionType(rawValue: typeRaw ?? 0) {
                 case .began:
                     self.flow.interruptionBegan()
+                    self.onInterruptionBegan?()
                 case .ended:
                     self.flow.interruptionEnded(shouldResume: options.contains(.shouldResume))
+                    self.onInterruptionEnded?()
                 default:
                     break
                 }
@@ -130,7 +145,10 @@ final class AudioSessionController: ObservableObject {
         observers.append(center.addObserver(
             forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.refreshRoute() }
+            Task { @MainActor in
+                self?.refreshRoute()
+                self?.onRouteChange?()
+            }
         })
     }
 

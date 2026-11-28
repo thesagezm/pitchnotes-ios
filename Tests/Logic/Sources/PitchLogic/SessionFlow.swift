@@ -195,6 +195,47 @@ public enum SessionFeedback {
         /// Hollow — the window closed with nothing sung in it.
         case silent
     }
+
+    /// The transformed span of the phrase CONTAINING reference time `t` —
+    /// the rewind target of [Restart phrase] (J-402). The grouping is the
+    /// grader's own derived rule (gaps ≥ `derivedPhraseGap_s` split), so the
+    /// phrase the user restarts is the phrase they will be graded on. nil
+    /// when `t` sits outside every phrase's span (before the first note,
+    /// in a gap, or past the last note — nothing to restart).
+    public static func phraseSpan(containing referenceT_s: Double,
+                                  reference: NoteTrack,
+                                  environment: SessionEnvironment) -> (start: Double, end: Double)? {
+        let notes = reference.notes
+            .map { note -> (start: Double, end: Double) in
+                let span = environment.transformedSpan(start_s: note.start_s,
+                                                       end_s: note.end_s)
+                return (span.start, span.end)
+            }
+            .sorted { $0.start < $1.start }
+        guard !notes.isEmpty else { return nil }
+        // Group by the derived gap rule, then pick the group whose span
+        // contains `t` (inclusive start, exclusive end — the note-window
+        // convention the markers and the grader share).
+        var phrases: [(start: Double, end: Double)] = []
+        var current: (start: Double, end: Double)?
+        for note in notes {
+            if let last = current, note.start - last.end >= SessionGrader.derivedPhraseGap_s {
+                phrases.append(last)
+                current = nil
+            }
+            if let last = current {
+                current = (last.start, max(last.end, note.end))
+            } else {
+                current = (note.start, note.end)
+            }
+        }
+        if let last = current { phrases.append(last) }
+        for phrase in phrases
+        where referenceT_s >= phrase.start - 1e-9 && referenceT_s < phrase.end - 1e-9 {
+            return phrase
+        }
+        return nil
+    }
 }
 
 // MARK: - Weak phrases (the results screen's retry queue, §12.4)

@@ -102,9 +102,12 @@ struct SessionLauncherView: View {
     @State private var countInSelection: Int = 4
 
     private var latencyBadgeRow: some View {
-        Text("Latency: \(LatencyResolver.resolve(stored: LatencyCalibration.load(),
-                                                 currentRouteID: AudioSessionController.currentRouteID)
-            .badge.label)")
+        // Hoisted out of the interpolation on purpose: a multi-line expression
+        // inside a single-line string literal does not parse (red run 46090525518).
+        let resolved = LatencyResolver.resolve(
+            stored: LatencyCalibration.load(),
+            currentRouteID: AudioSessionController.currentRouteID)
+        return Text("Latency: \(resolved.badge.label)")
             .font(Token.Fonts.caption)
             .foregroundStyle(Color.pnTextSecondary)
     }
