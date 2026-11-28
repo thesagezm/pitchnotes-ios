@@ -55,11 +55,28 @@ import Foundation
 //     path, and a tempo-drifting score simply may not be adopted — the used
 //     decision below is a measurement, never an assumption).
 //
-// THE USED DECISION IS D-47 §9's STRICT READING (C-13 rule 4): used =
-// (confidence ≥ 0.70) AND (agreementAfter.ratio > agreementBefore.ratio),
-// where before is the RAW score's agreement with the detected notes and after
-// is the ALIGNED score's. A score that ALREADY matches the recording exactly
-// is therefore NOT adopted (it improved nothing), and `reason` says so.
+// THE USED DECISION IS CONTRACTS v1.2's C-17 GATE (D-58 — P-404; it supersedes
+// D-47 §9's v1.1.1 rule-4 consequence BY REFERENCE, D-47 stays on file):
+//
+//     used = (confidence ≥ 0.70) AND (after ≥ before) AND
+//            (after > before OR after ≥ 0.90)
+//
+// where `before` is the RAW score's agreement with the detected notes and
+// `after` is the ALIGNED score's (the pinned `Agreement` metric — same MIDI
+// integer, NO octave fold, ±0.25 s both-extended overlap, one-to-one,
+// two-sided Dice; 0 when either side is empty). TWO adoption branches:
+//   · IMPROVEMENT (after > before) — D-47 §9's rule, unchanged and still
+//     sufficient alone ("the alignment fixed something measurable").
+//   · CORROBORATION (after ≥ 0.90) — the score already matches the engine's
+//     hearing near-unanimously at the pinned metric; refusing it would discard
+//     its real grading value (exact times, partMapping, the bar map) exactly
+//     when it is MOST trustworthy. 0.90 is a ruling, not a derivation —
+//     lowering it is a future ruling with evidence (C-17).
+// `after ≥ before` (never degrades) applies to BOTH branches, and the
+// ZERO-AGREEMENT refusal is preserved (after = 0 passes neither branch —
+// D-47 §9's degenerate case stays refused). On refusal `reason` states which
+// contractual reason applies: confidence short of the gate, degraded
+// agreement, or no improvement AND corroboration short of 0.90.
 //
 // THE PLACEMENT RULE MIRRORS JESS'S `ScoreReview.align` EXACTLY (the consumer
 // in Tests/Logic/Sources/PitchLogic/ScoreReview.swift): a score note in
@@ -97,9 +114,17 @@ public struct ScoreAlignerOptions: Equatable, Sendable {
     public var maxFrames: Int
 
     /// D-41 §4's adoption threshold: the score-informed track is used ONLY IF
-    /// the alignment's confidence is at least this AND the agreement strictly
-    /// improved (C-13 rule 4, D-47 §9).
+    /// the alignment's confidence is at least this AND the C-17 gate's
+    /// agreement branch holds (CONTRACTS v1.2).
     public var adoptionConfidenceThreshold: Double
+
+    /// C-17's CORROBORATION gate: an alignment whose agreement did not
+    /// strictly improve is still adopted when the ALIGNED score's agreement
+    /// with the detected notes reaches this level (near-unanimous
+    /// corroboration of the engine's own hearing). **0.90 is a RULING, not a
+    /// derivation** (C-17) — lowering it is a future ruling with evidence,
+    /// never a quiet tune.
+    public var corroborationAgreementThreshold: Double
 
     /// An EXPLICIT score `part_id` → C-1 part mapping. It WINS over the label
     /// resolver (the aligner never second-guesses an explicit instruction).
@@ -110,15 +135,48 @@ public struct ScoreAlignerOptions: Equatable, Sendable {
     public init(bandFraction: Double = 0.15,
                 maxFrames: Int = 2000,
                 adoptionConfidenceThreshold: Double = 0.70,
+                corroborationAgreementThreshold: Double = 0.90,
                 explicitPartMapping: [String: Part]? = nil) {
         self.bandFraction = bandFraction
         self.maxFrames = maxFrames
         self.adoptionConfidenceThreshold = adoptionConfidenceThreshold
+        self.corroborationAgreementThreshold = corroborationAgreementThreshold
         self.explicitPartMapping = explicitPartMapping
     }
 
     /// The measured defaults (the prototype's configuration).
     public static let `default` = ScoreAlignerOptions()
+}
+
+// MARK: - The v1.2 adoption gate (C-17)
+
+/// WHY the v1.2 adoption gate decided as it did (CONTRACTS v1.2 C-17, D-58 —
+/// P-404). The three refusal kinds are CONTRACTUAL: C-17 requires the UI to
+/// state the reason — "confidence short of the gate, degraded agreement, or
+/// no improvement AND corroboration short of 0.90".
+public enum AdoptionDecision: Equatable, Sendable {
+
+    /// The IMPROVEMENT branch (`after > before`) — D-47 §9's rule, unchanged
+    /// and still sufficient alone: the alignment fixed something measurable.
+    case improvement
+
+    /// The CORROBORATION branch (`after ≥ 0.90` with `after ≥ before`) — the
+    /// aligned score corroborates the engine's own hearing near-unanimously
+    /// at the pinned Agreement metric. 0.90 is a ruling, not a derivation.
+    case corroboration
+
+    /// REFUSED: the alignment's confidence is below the 0.70 gate (D-41 §4).
+    case lowConfidence
+
+    /// REFUSED: the aligned score's agreement is WORSE than the raw score's
+    /// (`after < before`) — an alignment that degrades agreement is never
+    /// adopted at any absolute level (C-17's both-branches rule).
+    case degraded
+
+    /// REFUSED: no improvement AND corroboration short of 0.90. The
+    /// ZERO-AGREEMENT case (`before = after = 0`) lands here — D-47 §9's
+    /// degenerate refusal, preserved by C-17.
+    case insufficient
 }
 
 // MARK: - The outcome
@@ -178,6 +236,39 @@ public enum ScoreAligner {
 
     /// The analysis grid: the model's own hop (256 / 22050 s ≈ 11.61 ms).
     static let analysisGrid = Double(BasicPitchFrameClock.frameHop) / BasicPitchFrameClock.sampleRate
+
+    /// THE v1.2 ADOPTION GATE (CONTRACTS v1.2 C-17, D-58 — P-404):
+    ///
+    ///     used = (confidence ≥ 0.70) AND (after ≥ before) AND
+    ///            (after > before OR after ≥ 0.90)
+    ///
+    /// The metric is the PINNED `Agreement` (same MIDI integer, no octave
+    /// fold, ±0.25 s both-extended overlap, one-to-one, two-sided Dice; 0 when
+    /// either side is empty). `before` = the RAW score's agreement with the
+    /// detected notes; `after` = the ALIGNED score's. The returned decision
+    /// names WHICH branch or refusal fired, so `reason` states the
+    /// contractual refusal kind (C-17) instead of a vague "no".
+    ///
+    /// Jess reads `used` (and MAY read this decision); she MUST NOT re-derive
+    /// the gate (C-17's ack duty).
+    public static func decideAdoption(confidence: Double,
+                                      agreementBefore: Double,
+                                      agreementAfter: Double,
+                                      options: ScoreAlignerOptions = .default) -> AdoptionDecision {
+        guard confidence >= options.adoptionConfidenceThreshold else {
+            return .lowConfidence
+        }
+        guard agreementAfter >= agreementBefore else {
+            return .degraded
+        }
+        if agreementAfter > agreementBefore {
+            return .improvement
+        }
+        if agreementAfter >= options.corroborationAgreementThreshold {
+            return .corroboration
+        }
+        return .insufficient
+    }
 
     /// Resolve the score against the audio: align, decide `used`, and derive
     /// the score-informed tracks.
@@ -297,7 +388,7 @@ public enum ScoreAligner {
         let aligned = alignedNotes(score: score, barMap: barMap, mapping: mapping)
 
         // 9. THE AGREEMENT, before (the RAW score) and after (the ALIGNED
-        //    score) — D-47 §9's strictly-better reading compares these.
+        //    score) — the v1.2 gate's two inputs (C-17's pinned metric).
         let agreementBefore = ScoreContract.Agreement.between(
             score: score.noteList.scoreNotes, detected: detectedTracks)
         let alignedScoreNotes = aligned.enumerated().map { index, note in
@@ -311,22 +402,37 @@ public enum ScoreAligner {
         let agreementAfter = ScoreContract.Agreement.between(
             score: alignedScoreNotes, detected: detectedTracks)
 
-        // 10. THE USED DECISION (D-47 §9's STRICT reading): confidence ≥ the
-        //     threshold AND strictly better agreement. A score that already
-        //     matches exactly is NOT adopted — and `reason` says so.
-        let adopted = confidence >= options.adoptionConfidenceThreshold
-            && agreementAfter.ratio > agreementBefore.ratio
+        // 10. THE USED DECISION — the v1.2 gate (C-17, D-58; see
+        //     `decideAdoption`): confidence ≥ 0.70 AND after ≥ before AND
+        //     (after > before OR after ≥ 0.90). The decision names WHICH
+        //     branch or refusal fired, and `reason` states it in the
+        //     contractual vocabulary (C-17's three refusal kinds).
+        let decision = Self.decideAdoption(confidence: confidence,
+                                           agreementBefore: agreementBefore.ratio,
+                                           agreementAfter: agreementAfter.ratio,
+                                           options: options)
+        let adopted = decision == .improvement || decision == .corroboration
         let reason: String
-        if adopted {
-            reason = String(format: "Adopted: the alignment's confidence %.6f ≥ %.2f and it improved note agreement (before %.4f → after %.4f).",
+        switch decision {
+        case .improvement:
+            reason = String(format: "Adopted: the alignment's confidence %.6f ≥ %.2f and it improved note agreement (before %.4f → after %.4f) — C-17's improvement branch.",
                             confidence, options.adoptionConfidenceThreshold,
                             agreementBefore.ratio, agreementAfter.ratio)
-        } else if confidence < options.adoptionConfidenceThreshold {
+        case .corroboration:
+            reason = String(format: "Adopted: the alignment's confidence %.6f ≥ %.2f and the aligned score corroborates the engine's own hearing near-unanimously (after %.4f ≥ %.2f, before %.4f, not degraded) — C-17's corroboration branch.",
+                            confidence, options.adoptionConfidenceThreshold,
+                            agreementAfter.ratio, options.corroborationAgreementThreshold,
+                            agreementBefore.ratio)
+        case .lowConfidence:
             reason = String(format: "NOT adopted: the alignment's confidence %.6f is below the %.2f threshold (D-41 §4) — the grading reference stays the heuristic track.",
                             confidence, options.adoptionConfidenceThreshold)
-        } else {
-            reason = String(format: "NOT adopted: the aligned score's agreement (%.4f) did not strictly improve on the raw score's (%.4f) — C-13 rule 4. The grading reference stays the heuristic track, and the UI must say so.",
+        case .degraded:
+            reason = String(format: "NOT adopted: the aligned score's agreement (%.4f) is WORSE than the raw score's (%.4f) — an alignment that degrades agreement is never adopted, at any absolute level (C-17). The grading reference stays the heuristic track, and the UI must say so.",
                             agreementAfter.ratio, agreementBefore.ratio)
+        case .insufficient:
+            reason = String(format: "NOT adopted: the aligned score's agreement (%.4f) did not strictly improve on the raw score's (%.4f) and its corroboration is short of the %.2f gate — C-17. The grading reference stays the heuristic track, and the UI must say so.",
+                            agreementAfter.ratio, agreementBefore.ratio,
+                            options.corroborationAgreementThreshold)
         }
 
         // 11. THE DERIVED SCORE-INFORMED TRACKS (C-13 rule 3: never a
