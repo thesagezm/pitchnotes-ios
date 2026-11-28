@@ -1094,3 +1094,76 @@ computed in **pure Swift in `Tests/Logic/Sources/PitchLogic`** (J-401), unit-
 tested in `Tests/Logic/Tests/PitchLogicTests`, with no audio hardware and no
 engine dependency — the same shape as J-302's overlay resolver, J-303's
 codec and J-304's score review.
+
+### 12.7 The scoring engine AS BUILT (J-401, M4) — the formulas, honestly
+
+J-401 LANDED (Tests/Logic/Sources/PitchLogic/Scoring/, docker 446/446). The
+contract (v1.2 C-18/C-19/C-20, D-54) pins the SHAPES and bounds; these are the
+implementation formulas the suite pins, so the UI copy can say what a grade
+means:
+
+- **Reference pitch** = `100·midi' + cents_ref + tuningCents` where
+  `midi' = midi + transpositionSemitones` (C-20 §1/§3). A faithful singer of a
+  ±35c recording grades ≈ 0 deviation — the detuned fixtures pin it, and the
+  tuning-ignored failure (−35c "flat") is pinned as FORBIDDEN behavior.
+- **Frame → note:** a live frame captured at `t` belongs to the note covering
+  `t − latencyOffset_ms` (C-20 §4; ≥ 0 = live is LATE). Frames below
+  `breathGate_db` (default −60 dB) are UNVOICED — a breath is silence.
+- **Mean-centered vibrato (C-19):** the note's CENTER = mean cents deviation
+  of the SCORED frames (voiced, past the `onsetGrace_ms` window — the sung
+  glide is physiology). `centsDeviation` = the center. A frame is IN TUNE when
+  `|center| ≤ toleranceCents` AND `|dev − center| ≤ vibratoExtentCents`.
+- **hit** = center inside the tolerance AND coverage ≥ 0.5 (`minCoverageForHit`).
+  A note with frames but nothing sung (every frame below the gate) is
+  **hit = false — a MISS, not a pitch error**; a note whose span has NO frames
+  at all is **notAssessable "noLiveFrames"**; an UNASSIGNED note is
+  **notAssessable "unassigned"** — both VISIBLE (D-54 §1), never silent.
+- **coverage** = voiced frames × 16 ms / note duration, clamped [0, 1].
+  **sustain_ms** = the longest continuous in-tune run (grid-adjacent), clamped
+  to the note's duration. **timing** = full credit when the first voiced frame
+  lands within the grace; beyond it, `1 − (lateness − grace)/duration`.
+- **Note score** = `w_pitch·pitch + w_timing·timing + w_sustain·sustain`
+  (C-19's weights, sum-checked), golden notes × `goldenNoteBonus`. Phrase and
+  session accuracy are duration-weighted means over GRADED notes, clamped
+  [0, 1]; steady/transition split per D-54 §4 (50 ms window), `null` when a
+  class has no graded members (encoded explicitly — the split "says so").
+- **Grade bands (pinned):** A ≥ 0.90, B ≥ 0.75, C ≥ 0.60, D ≥ 0.40, else F
+  (no "E"). No graded notes at all ⇒ NO grade (never a grade of an empty set).
+- **Phrases:** the C-10 `partPresence` spans when present, else notes split at
+  ≥ 1.0 s gaps; a phrase with no graded members is OMITTED from perPhrase.
+- **WHO SUPPLIES WHAT (the J-402 caller contract):** the caller composes the
+  C-14 reference (overlay → score-informed → heuristic) and passes it IN — the
+  grader never re-derives the choice, it only RECORDS it
+  (`gradingReference.source`). The C-20 environment (latency/transposition/
+  tempo/tuning) is caller-supplied; the latency offset's home is DEVICE-LOCAL
+  (C-20 §4 + J-403), not `GradingConfig` (§12.3's pre-v1.2 sketch is superseded
+  by the ratified contract — the session records the APPLIED value).
+- **HONESTY LIMITS (AGENTS §11, unchanged):** every accuracy number this
+  engine produces is SYNTHETIC (D-54 §5) — the 11 fixtures are synthetic, no
+  real acapella exists in the repo, and nothing here is device-verified. The
+  grade measures the singer against the COMPOSED reference, which on an
+  uncorrected bundle is a HEURISTIC assignment with real bleed — the session
+  UI must say which reference graded (C-14) and carry the band split.
+
+### 13. M5 forward spec — theory & ear training REUSE the grading core (Jess)
+
+So M5 does not fork the scoring math:
+
+- **Ear training / chord completion (J-504) grades through J-401's engine, not
+  a second one.** The exercise builds a reference `NoteTrack` (the chord's
+  missing voice, possibly octave/interval-variant) and feeds the sung frames
+  through `SessionGrader.grade` with the exercise's C-19 config; the JI/ET
+  toggle (barbershop JI: maj3 −14c, 5th +2c, dom7 −31c) enters as
+  `cents_ref` on the exercise's reference notes — the SAME reference-pitch
+  path grading already uses, and `tuningCents` stays 0 for synthesized
+  exercises unless the source recording is real.
+- **The correction overlay is the exercise's answer key, not a user override:**
+  exercises construct the reference directly and report
+  `gradingReference.source` honestly (an exercise is a CONSTRUCTED reference —
+  the UI must not present it as engine-detected).
+- **The drill loop reuses the session flow's state machine** (§5.4/§12.3) with
+  a one-phrase session; the heatmap and retry-weak-phrase machinery (§12.4)
+  work unchanged on a 1–2 note "track".
+- **Theory view (J-501/J-502) shares vocabulary only** (Part, NoteTrack,
+  PitchMath) — no grading dependency; notation highlight sync consumes the
+  same phrase spans (C-10 `partPresence` / bar-aligned) the grader groups by.
