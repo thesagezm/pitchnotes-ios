@@ -506,13 +506,13 @@ struct GradingSettingsScreen: View {
                           hint: "The accepted swing around a note's mean pitch (vibrato is not error).",
                           value: Binding(get: { Double(model.settings.vibratoExtentCents) },
                                          set: { model.settings.vibratoExtentCents = Int($0.rounded()); model.save() }),
-                          range: Double(GradingConfig.vibratoExtentCentsRange),
+                          range: doubleRange(GradingConfig.vibratoExtentCentsRange),
                           unit: "¢")
             boundedSlider(title: "Onset grace",
                           hint: "The glide into a note's start is not scored.",
                           value: Binding(get: { Double(model.settings.onsetGrace_ms) },
                                          set: { model.settings.onsetGrace_ms = Int($0.rounded()); model.save() }),
-                          range: Double(GradingConfig.onsetGrace_msRange),
+                          range: doubleRange(GradingConfig.onsetGrace_msRange),
                           unit: " ms")
             boundedSlider(title: "Breath gate",
                           hint: "Quieter than this is silence, not a sung pitch.",
@@ -600,6 +600,13 @@ struct GradingSettingsScreen: View {
         }
         .padding(.vertical, Token.Spacing.s1)
         .accessibilityElement(children: .combine)
+    }
+
+
+    /// A C-19 integer range as the slider's Double range (there is no
+    /// Double(ClosedRange<Int>) initializer — the conversion is explicit).
+    private func doubleRange(_ range: ClosedRange<Int>) -> ClosedRange<Double> {
+        Double(range.lowerBound)...Double(range.upperBound)
     }
 
     private func formatted(_ value: Double, for range: ClosedRange<Double>) -> String {

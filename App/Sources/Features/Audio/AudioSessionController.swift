@@ -165,7 +165,7 @@ final class AudioSessionController: ObservableObject {
     static var currentRouteID: String? {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
         guard !outputs.isEmpty else { return nil }
-        return outputs.map { "\($0.portType.rawValue):\($0.name)" }.joined(separator: "|")
+        return outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: "|")
     }
 
     /// Headphones/bluetooth present? (speaker-mode guidance banner otherwise).

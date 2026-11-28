@@ -149,7 +149,13 @@ final class RibbonSessionFrameProducer: SessionFrameProducing, @unchecked Sendab
         self.handler = handler
         lock.unlock()
         facade.reset()
+        try installChunkPipeline(into: handler)
+    }
 
+    /// The chunk → ribbon → frame chain (one closure shape for start AND
+    /// resume — resume must re-install the CHUNK pipeline, not hand the
+    /// frame handler to the chunk source).
+    private func installChunkPipeline(into handler: @escaping @Sendable (PitchFrame) -> Void) throws {
         let hopSeconds = EngineContract.hopSeconds
         try mic.start(into: { [weak self] chunk in
             guard let self else { return }
@@ -171,7 +177,7 @@ final class RibbonSessionFrameProducer: SessionFrameProducing, @unchecked Sendab
         guard let handler else { return }
         // The SAME stream continues: hopIndex holds, the facade keeps its
         // context (a reset here would re-zero the ribbon's filters mid-song).
-        try? mic.start(into: handler)
+        try? installChunkPipeline(into: handler)
     }
 
     func seek(toT_s: Double) {
