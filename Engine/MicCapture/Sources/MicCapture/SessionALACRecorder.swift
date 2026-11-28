@@ -70,6 +70,14 @@ public final class SessionALACRecorder {
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false,
         ]
+        // THE PARENT DIRECTORY IS OURS TO CREATE: ExtAudioFileCreateWithURL
+        // refuses when the parent does not exist (MEASURED on the runner,
+        // run 46086661857 — the store path's session dir is created by the
+        // manifest write, but a recording started BEFORE that write needs
+        // the dir itself). A writer that fails on a missing directory is a
+        // poor API — the recorder creates it, like writeManifest does.
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.file = try AVAudioFile(forWriting: url, settings: settings)
         self.manifest = manifest
         self.frameCount = 0
