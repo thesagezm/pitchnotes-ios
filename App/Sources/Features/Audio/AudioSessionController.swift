@@ -140,6 +140,16 @@ final class AudioSessionController: ObservableObject {
         levelSource.stop()
     }
 
+    /// The current route's stable token (J-403's `routeID`): the output ports
+    /// joined. A route change (headphones ↔ speaker ↔ Bluetooth) produces a
+    /// DIFFERENT token, which stales the loopback calibration —
+    /// LatencyResolver applies the honest zero and asks for a recalibration.
+    static var currentRouteID: String? {
+        let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
+        guard !outputs.isEmpty else { return nil }
+        return outputs.map { "\($0.portType.rawValue):\($0.name)" }.joined(separator: "|")
+    }
+
     /// Headphones/bluetooth present? (speaker-mode guidance banner otherwise).
     func refreshRoute() {
         let outputs = AVAudioSession.sharedInstance().currentRoute.outputs
