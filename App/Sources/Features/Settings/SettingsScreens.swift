@@ -416,3 +416,262 @@ struct ModelsScreen: View {
         .onAppear { downloads.load() }
     }
 }
+
+// MARK: - Grading settings (J-405, UX §6.4 / C-19)
+
+/// The grading settings' runtime model: reads once, autosaves on change.
+/// THE HONESTY: the store saves as ONE payload; a weights set that does not
+/// sum to 1.0 ± 0.001 is REFUSED at save (C-19 — never normalized) and the
+/// screen says so; every persisted config is gradable.
+@MainActor
+final class GradingSettingsModel: ObservableObject {
+    @Published var settings: GradingSettings = .default
+    @Published var saveError: String?
+    private var loaded = false
+
+    /// The live weights sum (the screen shows it next to the sliders).
+    var weightSum: Double { settings.weights.sum }
+    var weightsAreValid: Bool {
+        abs(weightSum - 1.0) <= GradingConfig.weightSumTolerance
+    }
+
+    func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        settings = GradingSettingsStore.load()
+    }
+
+    /// Autosave — called from the views' onChange. A refused save surfaces
+    /// the honest reason; nothing is silently rewritten.
+    func save() {
+        do {
+            try GradingSettingsStore.save(settings)
+            saveError = nil
+        } catch {
+            saveError = "The weights are \(String(format: "%.3f", weightSum)) — they must sum to 1.0. Nothing was saved: the scoring refuses a config it cannot grade honestly (C-19)."
+        }
+    }
+
+    func resetDefaults() {
+        GradingSettingsStore.clear()
+        settings = .default
+        saveError = nil
+    }
+}
+
+/// Settings → Grading — the scoring tunables (C-19). Every control is
+/// bounded BY the contract ranges (the UI cannot produce a value the grader
+/// would clamp — a hand-edited plist still meets the clamp-and-report rail
+/// at the grading path).
+struct GradingSettingsScreen: View {
+    @StateObject private var model = GradingSettingsModel()
+
+    var body: some View {
+        Form {
+            toleranceSection
+            scoringFeelSection
+            weightsSection
+            honestyFooter
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.pnBackground)
+        .navigationTitle("Grading")
+        .onAppear { model.loadIfNeeded() }
+        .onDisappear { model.save() }
+    }
+
+    private var toleranceSection: some View {
+        Section("Tolerance & octaves") {
+            Picker("Tolerance", selection: Binding(
+                get: { model.settings.toleranceCents },
+                set: { model.settings.toleranceCents = $0; model.save() })) {
+                Text("±50").tag(50)
+                Text("±25").tag(25)
+                Text("±10").tag(10)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Grading tolerance in cents")
+            .accessibilityHint("How far from the reference pitch still counts as in tune.")
+
+            Toggle("Forgive octave errors", isOn: Binding(
+                get: { model.settings.octaveEquivalence },
+                set: { model.settings.octaveEquivalence = $0; model.save() }))
+                .accessibilityHint("An exact octave from the reference still counts as the note.")
+        }
+    }
+
+    private var scoringFeelSection: some View {
+        Section("Scoring feel") {
+            boundedSlider(title: "Vibrato tolerance",
+                          hint: "The accepted swing around a note's mean pitch (vibrato is not error).",
+                          value: Binding(get: { Double(model.settings.vibratoExtentCents) },
+                                         set: { model.settings.vibratoExtentCents = Int($0.rounded()); model.save() }),
+                          range: Double(GradingConfig.vibratoExtentCentsRange),
+                          unit: "¢")
+            boundedSlider(title: "Onset grace",
+                          hint: "The glide into a note's start is not scored.",
+                          value: Binding(get: { Double(model.settings.onsetGrace_ms) },
+                                         set: { model.settings.onsetGrace_ms = Int($0.rounded()); model.save() }),
+                          range: Double(GradingConfig.onsetGrace_msRange),
+                          unit: " ms")
+            boundedSlider(title: "Breath gate",
+                          hint: "Quieter than this is silence, not a sung pitch.",
+                          value: Binding(get: { model.settings.breathGate_db },
+                                         set: { model.settings.breathGate_db = $0; model.save() }),
+                          range: GradingConfig.breathGate_dbRange,
+                          unit: " dB")
+            boundedSlider(title: "Golden note bonus",
+                          hint: "The multiplier on UltraStar-marked (*) notes.",
+                          value: Binding(get: { model.settings.goldenNoteBonus },
+                                         set: { model.settings.goldenNoteBonus = $0; model.save() }),
+                          range: GradingConfig.goldenNoteBonusRange,
+                          unit: "×")
+        }
+    }
+
+    private var weightsSection: some View {
+        Section {
+            boundedSlider(title: "Pitch weight",
+                          hint: "How much being in tune matters.",
+                          value: Binding(get: { model.settings.weights.pitch },
+                                         set: { model.settings.weights.pitch = $0; model.save() }),
+                          range: 0...1, unit: "")
+            boundedSlider(title: "Timing weight",
+                          hint: "How much starting the note on time matters.",
+                          value: Binding(get: { model.settings.weights.timing },
+                                         set: { model.settings.weights.timing = $0; model.save() }),
+                          range: 0...1, unit: "")
+            boundedSlider(title: "Sustain weight",
+                          hint: "How much holding the note in tune matters.",
+                          value: Binding(get: { model.settings.weights.sustain },
+                                         set: { model.settings.weights.sustain = $0; model.save() }),
+                          range: 0...1, unit: "")
+            HStack {
+                Text("Weights sum")
+                Spacer()
+                Text(String(format: "%.3f", model.weightSum))
+                    .font(Token.Fonts.numeric)
+                    .foregroundStyle(model.weightsAreValid ? Color.pnTextSecondary : Color.octaveWarn)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Weights sum \(String(format: "%.3f", model.weightSum))")
+            if !model.weightsAreValid {
+                Text("The weights must sum to 1.0. Until they do, nothing is saved and the scoring refuses the config — it is never silently renormalized (C-19).")
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.octaveWarn)
+            }
+            if let error = model.saveError {
+                Text(error).font(Token.Fonts.caption).foregroundStyle(Color.octaveWarn)
+            }
+            Button("Reset grading to defaults") { model.resetDefaults() }
+                .accessibilityHint("Restores the contract defaults for every grading setting.")
+        } header: {
+            Text("Grade weights")
+        } footer: {
+            Text("The three shares must total 1.0.")
+        }
+    }
+
+    private var honestyFooter: some View {
+        Section {
+            Text("Your grading settings travel with every session result — a grade is always honest about the terms it was graded on. Nothing here can widen the tolerance past ±50 or hide an unassessable note (C-19).")
+                .font(Token.Fonts.caption)
+                .foregroundStyle(Color.pnTextSecondary)
+        }
+    }
+
+    /// One bounded slider with its live value (the C-19 bounds are the
+    /// range — the UI cannot leave the contract surface).
+    private func boundedSlider(title: String, hint: String,
+                               value: Binding<Double>, range: ClosedRange<Double>,
+                               unit: String) -> some View {
+        VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+            HStack {
+                Text(title).font(Token.Fonts.body)
+                Spacer()
+                Text("\(formatted(value.wrappedValue, for: range))\(unit)")
+                    .font(Token.Fonts.numeric)
+                    .foregroundStyle(Color.pnTextSecondary)
+            }
+            Slider(value: value, in: range)
+                .accessibilityLabel(title)
+                .accessibilityValue("\(formatted(value.wrappedValue, for: range))\(unit)")
+            Text(hint).font(Token.Fonts.caption).foregroundStyle(Color.pnTextSecondary)
+        }
+        .padding(.vertical, Token.Spacing.s1)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func formatted(_ value: Double, for range: ClosedRange<Double>) -> String {
+        // Integer ranges show whole values; float ranges one decimal.
+        let isInteger = range.lowerBound.rounded() == range.lowerBound
+            && range.upperBound.rounded() == range.upperBound
+            && range.upperBound - range.lowerBound >= 10
+        return isInteger ? "\(Int(value.rounded()))" : String(format: "%.1f", value)
+    }
+}
+
+/// Settings → Guide level & count-in (J-405 §6.4 tail): the session chrome
+/// the scoring does NOT read as difficulty — plus the two C-19 keys that do
+/// reach the config (guideLevel, countIn_beats, metronome).
+struct GuideAndTimingScreen: View {
+    @StateObject private var model = GradingSettingsModel()
+
+    var body: some View {
+        Form {
+            Section("Session help") {
+                Picker("Guide level", selection: Binding(
+                    get: { model.settings.guideLevel },
+                    set: { model.settings.guideLevel = $0; model.save() })) {
+                    ForEach(GradingConfig.GuideLevel.allCases, id: \.self) { level in
+                        Text(level.display).tag(level)
+                    }
+                }
+                .accessibilityHint("What the session shows while you sing — the four levels are the contract's vocabulary.")
+            }
+            Section("Count-in & metronome") {
+                Picker("Count-in beats", selection: Binding(
+                    get: { model.settings.countIn_beats },
+                    set: { model.settings.countIn_beats = $0; model.save() })) {
+                    Text("Off").tag(0)
+                    Text("2 beats").tag(2)
+                    Text("4 beats").tag(4)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Default count-in beats")
+                Toggle("Metronome", isOn: Binding(
+                    get: { model.settings.metronome },
+                    set: { model.settings.metronome = $0; model.save() }))
+                    .accessibilityHint("A click during the session. Off by default (C-19).")
+            }
+            Section("Feedback") {
+                Toggle("Haptics", isOn: Binding(
+                    get: { model.settings.haptics },
+                    set: { model.settings.haptics = $0; model.save() }))
+                    .accessibilityHint("A tick when a note's verdict lands. A feedback preference — never a grading input.")
+            }
+            Section {
+                Text("Defaults for new sessions; the launcher can still pick a different tolerance, octave mode or count-in for one session.")
+                    .font(Token.Fonts.caption)
+                    .foregroundStyle(Color.pnTextSecondary)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.pnBackground)
+        .navigationTitle("Guide & timing")
+        .onAppear { model.loadIfNeeded() }
+        .onDisappear { model.save() }
+    }
+}
+
+extension GradingConfig.GuideLevel {
+    /// The plain-language label per C-19 string (the raw value is the JSON).
+    var display: String {
+        switch self {
+        case .ribbonPlusNotes: return "Ribbon + notes"
+        case .ribbon: return "Ribbon only"
+        case .notes: return "Notes only"
+        case .none: return "Minimal (grade only)"
+        }
+    }
+}

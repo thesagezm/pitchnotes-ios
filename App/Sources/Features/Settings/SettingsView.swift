@@ -13,13 +13,34 @@ struct SettingsView: View {
                     Row(title: "Vocal ranges & calibration", detail: "Per-part range presets and mic calibration.", milestone: "M1"),
                 ]
             )
-            section(
-                "Grading",
-                rows: [
-                    Row(title: "Tolerance & scoring display", detail: "±50/±25/±10 cents, octave equivalence, onset grace.", milestone: "M4"),
-                    Row(title: "Guide level & count-in", detail: "Reference volume, metronome, haptics.", milestone: "M4"),
-                ]
-            )
+            Section("Grading") {
+                NavigationLink {
+                    GradingSettingsScreen()
+                } label: {
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text("Tolerance & scoring")
+                            .font(Token.Fonts.body)
+                        Text("±50/±25/±10 cents, octave equivalence, vibrato, onset grace, the grade weights.")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                    }
+                    .padding(.vertical, Token.Spacing.s1)
+                }
+                .accessibilityHint("The grading tunables (J-405) — bounded by the contract.")
+                NavigationLink {
+                    GuideAndTimingScreen()
+                } label: {
+                    VStack(alignment: .leading, spacing: Token.Spacing.s1) {
+                        Text("Guide level & count-in")
+                            .font(Token.Fonts.body)
+                        Text("Session help level, count-in default, metronome, haptics.")
+                            .font(Token.Fonts.caption)
+                            .foregroundStyle(Color.pnTextSecondary)
+                    }
+                    .padding(.vertical, Token.Spacing.s1)
+                }
+                .accessibilityHint("Session chrome defaults (J-405).")
+            }
             section(
                 "Audio",
                 rows: [

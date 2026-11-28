@@ -117,6 +117,12 @@ final class LearnSessionModel: ObservableObject {
         // The first singable part (C-1 order) — the launcher's chip can move it.
         self.selectedPart = Part.allCases.filter(\.isSingableVoice)
             .first { rawTracks[$0] != nil } ?? .bass
+        // J-405: the session's controls START from the stored settings (the
+        // launcher's per-session picks still win).
+        let stored = GradingSettingsStore.load()
+        self.tolerancePreset = stored.toleranceCents
+        self.octaveEquivalence = stored.octaveEquivalence
+        self.countIn_beats = stored.countIn_beats
         recompose()
         refreshLatency()
     }
@@ -417,11 +423,16 @@ final class LearnSessionModel: ObservableObject {
 
     // MARK: The grade (J-401)
 
-    /// The C-19 config this session grades against (the launcher's controls
-    /// are the C-19 tunables; J-405's settings provide the defaults).
+    /// The C-19 config this session grades against: the J-405 stored
+    /// settings are the BASE (vibrato, onset grace, breath gate, weights,
+    /// golden bonus, guide level, metronome), and the launcher's per-session
+    /// picks win for tolerance / octave equivalence / count-in.
     var effectiveConfig: GradingConfig {
-        GradingConfig(toleranceCents: tolerancePreset,
-                      octaveEquivalence: octaveEquivalence)
+        var config = GradingSettingsStore.load().asGradingConfig
+        config.toleranceCents = tolerancePreset
+        config.octaveEquivalence = octaveEquivalence
+        config.countIn_beats = countIn_beats
+        return config
     }
 
     /// Grades the buffered session (runs detached; the result lands on the

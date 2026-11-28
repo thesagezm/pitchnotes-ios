@@ -48,8 +48,26 @@ struct SessionLauncherView: View {
         }
         .padding(Token.Spacing.s4)
         .background(Color.pnSurface)
-        .onAppear { audio.startObserving() }
+        .onAppear {
+            audio.startObserving()
+            applyStoredDefaults()
+        }
         .onDisappear { audio.stopObserving() }
+    }
+
+    /// J-405: the sheet's controls START from the stored settings (the user
+    /// can still pick differently for this one session).
+    private func applyStoredDefaults() {
+        let stored = GradingSettingsStore.load()
+        toleranceSelection = Self.nearest(of: [50, 25, 10], to: stored.toleranceCents)
+        octaveEquivalenceToggle = stored.octaveEquivalence
+        countInSelection = Self.nearest(of: [0, 2, 4], to: stored.countIn_beats)
+    }
+
+    /// The picker's canonical stops (a stored value outside the stops maps
+    /// to the nearest — the segmented picker has no free selection).
+    private static func nearest(of stops: [Int], to value: Int) -> Int {
+        stops.min { abs($0 - value) < abs($1 - value) } ?? stops.first ?? 0
     }
 
     private var partChips: some View {
