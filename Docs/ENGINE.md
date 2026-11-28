@@ -603,6 +603,42 @@ stay in BENCHMARKS §3 (runner-labelled). No real-acapella grading number is
 claimed anywhere (D-54 §5: synthetic until real fixtures land).
 
 
+### 1.9 The session recording — optional, local-only, default OFF (P-403)
+
+**THE FILES.** `Engine/Sources/EngineCore/Session/SessionRecording.swift`
+(the PORTABLE half: `SessionRecordingPolicy`, `SessionRecordingAlignment`,
+`SessionRecordingManifest`, `SessionRecordingStore` — Linux-tested) and
+`Engine/MicCapture/Sources/MicCapture/SessionALACRecorder.swift` (the Apple
+bind: mic chunks → ALAC .m4a via the native encoder, the P-204 precedent).
+
+**THE POLICY, ENFORCED TWICE:** DEFAULT OFF at the policy
+(`SessionRecordingPolicy.defaultEnabled == false`, pinned by test on Linux)
+AND at the writer (an append/start on a never-enabled recorder refuses — a
+UI wiring mistake cannot silently start recording). The opt-in is
+DEVICE-LOCAL (the C-19 config's class — never written into a bundle).
+
+**THE ALIGNMENT IS EXACT:** the manifest carries the linear mapping
+(bundle time = B₀ + (captureTime − C₀); file frame = (B − B₀)·16000) —
+pinned exact in both directions by test. J-403's latency offset composes at
+GRADING time (C-20 §4), never in the file — the recording is the RAW
+captured audio at the contract 16 kHz rate (a non-contract-rate chunk is
+refused, never silently encoded at the wrong clock).
+
+**THE PURGE IS TOTAL:** `SessionRecordingStore.delete` removes the audio AND
+the manifest AND the session directory; a manifest-only half-recording is
+never listed (`exists` requires BOTH files); a repeat delete reports an
+honest no-op. **THE PRIVACY COPY IS PINNED** in the policy so the UI screen
+and the file's manifest say the SAME thing, and the manifest is round-trip
+stable (additive-fields class).
+
+**THE RUNNER EVIDENCE:** the Apple recorder's tests (MicCapture's CI step —
+BLOCKING) write REAL ALAC on the runner and read it back losslessly
+(10 240 frames, duration 0.64 s, the sine's peak survives to ±0.02); the
+device-replay leg (hearing the recording aligned under the reference) is the
+D-56 demo's, like every §8 number. RTF/RSS: the recording path is
+encode-only on 16 kHz mono — the ImportKit ALAC writer's measured profile
+(P-204) bounds it; no separate device number is claimed.
+
 ## 2. Model table (v0 — verified against Docs/RESEARCH.md)
 
 | Model | Repo | License | Params / size | SR | Frame rate | Pitch range | Outputs | RTF target (A14) | Export path (Linux/CI Python) | Verdict |
@@ -697,3 +733,4 @@ stronger than shape/range spike assertions (D-24, adopted from the Muskey
 | v1.10 | 2026-11-27 | **P-304 — §1.7 added: the score-alignment hook (the ONE MusicXML parser + the namespaced ScoreContract types + the DTW aligner).** The parser is note-events-only (D-40 §2: rests advance the timeline, mid-part `<divisions>` honoured, `<score-timewise>` rejected, excluded-features-only ⇒ an EMPTY score + a notice, never a crash); the types are the engine's OWN `ScoreContract.*` namespace with the IDENTICAL C-13.1/C-13.2 JSON (D-52 §4 — the same-name option measured DEAD; the migration is J-406, Jess's lane); the aligner is the MEASURED design (§1.7): the model's per-frame salience candidates as the audio chroma (no FFT in the portable core), pitch-presence-only DTW (the salience is never a weight, C-12), the duration-anchored single-time-scale warp (a path-read bar map measured 58 ms ✗, plain LSQ 23 ms, the anchor 7.0 ms ✓), binned to ≤ 2000 frames a side. The committed score fixture is DERIVED from the synthesis truth by `gen.py` (96 BPM vs the recording's 2.0 s chords; `gen.py --check` re-derives it — a truth-vs-score drift FAILS the integrity gate). MEASURED + PINNED (ScoreAlignmentTests, 316/316 local): bar-map max error 7.0 ms (AC ≤ 50), confidence 0.990145, score-informed 688/688 vs heuristic 672/688 (exactly the 16 transition frames fixed); the used decision measures FALSE on the committed fixture BY DESIGN (before = after = 1.000000 — the raw score already agrees at the metric's ±0.25 s tolerance; D-47 §9's strict rule refuses) and TRUE on the 60 BPM variant (0.615385 → 1.000000, 18.3 ms, 687/688). The score-informed tracks are derived, never written over the heuristic ones (C-13 rule 3), and every score note carries the ALIGNMENT's confidence, never an invented per-note probability. Synthetic fixtures only — no real-acapella claim. |
 
 | v1.12 | 2026-11-28 | **P-401 — §1.8 added: the grading pitch path (the session batch + the estimator split).** GRADING reads ONLY the `GradingPitchBatch` — the post-hoc SwiftF0 stream on the C-2.4 grid over the bundle's OWN decoded audio (t=0 IS the bundle timeline by construction — one clock for mix/stems/manifest, the P-203 padding finding uniform across all three); the live ribbon keeps the causal engine (D-7) and never feeds a grade (its lag is inside J-403's MEASURED loopback calibration, never modelled in code). The batch consumes J-403's offset exactly as C-20 §4 pins the sign and agrees EXACTLY with `PlaybackTransform.referenceTime` (D-33, pinned by test). **THE MEASURED ESTIMATOR BIAS: exactly 16.000 ms — one hop, stable at BOTH onset positions tested** (batch 0.496/ribbon 0.512; batch 1.248/ribbon 1.264) — window-end vs grid-position semantics, not a device latency. The grid-integrity rule (a frame off the 16 ms grid is a contract violation) and byte-equal determinism are pinned; the onset test's mock measures TIMING, not pitch accuracy (accuracy stays in BENCHMARKS §3, runner-labelled). EngineCore 340/340 local. |
+| v1.13 | 2026-11-28 | **P-403 — §1.9 added: the session recording (optional, LOCAL-ONLY, DEFAULT OFF).** The portable half (`SessionRecordingPolicy` / `SessionRecordingAlignment` / `SessionRecordingManifest` / `SessionRecordingStore`) is Linux-tested; the Apple bind (`MicCapture.SessionALACRecorder`) writes REAL ALAC on the runner and reads it back losslessly. The default-off guard is enforced TWICE (the policy constant + the writer's own refusal — a UI wiring mistake cannot silently record); the alignment is exact in both directions (bundle ↔ capture ↔ file frame, the PlaybackLane clock-fact pattern); the purge removes audio + manifest + directory (a half-recording is never listed); the privacy copy is PINNED so the screen and the manifest agree. EngineCore 346/346 local. |
